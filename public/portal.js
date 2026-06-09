@@ -219,12 +219,13 @@ function form(id, fields, label) {
 function bindForm(id, handler) {
   document.querySelector(`#${id}`).addEventListener("submit", async (event) => {
     event.preventDefault();
+    const formElement = event.currentTarget;
     const result = document.querySelector("#portalResult");
     result.textContent = "Enviando...";
-    const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+    const data = Object.fromEntries(new FormData(formElement).entries());
     try {
       await handler(data);
-      event.currentTarget.reset();
+      formElement.reset();
     } catch (error) {
       console.error("[portal] falha ao enviar", error);
       result.textContent = "Nao consegui enviar agora.";
@@ -239,7 +240,11 @@ async function post(path, payload) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload)
     });
-    return response.json();
+    const body = await response.json();
+    if (!response.ok || body.ok === false) {
+      throw new Error(body.error || `Falha ao enviar: ${response.status}`);
+    }
+    return body;
   }
   return postWithXhr(path, payload);
 }
@@ -251,7 +256,12 @@ function postWithXhr(path, payload) {
     xhr.setRequestHeader("content-type", "application/json");
     xhr.onload = () => {
       try {
-        resolve(JSON.parse(xhr.responseText || "{}"));
+        const body = JSON.parse(xhr.responseText || "{}");
+        if (xhr.status < 200 || xhr.status >= 300 || body.ok === false) {
+          reject(new Error(body.error || `Falha ao enviar: ${xhr.status}`));
+          return;
+        }
+        resolve(body);
       } catch (error) {
         reject(error);
       }
