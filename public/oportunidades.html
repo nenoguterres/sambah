@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SamBah Oportunidades</title>
+    <link rel="icon" href="assets/favicon.png" type="image/png">
+    <link rel="stylesheet" href="oportunidades.css">
+  </head>
+  <body>
+    <header class="opp-header">
+      <a class="brand" href="/">
+        <img src="assets/brand/logo-sambah-oficial.png" alt="SamBah">
+        <span>SamBah CRM</span>
+      </a>
+      <nav aria-label="CRM">
+        <a href="/crm">Resumo</a>
+        <a href="/leads">Leads</a>
+        <a class="is-active" href="/oportunidades">Oportunidades</a>
+        <a href="/eventos">Eventos</a>
+        <a href="/precomandas">Pre-comandas</a>
+      </nav>
+    </header>
+
+    <main class="opp-shell">
+      <section class="opp-hero">
+        <div>
+          <p>SamBah comercial</p>
+          <h1>Central de Oportunidades</h1>
+          <span>Leads, conversas, orcamentos, eventos e pedidos que precisam de acao.</span>
+        </div>
+        <a class="home-link" href="/crm">Voltar ao CRM</a>
+      </section>
+
+      <section id="summary" class="summary-grid"></section>
+      <section id="columns" class="opp-columns" aria-live="polite"></section>
+    </main>
+
+    <script src="oportunidades.js"></script>
+  </body>
+</html>

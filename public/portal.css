@@ -1,0 +1,329 @@
+﻿:root {
+  color-scheme: dark;
+  --bg: #030303;
+  --panel: #0d0d0d;
+  --panel-2: #151515;
+  --orange: #ff6a00;
+  --orange-soft: rgba(255, 106, 0, 0.34);
+  --line: rgba(255, 255, 255, 0.12);
+  --text: #ffffff;
+  --muted: #d8d0c8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+}
+
+.portal-shell {
+  width: min(1180px, calc(100% - 28px));
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 16px 0 32px;
+}
+
+.portal-topbar {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 6px 0 20px;
+}
+
+.portal-wordmark,
+.portal-menu a,
+.portal-whatsapp {
+  justify-self: start;
+  border: 1px solid rgba(255, 106, 0, 0.75);
+  border-radius: 999px;
+  padding: 8px 11px;
+  background: #0a0a0a;
+  box-shadow: 0 0 0 rgba(255, 106, 0, 0);
+  font-size: 12px;
+  font-weight: 850;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.portal-wordmark {
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0;
+  opacity: 0.86;
+}
+
+.portal-menu {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.portal-menu::-webkit-scrollbar {
+  display: none;
+}
+
+.portal-menu a {
+  flex: 0 0 auto;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: #d8d0c8;
+  font-size: 12px;
+  font-weight: 750;
+  opacity: 0.82;
+}
+
+.portal-menu a:hover,
+.portal-menu a:focus-visible {
+  border-color: var(--orange);
+  color: var(--text);
+  outline: none;
+}
+
+.portal-whatsapp {
+  justify-self: start;
+  border: 1px solid rgba(255, 106, 0, 0.75);
+  border-radius: 999px;
+  padding: 8px 11px;
+  background: #0a0a0a;
+  box-shadow: 0 0 0 rgba(255, 106, 0, 0);
+  font-size: 12px;
+  font-weight: 850;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.portal-whatsapp:hover,
+.portal-whatsapp:focus-visible {
+  box-shadow: 0 0 18px var(--orange-soft);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.portal-card {
+  display: grid;
+  gap: 14px;
+}
+
+.portal-home {
+  display: grid;
+  min-height: calc(100vh - 112px);
+  align-content: center;
+  justify-items: center;
+  gap: 22px;
+  padding: 0 0 14px;
+}
+
+.insano-logo {
+  display: block;
+  width: min(760px, 92vw);
+  max-height: 30vh;
+  object-fit: contain;
+}
+
+.home-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  width: min(860px, 100%);
+}
+
+.portal-action {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 124px;
+  min-height: 112px;
+  align-items: center;
+  gap: 12px;
+  overflow: hidden;
+  border: 2px solid var(--orange);
+  border-radius: 16px;
+  background: linear-gradient(180deg, #151515, #070707);
+  color: var(--text);
+  padding: 14px 12px 14px 18px;
+  text-decoration: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  transition: box-shadow 180ms ease, transform 180ms ease, border-color 180ms ease;
+}
+
+.portal-action:hover,
+.portal-action:focus-visible {
+  border-color: #ff8a22;
+  box-shadow: 0 0 24px var(--orange-soft), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  transform: translateY(-2px);
+  outline: none;
+}
+
+.portal-action span {
+  position: relative;
+  z-index: 1;
+  font-size: clamp(18px, 5vw, 24px);
+  font-weight: 950;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.portal-action img {
+  position: relative;
+  z-index: 1;
+  justify-self: end;
+  width: 124px;
+  height: 96px;
+  object-fit: contain;
+  object-position: center;
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.44));
+}
+
+.portal-action::after {
+  content: "";
+  position: absolute;
+  inset: auto -20% -70% 28%;
+  height: 130px;
+  background: radial-gradient(circle, rgba(255, 106, 0, 0.18), transparent 62%);
+  pointer-events: none;
+}
+
+.portal-action-xeriffe img {
+  width: 132px;
+  height: 104px;
+}
+.hero-box,
+.form-box {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 16px;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: clamp(34px, 11vw, 54px);
+  line-height: 0.95;
+}
+
+h2 {
+  font-size: 24px;
+}
+
+p,
+.result {
+  color: var(--muted);
+}
+
+.choice-grid,
+form {
+  display: grid;
+  gap: 10px;
+}
+
+.choice-grid {
+  margin-top: 14px;
+}
+
+button,
+.choice-link {
+  width: 100%;
+  border: 1px solid var(--orange);
+  border-radius: 8px;
+  padding: 14px;
+  background: var(--orange);
+  color: #140900;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 900;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.ghost {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  border-color: var(--line);
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #090909;
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+}
+
+textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.row {
+  display: grid;
+  gap: 10px;
+}
+
+.result {
+  min-height: 24px;
+  font-weight: 800;
+}
+
+@media (min-width: 620px) {
+  .row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .home-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 900px) {
+  .portal-topbar {
+    grid-template-columns: auto 1fr auto;
+    gap: 16px;
+  }
+
+  .portal-menu {
+    justify-content: center;
+  }
+
+  .portal-whatsapp {
+    justify-self: end;
+  }
+
+  .portal-action {
+    grid-template-columns: 1fr 148px;
+    min-height: 128px;
+    padding: 16px 16px 16px 20px;
+  }
+
+  .portal-action img {
+    width: 148px;
+    height: 108px;
+  }
+
+  .portal-action-xeriffe img {
+    width: 156px;
+    height: 114px;
+  }
+}

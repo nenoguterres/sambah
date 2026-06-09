@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>samBah! Admin</title>
+    <meta name="application-name" content="samBah!">
+    <meta name="theme-color" content="#0c1015">
+    <link rel="icon" href="/admin/assets/favicon.png" type="image/png">
+    <link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/admin/assets/styles.css">
+  </head>
+  <body>
+    <main class="command-shell">
+      <header class="topbar">
+        <div class="brand-lockup">
+          <img class="brand-logo" src="/admin/assets/brand/logo-sambah-oficial.png" alt="samBah!">
+          <div>
+            <span class="system-pill">Módulo auxiliar do Mesa do Xeriffe</span>
+            <small>Automação WhatsApp + fila operacional</small>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <span class="version-chip">v1.0.0</span>
+          <span class="status-chip" id="topSystemStatus">Sincronizando</span>
+          <button class="primary-button" id="refreshAudit" type="button">Atualizar</button>
+        </div>
+      </header>
+
+      <section class="hero-panel" aria-label="Apresentação do samBah">
+        <div class="hero-copy">
+          <p class="eyebrow">Central de operação</p>
+          <h1>samBah! conecta<br>WhatsApp, Mesa e Produção</h1>
+          <p>Receba pedidos pelo WhatsApp, organize tudo em fila segura e encaminhe para o Mesa do Xeriffe sem perder o controle.</p>
+          <div class="hero-signals" aria-label="Indicadores principais">
+            <span>Recepção</span>
+            <span>Auditoria</span>
+            <span>Fila segura</span>
+            <span>Integração Mesa</span>
+          </div>
+        </div>
+        <div class="hero-mascot mascot-pending" aria-label="CapBah oficial pendente">
+          <div class="capbah-lock">
+            <span>CapBah</span>
+            <strong>Asset oficial pendente</strong>
+            <small>Aguardando PNG aprovado. Nenhum mascote alternativo será usado.</small>
+          </div>
+        </div>
+      </section>
+
+      <section class="status-grid" aria-label="Status operacional">
+        <article class="status-card">
+          <div class="status-card-head">
+            <span class="module-icon">W</span>
+            <strong>WhatsApp</strong>
+          </div>
+          <p>Status do webhook</p>
+          <strong id="webhookStatus">Carregando</strong>
+          <small><span id="whatsappReceived">0</span> mensagens recebidas</small>
+          <small>Último recebimento: <span id="lastWebhook">Sem evento</span></small>
+        </article>
+
+        <article class="status-card">
+          <div class="status-card-head">
+            <span class="module-icon">F</span>
+            <strong>Fila segura</strong>
+          </div>
+          <p>Pedidos preservados para envio</p>
+          <strong><span id="queuePendingCard">0</span> pendentes</strong>
+          <small><span id="queueErrorsCard">0</span> com erro</small>
+          <button class="link-button" id="queueRetryShortcut" type="button">Reenviar pendentes</button>
+        </article>
+
+        <article class="status-card">
+          <div class="status-card-head">
+            <span class="module-icon">M</span>
+            <strong>Mesa do Xeriffe</strong>
+          </div>
+          <p>Conexão com o sistema principal</p>
+          <strong id="mesaStatusCard">Carregando</strong>
+          <small id="mesaUrlCard">http://127.0.0.1:4173</small>
+          <small>Último envio: <span id="mesaLastSentCard">Sem envio</span></small>
+        </article>
+
+        <article class="status-card">
+          <div class="status-card-head">
+            <span class="module-icon">A</span>
+            <strong>Auditoria</strong>
+          </div>
+          <p>Eventos operacionais registrados</p>
+          <strong><span id="auditTotalCard">0</span> eventos</strong>
+          <small>Últimos erros: <span id="auditErrorsCard">0</span></small>
+          <a class="link-button" href="#auditLogs">Ver logs</a>
+        </article>
+      </section>
+
+      <section class="flow-panel" aria-label="Fluxo de integração">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Mapa de fluxo</p>
+            <h2>Do WhatsApp ao fluxo de caixa e produção</h2>
+          </div>
+          <span class="pill muted">Mesa segue como sistema principal</span>
+        </div>
+        <div class="flow-map">
+          <article class="flow-node">
+            <span>W</span>
+            <strong>WhatsApp</strong>
+            <small>Entrada de pedidos e mensagens</small>
+          </article>
+          <article class="flow-node active">
+            <span>S</span>
+            <strong>samBah!</strong>
+            <small>Normaliza, audita e organiza</small>
+          </article>
+          <article class="flow-node">
+            <span>F</span>
+            <strong>Fila segura</strong>
+            <small>Guarda sem perder pedido</small>
+          </article>
+          <article class="flow-node">
+            <span>M</span>
+            <strong>Mesa do Xeriffe</strong>
+            <small>Sistema principal</small>
+          </article>
+          <article class="flow-node">
+            <span>P</span>
+            <strong>Caixa/Produção</strong>
+            <small>Fluxo operacional</small>
+          </article>
+        </div>
+      </section>
+
+      <section class="mesa-panel" aria-label="Integração Mesa do Xeriffe">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Integração Mesa do Xeriffe</p>
+            <h2>Painel técnico de envio e reenvio</h2>
+          </div>
+          <span class="pill muted" id="mesaEndpointState">Sincronizando</span>
+        </div>
+        <div class="mesa-grid">
+          <article class="mesa-metric">
+            <span>Status do Mesa</span>
+            <strong id="mesaStatus">Carregando</strong>
+          </article>
+          <article class="mesa-metric">
+            <span>URL do Mesa</span>
+            <strong id="mesaUrl">http://127.0.0.1:4173</strong>
+          </article>
+          <article class="mesa-metric">
+            <span>Pedidos pendentes</span>
+            <strong id="mesaPending">0</strong>
+          </article>
+          <article class="mesa-metric">
+            <span>Último pedido enviado</span>
+            <strong id="mesaLastSend">Sem envio</strong>
+          </article>
+          <article class="mesa-metric">
+            <span>Último erro</span>
+            <strong id="mesaLastError">Sem erro</strong>
+          </article>
+          <article class="mesa-metric">
+            <span>Última tentativa</span>
+            <strong id="mesaLastAttempt">Sem tentativa</strong>
+          </article>
+        </div>
+        <div class="mesa-actions">
+          <button class="ghost-button" id="retryMesaBtn" type="button">Reenviar pendentes</button>
+          <button class="ghost-button" id="sendTestOrderBtn" type="button">Enviar pedido teste</button>
+        </div>
+        <div class="mesa-queue" id="mesaQueueList"></div>
+      </section>
+
+      <section class="tracking-panel" aria-label="Acompanhamento SamBah">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Acompanhamento SamBah</p>
+            <h2>Pedidos enviados ao Mesa e comunica&ccedil;&atilde;o com o cliente pelo WhatsApp.</h2>
+          </div>
+          <span class="pill muted" id="trackingCount">0 pedidos</span>
+        </div>
+        <div class="tracking-toolbar" aria-label="Filtros do acompanhamento">
+          <button class="tracking-filter active" type="button" data-tracking-filter="all">Todos</button>
+          <button class="tracking-filter" type="button" data-tracking-filter="needs">Precisa avisar cliente</button>
+          <button class="tracking-filter" type="button" data-tracking-filter="sent">Comunicados</button>
+          <button class="tracking-filter" type="button" data-tracking-filter="op:Insano">Insano</button>
+          <button class="tracking-filter" type="button" data-tracking-filter="op:Buteco Xeriffe">Buteco Xeriffe</button>
+          <select id="trackingStatusFilter" aria-label="Filtrar por status Mesa">
+            <option value="">Status Mesa: todos</option>
+            <option value="pending">Aguardando confer&ecirc;ncia</option>
+            <option value="accepted">Recebido pela equipe</option>
+            <option value="em_preparo">Em preparo</option>
+            <option value="pronto">Pronto</option>
+            <option value="entregue">Entregue</option>
+            <option value="finalizado">Finalizado</option>
+            <option value="cancelado">Cancelado</option>
+          </select>
+          <button class="ghost-button" id="refreshTrackingBtn" type="button">Atualizar status</button>
+        </div>
+        <div class="tracking-list" id="trackingList"></div>
+        <div class="tracking-feedback" id="trackingFeedback" role="status" aria-live="polite"></div>
+      </section>
+
+      <section class="menu-panel" aria-label="Cardapio Mesa">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Card&aacute;pio Mesa</p>
+            <h2>Mesa cadastra, samBah! sincroniza e valida</h2>
+          </div>
+          <span class="pill muted" id="menuSyncState">Sincronizando</span>
+        </div>
+        <div class="menu-grid">
+          <article class="mesa-metric">
+            <span>Status da sincroniza&ccedil;&atilde;o</span>
+            <strong id="menuStatus">Carregando</strong>
+          </article>
+          <article class="mesa-metric">
+            <span>&Uacute;ltima atualiza&ccedil;&atilde;o</span>
+            <strong id="menuLastSync">Sem sincroniza&ccedil;&atilde;o</strong>
+          </article>
+          <article class="mesa-metric">
+            <span>Produtos</span>
+            <strong id="menuTotalProducts">0</strong>
+          </article>
+          <article class="mesa-metric">
+            <span>Produtos ativos</span>
+            <strong id="menuActiveProducts">0</strong>
+          </article>
+          <article class="mesa-metric">
+            <span>Indispon&iacute;veis</span>
+            <strong id="menuUnavailableProducts">0</strong>
+          </article>
+        </div>
+        <div class="mesa-actions">
+          <button class="ghost-button" id="syncMenuBtn" type="button">Sincronizar card&aacute;pio</button>
+        </div>
+        <div class="menu-cache" id="menuCacheList"></div>
+      </section>
+
+      <section class="events-panel" aria-label="Agenda Insano">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Agenda Insano</p>
+            <h2>Food Truck, eventos e reservas do Xeriffe</h2>
+          </div>
+          <span class="pill muted" id="eventsLeadCount">0 leads</span>
+        </div>
+        <div class="events-grid">
+          <article class="mesa-metric">
+            <span>Novos pedidos</span>
+            <strong id="eventsNew">0</strong>
+          </article>
+          <article class="mesa-metric">
+            <span>Aguardando informa&ccedil;&atilde;o</span>
+            <strong id="eventsNeedsInfo">0</strong>
+          </article>
+          <article class="mesa-metric">
+            <span>Or&ccedil;amento pendente</span>
+            <strong id="eventsQuotePending">0</strong>
+          </article>
+          <article class="mesa-metric">
+            <span>Pr&eacute;-reservas</span>
+            <strong id="eventsPreReserved">0</strong>
+          </article>
+          <article class="mesa-metric">
+            <span>Confirmados</span>
+            <strong id="eventsConfirmed">0</strong>
+          </article>
+          <article class="mesa-metric">
+            <span>Cancelados</span>
+            <strong id="eventsCanceled">0</strong>
+          </article>
+        </div>
+        <div class="events-table" id="eventsLeadList"></div>
+      </section>
+
+      <section class="review-panel" aria-label="Pedidos para revisao">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Pedidos para revis&atilde;o</p>
+            <h2>Pedidos bloqueados antes de chegar ao Mesa</h2>
+          </div>
+          <span class="pill muted" id="reviewCount">0 itens</span>
+        </div>
+        <div class="review-list" id="reviewOrdersList"></div>
+      </section>
+
+      <section class="draft-panel" aria-label="Rascunhos do WhatsApp">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Rascunhos do WhatsApp</p>
+            <h2>Leitura de texto livre antes de enviar ao Mesa</h2>
+          </div>
+          <span class="pill muted" id="draftCount">0 itens</span>
+        </div>
+        <div class="draft-tester">
+          <label for="draftTestText">Testar leitura</label>
+          <div class="draft-test-row">
+            <input id="draftTestText" type="text" value="me vê dois kachurrasco sem cebola" aria-label="Digite uma frase de cliente">
+            <button class="ghost-button" id="draftTestBtn" type="button">Testar</button>
+          </div>
+          <small>Exemplos: me vê dois kachurrasco sem cebola / quero um espetinho de carne e uma coca / tem cachorro? / quero food truck para aniversário</small>
+        </div>
+        <div class="draft-list" id="draftOrdersList"></div>
+      </section>
+
+      <section class="dashboard">
+        <article class="panel audit-panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Auditoria operacional</p>
+              <h2>Contadores por tipo e status</h2>
+            </div>
+            <span class="pill" id="metricLastEvent">Sem eventos</span>
+          </div>
+          <div class="audit-overview">
+            <article class="metric">
+              <span>Total de eventos</span>
+              <strong id="metricTotal">0</strong>
+            </article>
+            <article class="metric">
+              <span>Estado do sistema</span>
+              <strong id="metricHealth">Carregando</strong>
+            </article>
+            <article class="metric">
+              <span>Último erro</span>
+              <strong id="metricLastError">Sem erro</strong>
+            </article>
+          </div>
+          <div class="counter-grid">
+            <div>
+              <h3>Tipo de evento</h3>
+              <div id="typeCounters" class="counter-list"></div>
+            </div>
+            <div>
+              <h3>Status</h3>
+              <div id="statusCounters" class="counter-list"></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Operação</p>
+              <h2>Últimos erros</h2>
+            </div>
+            <span class="pill muted">Dados mascarados</span>
+          </div>
+          <div id="errorEvents" class="event-list"></div>
+        </article>
+      </section>
+
+      <section class="panel full">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Histórico</p>
+            <h2>Logs recentes</h2>
+          </div>
+          <span class="pill" id="logCount">0 itens</span>
+        </div>
+        <div id="auditLogs" class="event-list wide"></div>
+      </section>
+
+      <section class="next-panel" aria-label="Próximas etapas">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Próximas etapas</p>
+            <h2>Evolução operacional planejada</h2>
+          </div>
+        </div>
+        <div class="next-grid">
+          <span>Integração real com Mesa</span>
+          <span>Fila de pedidos WhatsApp</span>
+          <span>Retorno automático ao cliente</span>
+          <span>Pedido teste</span>
+          <span>Status de produção via WhatsApp</span>
+        </div>
+      </section>
+    </main>
+    <script src="/admin/assets/admin.js"></script>
+  </body>
+</html>

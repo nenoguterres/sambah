@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>samBah! Atendimento</title>
+    <meta name="application-name" content="samBah!">
+    <meta name="theme-color" content="#141813">
+    <link rel="icon" href="assets/favicon.png" type="image/png">
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="site.css">
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="header-brand" href="/" aria-label="samBah! Atendimento">
+        <img class="brand-logo" src="assets/brand/logo-sambah-oficial.png" alt="samBah!">
+        <small>Atendimento virtual do Insano</small>
+      </a>
+      <div class="header-actions">
+        <a class="admin-link" href="/crm">CRM</a>
+        <a class="whatsapp-button" href="#caminhos">Abrir conversa com o SamBah</a>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero-section" aria-label="Atendimento samBah">
+        <div class="hero-copy">
+          <p class="hero-kicker">Atendimento rápido</p>
+          <h1>Buenas, eu sou o samBah!</h1>
+          <p class="hero-subtitle">O atendimento do Insano nasce e continua pelo WhatsApp.</p>
+          <p class="hero-text">O SamBah te atende pelo WhatsApp e acompanha teu pedido até a finalização.</p>
+          <p class="hero-support">Tu escolhe o caminho. O SamBah organiza e segue contigo no WhatsApp.</p>
+          <div class="hero-actions">
+            <a class="primary-action" href="#caminhos">Começar pelo WhatsApp</a>
+            <a class="secondary-action" href="#caminhos">Escolher caminho</a>
+          </div>
+          <div class="trust-row" aria-label="Resumo do atendimento">
+            <span>Atendimento pelo WhatsApp</span>
+            <span>Pedido organizado</span>
+            <span>Mesa do Xeriffe na operação</span>
+            <span>Equipe acompanhando</span>
+          </div>
+        </div>
+
+        <aside class="chat-card" aria-label="Conversa samBah">
+          <div class="chat-message inbound">
+            <strong>Buenas!</strong>
+            <span>Me diz o que tu precisa. Eu te conduzo pelo WhatsApp.</span>
+          </div>
+          <div class="chat-shortcuts">
+            <button type="button" data-path-link="foodtruck">Agendar Food Truck ou Beer Truck Insano</button>
+            <button type="button" data-path-link="order">Pedidos Insano</button>
+            <button type="button" data-path-link="reservation">Pedidos Buteco Xeriffe</button>
+            <button type="button" data-path-link="human">Abrir conversa com o SamBah</button>
+          </div>
+          <div class="capbah-stage" id="capbahStage" aria-label="CapBah oficial">
+            <img class="capbah-official" src="assets/brand/capbah-oficial.png" alt="CapBah">
+          </div>
+        </aside>
+      </section>
+
+      <section class="paths-section" id="caminhos" aria-label="Caminhos de atendimento">
+        <div class="section-title">
+          <p>Escolhe uma opção</p>
+          <h2>O atendimento continua pelo WhatsApp</h2>
+        </div>
+
+        <div class="path-grid">
+          <button class="path-card" type="button" data-path="foodtruck">
+            <span class="path-icon">FT</span>
+            <span class="path-art-frame"><img class="path-art action-img--wide" src="assets/brand/actions/01-agendar-foodtruck-beertruck-insano.png" alt=""></span>
+            <strong>Agendar Food Truck ou Beer Truck Insano</strong>
+            <small>Me passa os dados do evento que eu organizo pra equipe responder pelo WhatsApp.</small>
+            <em>Continuar pelo WhatsApp</em>
+          </button>
+          <button class="path-card" type="button" data-path="order">
+            <span class="path-icon">P</span>
+            <span class="path-art-frame"><img class="path-art action-img--food" src="assets/brand/actions/02-pedidos-insano-crop.png" alt=""></span>
+            <strong>Pedidos Insano</strong>
+            <small>Monte tua comanda. O SamBah organiza e te acompanha pelo WhatsApp.</small>
+            <em>Continuar pelo WhatsApp</em>
+          </button>
+          <button class="path-card" type="button" data-path="reservation">
+            <span class="path-icon">X</span>
+            <span class="path-art-frame"><img class="path-art action-img--skewer" src="assets/brand/actions/03-pedidos-buteco-xeriffe-crop.png" alt=""></span>
+            <strong>Pedidos Buteco Xeriffe</strong>
+            <small>Pedido ou solicitação para o Xeriffe, conduzido pelo WhatsApp.</small>
+            <em>Continuar pelo WhatsApp</em>
+          </button>
+          <button class="path-card" type="button" data-path="human">
+            <span class="path-icon">W</span>
+            <span class="path-art-frame"><img class="path-art action-img--human" src="assets/brand/actions/04-falar-watts-atendimento-crop.png" alt=""></span>
+            <strong>Falar Watts/ATENDIMENTO</strong>
+            <small>Dúvida rápida ou atendimento humano direto pelo WhatsApp.</small>
+            <em>Abrir conversa</em>
+          </button>
+        </div>
+      </section>
+
+      <section class="entry-form-panel" id="entryFormPanel" hidden>
+        <div class="form-head">
+          <div>
+            <p id="formKicker">Atendimento</p>
+            <h2 id="formTitle">Caminho escolhido</h2>
+          </div>
+          <button class="text-button" id="changePathBtn" type="button">Voltar aos caminhos</button>
+        </div>
+        <div class="service-choice-grid" id="serviceChoiceGrid" hidden></div>
+        <div class="quick-confirm-card" id="quickConfirmCard" hidden></div>
+        <form id="entryForm">
+          <div class="field-grid" id="fieldGrid"></div>
+          <button class="submit-button" id="submitButton" type="submit">Enviar</button>
+        </form>
+        <p class="entry-result" id="entryResult" role="status"></p>
+      </section>
+
+      <section class="commercial-section" aria-label="Camada comercial SamBah">
+        <div>
+          <p>Que tipo de atendimento tu precisa?</p>
+          <h2>Levar food truck, fazer festa no Xeriffe, pedir orcamento ou resolver pelo WhatsApp.</h2>
+          <span>Buenas! Eu sou o SamBah, atendimento rapido do Insano e do Xeriffe. Aqui e direto: tu quer ver cardapio, fazer pedido, levar o food truck para um evento ou reservar o Xeriffe para tua festa?</span>
+        </div>
+        <div class="commercial-grid">
+          <a href="#commercialLeadForm" data-interest-shortcut="Food truck no meu evento">Levar food truck para meu evento</a>
+          <a href="#commercialLeadForm" data-interest-shortcut="Festa no Xeriffe">Fazer festa no Xeriffe</a>
+          <a href="#commercialLeadForm" data-interest-shortcut="Evento corporativo">Pedir orcamento para empresa</a>
+          <a href="#caminhos" data-path-link="order">Ver cardapio</a>
+          <a href="#caminhos" data-path-link="reservation">Fazer pedido</a>
+          <a href="#caminhos" data-path-link="human">Falar com o SamBah</a>
+        </div>
+      </section>
+
+      <section class="sales-section" aria-label="Eventos e reservas">
+        <div class="sales-block">
+          <p>Eventos e Reservas</p>
+          <h2>Leve o Insano para o seu evento</h2>
+          <span>Food truck, espetinhos, burgers, kachurrasco e operacao completa para empresas, feiras, festas e confraternizacoes.</span>
+          <div class="tag-row">
+            <span>Evento corporativo</span><span>Confraternizacao</span><span>Feira</span><span>Festival</span><span>Aniversario</span><span>Acao promocional</span>
+          </div>
+          <div class="sales-actions">
+            <a href="#commercialLeadForm" data-interest-shortcut="Food truck no meu evento">Pedir orcamento pelo WhatsApp</a>
+            <a href="#caminhos" data-path-link="order">Ver opcoes de cardapio</a>
+            <a href="#caminhos" data-path-link="human">Falar com o SamBah</a>
+          </div>
+        </div>
+        <div class="sales-block">
+          <p>Faca sua festa no Xeriffe</p>
+          <h2>Buteco, brasa e faroeste para tua turma</h2>
+          <span>Aniversarios, confraternizacoes e encontros com clima de buteco, brasa e faroeste.</span>
+          <div class="tag-row">
+            <span>Aniversario</span><span>Empresa</span><span>Amigos</span><span>Familia</span><span>Turma de futebol</span><span>Happy hour</span>
+          </div>
+          <div class="sales-actions">
+            <a href="#commercialLeadForm" data-interest-shortcut="Festa no Xeriffe">Reservar data pelo WhatsApp</a>
+            <a href="#commercialLeadForm" data-interest-shortcut="Consultar pacotes Xeriffe">Consultar pacotes</a>
+            <a href="#caminhos" data-path-link="human">Falar com o SamBah</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="campaign-section" aria-label="Campanhas e ofertas">
+        <div class="section-title">
+          <p>Campanhas e Ofertas</p>
+          <h2>Ideias prontas para transformar conversa em venda</h2>
+        </div>
+        <div class="campaign-grid">
+          <article><h3>Insano na Firma</h3><p>Leve o food truck para dentro da empresa. Ideal para confraternizacoes, SIPAT, happy hour, inauguracoes e acoes internas.</p><a href="#commercialLeadForm" data-interest-shortcut="Insano na Firma">Pedir orcamento</a></article>
+          <article><h3>Churrasquinho de Respeito</h3><p>Espetinhos, kachurrasco e porcoes para eventos com fila andando e cliente feliz.</p><a href="#commercialLeadForm" data-interest-shortcut="Churrasquinho de Respeito">Quero no meu evento</a></article>
+          <article><h3>Buteco do Xeriffe</h3><p>Clima de buteco, comida boa e visual faroeste para tua turma comemorar sem complicacao.</p><a href="#commercialLeadForm" data-interest-shortcut="Festa no Xeriffe">Reservar o Xeriffe</a></article>
+          <article><h3>SamBah Resolve</h3><p>Pedido, cardapio, evento ou orcamento. Tu fala o que precisa e o SamBah te leva direto ao ponto.</p><a href="#caminhos" data-path-link="human">Chamar no WhatsApp</a></article>
+        </div>
+      </section>
+
+      <section class="lead-form-section" id="commercialLeadForm" aria-label="Pre-formulario comercial">
+        <div>
+          <p>Pre-formulario para WhatsApp</p>
+          <h2>Quanto mais dados tu passar, mais rapido vem o orcamento.</h2>
+        </div>
+        <form id="commercialForm" class="commercial-form">
+          <input name="nome" placeholder="Nome" autocomplete="name">
+          <input name="whatsapp" placeholder="WhatsApp" inputmode="tel">
+          <select name="interesse">
+            <option>Food truck no meu evento</option>
+            <option>Festa no Xeriffe</option>
+            <option>Pedido/cardapio</option>
+            <option>Evento corporativo</option>
+            <option>Falar com atendente</option>
+          </select>
+          <input name="data" placeholder="Data do evento">
+          <input name="local" placeholder="Cidade, bairro ou local">
+          <input name="pessoas" placeholder="Numero estimado de pessoas" inputmode="numeric">
+          <textarea name="observacao" rows="3" placeholder="Observacao"></textarea>
+          <button type="submit">Pedir orcamento</button>
+        </form>
+        <p class="entry-result" id="commercialResult" role="status"></p>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>Insano Food Truck • Xeriffe Obirici • Atendimento via samBah!</p>
+      <span>Pedido, evento ou reserva: tu escolhe, o SamBah organiza e segue contigo pelo WhatsApp.</span>
+    </footer>
+
+    <script src="site.js"></script>
+  </body>
+</html>

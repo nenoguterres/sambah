@@ -1,0 +1,202 @@
+﻿<!--
+  SamBah CRM - integracao de sites externos.
+  Site principal atual: https://insanofoodtruck.com.br
+  API recomendada: https://api.insanofoodtruck.com.br
+  Alternativa: https://api.sambahcrm.com.br
+-->
+
+<section id="integracao-site-real-insano" style="font-family:Arial,sans-serif;max-width:820px;margin:24px auto;padding:16px;border:1px solid #ddd;border-radius:8px">
+  <h2>INTEGRACAO COM O SITE REAL INSANOFOODTRUCK.COM.BR</h2>
+  <p>Use estes blocos no HTML Embed do Wix/site atual, sem derrubar o dominio principal.</p>
+
+  <h3>Onde colar no Wix/site</h3>
+  <ul>
+    <li>HTML Embed da pagina inicial: botoes Quero Pedir, Conhecer o Xeriffe e WhatsApp.</li>
+    <li>HTML Embed da pagina de pedidos: bloco Quero Pedir.</li>
+    <li>HTML Embed da pagina de eventos: formulario Preciso de Food Truck.</li>
+    <li>HTML Embed da pagina de contato: botao WhatsApp.</li>
+    <li>HTML Embed da pagina de empresas/corporativo: formulario Evento Corporativo.</li>
+  </ul>
+
+  <div style="display:grid;gap:16px">
+    <button type="button" data-sambah-insano="pedido">Quero Pedir</button>
+    <button type="button" data-sambah-insano="xeriffe">Conhecer o Xeriffe</button>
+    <button type="button" data-sambah-insano="whatsapp">WhatsApp</button>
+
+    <form data-sambah-insano-form="foodtruck" style="display:grid;gap:8px">
+      <h3>Preciso de Food Truck</h3>
+      <input name="customerName" placeholder="Nome">
+      <input name="phone" placeholder="Telefone / WhatsApp">
+      <input name="data" placeholder="Data do evento">
+      <input name="local" placeholder="Cidade / bairro">
+      <input name="people" placeholder="Quantidade de pessoas">
+      <textarea name="notes" placeholder="Observacoes"></textarea>
+      <button type="submit">Enviar pedido de Food Truck</button>
+    </form>
+
+    <form data-sambah-insano-form="empresa" style="display:grid;gap:8px">
+      <h3>Evento Corporativo</h3>
+      <input name="customerName" placeholder="Nome">
+      <input name="empresa" placeholder="Empresa">
+      <input name="phone" placeholder="Telefone / WhatsApp">
+      <input name="email" placeholder="E-mail">
+      <input name="data" placeholder="Data">
+      <input name="people" placeholder="Quantidade de pessoas">
+      <textarea name="notes" placeholder="Coffee break, ativacao, feira, evento interno..."></textarea>
+      <button type="submit">Enviar evento corporativo</button>
+    </form>
+  </div>
+
+  <p id="sambah-insano-real-result" aria-live="polite"></p>
+</section>
+
+<script>
+(() => {
+  const BASE_API = "https://api.insanofoodtruck.com.br";
+  // Alternativa: const BASE_API = "https://api.sambahcrm.com.br";
+  // Teste local: const BASE_API = "http://localhost:3000";
+
+  const SITE_SOURCE = "insanofoodtruck.com.br";
+  const result = document.querySelector("#sambah-insano-real-result");
+
+  const endpoints = {
+    pedido: "/api/site/precomanda",
+    foodtruck: "/api/site/orcamento-evento",
+    empresa: "/api/site/insano/evento",
+    xeriffe: "/api/site/lead",
+    whatsapp: "/api/site/whatsapp"
+  };
+
+  document.querySelector("[data-sambah-insano='pedido']").addEventListener("click", async () => {
+    const body = await post(endpoints.pedido, payload({
+      operation: "Insano",
+      type: "pedido",
+      pipeline: "pedido_rapido",
+      customerName: "Pedido iniciado pelo site Insano",
+      phone: "",
+      notes: "Cliente clicou em Quero Pedir no site.",
+      items: [{ name: "Pedido rapido Insano", quantity: 1 }],
+      customer: { name: "Pedido iniciado pelo site Insano", phone: "", serviceType: "delivery", paymentMethod: "a combinar" },
+      status: "novo"
+    }));
+    render(body);
+    if (body.whatsappUrl) openExternalWhatsApp(body.whatsappUrl);
+  });
+
+  document.querySelector("[data-sambah-insano='xeriffe']").addEventListener("click", async () => {
+    const body = await post(endpoints.xeriffe, payload({
+      operation: "Buteco Xeriffe",
+      type: "xeriffe",
+      pipeline: "festa_xeriffe",
+      customerName: "Interesse Xeriffe pelo site Insano",
+      phone: "",
+      notes: "Cliente clicou em Conhecer o Xeriffe.",
+      message: "Conhecer o Xeriffe"
+    }));
+    render(body);
+    if (body.whatsappUrl) openExternalWhatsApp(body.whatsappUrl);
+  });
+
+  document.querySelector("[data-sambah-insano='whatsapp']").addEventListener("click", async () => {
+    const body = await post(endpoints.whatsapp, payload({
+      operation: "Insano",
+      type: "whatsapp",
+      pipeline: "atendimento_whatsapp",
+      customerName: "Contato WhatsApp pelo site Insano",
+      phone: "",
+      notes: "Cliente clicou no botao WhatsApp do site.",
+      message: "Quero falar pelo WhatsApp"
+    }));
+    render(body);
+    if (body.whatsappUrl) openExternalWhatsApp(body.whatsappUrl);
+  });
+
+  document.querySelector("[data-sambah-insano-form='foodtruck']").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const data = formData(event.currentTarget);
+    const body = await post(endpoints.foodtruck, payload({
+      operation: "Insano",
+      type: "food_truck",
+      pipeline: "food_truck_evento",
+      customerName: data.customerName,
+      nome: data.customerName,
+      phone: data.phone,
+      whatsapp: data.phone,
+      data: data.data,
+      local: data.local,
+      people: data.people,
+      quantidade_pessoas: data.people,
+      notes: data.notes,
+      observacoes: data.notes,
+      message: data.notes
+    }));
+    render(body);
+  });
+
+  document.querySelector("[data-sambah-insano-form='empresa']").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const data = formData(event.currentTarget);
+    const body = await post(endpoints.empresa, payload({
+      operation: "Insano",
+      type: "empresa",
+      pipeline: "orcamento_corporativo",
+      customerName: data.customerName,
+      nome: data.customerName,
+      empresa: data.empresa,
+      email: data.email,
+      phone: data.phone,
+      whatsapp: data.phone,
+      data: data.data,
+      people: data.people,
+      quantidade_pessoas: data.people,
+      tipo_evento: "Evento corporativo",
+      notes: data.notes,
+      observacoes: data.notes,
+      message: data.notes
+    }));
+    render(body);
+  });
+
+  async function post(path, body) {
+    const response = await fetch(`${BASE_API}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    return response.json();
+  }
+
+  function payload(data) {
+    return {
+      ...data,
+      source: SITE_SOURCE,
+      channel: "site",
+      page: location.pathname,
+      campaign: param("utm_campaign"),
+      utm_source: param("utm_source"),
+      utm_medium: param("utm_medium"),
+      utm_campaign: param("utm_campaign"),
+      utm_content: param("utm_content"),
+      utm_term: param("utm_term")
+    };
+  }
+
+  function formData(form) {
+    return Object.fromEntries(new FormData(form).entries());
+  }
+
+  function param(name) {
+    return new URLSearchParams(location.search).get(name) || "";
+  }
+
+  function openExternalWhatsApp(url) {
+    const shell = window.electron?.shell || window.electronAPI?.shell || window.SamBahElectron?.shell;
+    if (shell?.openExternal) return shell.openExternal(url);
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  function render(body) {
+    result.innerHTML = `${body.ok ? "Enviado" : "Erro"} | id: ${body.id || ""} | pipeline: ${body.pipeline || ""}<br>${body.whatsappUrl ? `<a href="${body.whatsappUrl}" target="_blank" rel="noopener,noreferrer">Abrir WhatsApp</a>` : ""}`;
+  }
+})();
+</script>

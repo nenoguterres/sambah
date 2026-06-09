@@ -1,0 +1,10 @@
+node_modules/
+coverage/
+.env
+*.log
+tmp/
+data/
+dist/
+sambah-home-*.png
+System.Object[]
+System.Object[[]]

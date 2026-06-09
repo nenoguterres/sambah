@@ -1,0 +1,159 @@
+﻿<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Teste Integracao Insano + SamBah</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 860px; margin: 24px auto; padding: 0 16px; }
+    section, form { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin: 12px 0; display: grid; gap: 8px; }
+    input, textarea, button { padding: 10px; font: inherit; }
+    button { cursor: pointer; }
+    pre { background: #111; color: #eee; padding: 12px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h1>Teste Integracao Insano + SamBah</h1>
+  <label>BASE_API configuravel</label>
+  <input id="baseApi" value="http://localhost:3000">
+
+  <section>
+    <h2>Lead / Conhecer Xeriffe</h2>
+    <button data-test="lead">Enviar lead Xeriffe</button>
+  </section>
+
+  <section>
+    <h2>Pedido</h2>
+    <button data-test="pedido">Enviar pedido rapido</button>
+  </section>
+
+  <form data-test-form="foodtruck">
+    <h2>Food Truck</h2>
+    <input name="customerName" value="Teste Food Truck Site Real">
+    <input name="phone" value="51999990001">
+    <input name="people" value="80">
+    <textarea name="notes">Teste local de food truck</textarea>
+    <button type="submit">Enviar food truck</button>
+  </form>
+
+  <form data-test-form="empresa">
+    <h2>Evento Corporativo</h2>
+    <input name="customerName" value="Teste Corporativo Site Real">
+    <input name="phone" value="51999990002">
+    <input name="people" value="120">
+    <textarea name="notes">Teste local de evento corporativo</textarea>
+    <button type="submit">Enviar corporativo</button>
+  </form>
+
+  <section>
+    <h2>WhatsApp</h2>
+    <button data-test="whatsapp">Registrar WhatsApp</button>
+  </section>
+
+  <pre id="output">Pronto para testar.</pre>
+
+<script>
+(() => {
+  const SOURCE = "insanofoodtruck.com.br";
+  const output = document.querySelector("#output");
+  const baseInput = document.querySelector("#baseApi");
+
+  document.querySelector("[data-test='lead']").addEventListener("click", () => send("/api/site/lead", payload({
+    operation: "Buteco Xeriffe",
+    type: "xeriffe",
+    pipeline: "festa_xeriffe",
+    customerName: "Teste Lead Xeriffe Site Real",
+    phone: "51999990003",
+    notes: "Teste local lead Xeriffe",
+    message: "Conhecer o Xeriffe"
+  })));
+
+  document.querySelector("[data-test='pedido']").addEventListener("click", () => send("/api/site/precomanda", payload({
+    operation: "Insano",
+    type: "pedido",
+    pipeline: "pedido_rapido",
+    customerName: "Teste Pedido Site Real",
+    phone: "51999990004",
+    notes: "Teste local pedido",
+    items: [{ name: "Hamburgueria", quantity: 1 }],
+    customer: { name: "Teste Pedido Site Real", phone: "51999990004", serviceType: "delivery", paymentMethod: "Pix" },
+    status: "novo"
+  })));
+
+  document.querySelector("[data-test='whatsapp']").addEventListener("click", () => send("/api/site/whatsapp", payload({
+    operation: "Insano",
+    type: "whatsapp",
+    pipeline: "atendimento_whatsapp",
+    customerName: "Teste WhatsApp Site Real",
+    phone: "51999990005",
+    notes: "Teste local WhatsApp",
+    message: "Quero falar pelo WhatsApp"
+  }), true));
+
+  document.querySelector("[data-test-form='foodtruck']").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+    send("/api/site/orcamento-evento", payload({
+      ...data,
+      operation: "Insano",
+      type: "food_truck",
+      pipeline: "food_truck_evento",
+      nome: data.customerName,
+      whatsapp: data.phone,
+      quantidade_pessoas: data.people,
+      notes: data.notes,
+      observacoes: data.notes
+    }));
+  });
+
+  document.querySelector("[data-test-form='empresa']").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+    send("/api/site/insano/evento", payload({
+      ...data,
+      operation: "Insano",
+      type: "empresa",
+      pipeline: "orcamento_corporativo",
+      nome: data.customerName,
+      whatsapp: data.phone,
+      quantidade_pessoas: data.people,
+      notes: data.notes,
+      observacoes: data.notes
+    }));
+  });
+
+  async function send(path, body, openWhatsApp = false) {
+    const BASE_API = baseInput.value.replace(/\/$/, "");
+    output.textContent = "Enviando...";
+    const response = await fetch(`${BASE_API}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    const result = await response.json();
+    output.textContent = JSON.stringify(result, null, 2);
+    if (openWhatsApp && result.whatsappUrl) window.open(result.whatsappUrl, "_blank", "noopener,noreferrer");
+  }
+
+  function payload(data) {
+    return {
+      ...data,
+      source: SOURCE,
+      channel: "site",
+      page: location.pathname,
+      campaign: param("utm_campaign"),
+      utm_source: param("utm_source"),
+      utm_medium: param("utm_medium"),
+      utm_campaign: param("utm_campaign"),
+      utm_content: param("utm_content"),
+      utm_term: param("utm_term")
+    };
+  }
+
+  function param(name) {
+    return new URLSearchParams(location.search).get(name) || "";
+  }
+})();
+</script>
+</body>
+</html>

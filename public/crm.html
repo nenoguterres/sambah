@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SamBah CRM</title>
+    <link rel="icon" href="assets/favicon.png" type="image/png">
+    <link rel="stylesheet" href="crm.css">
+  </head>
+  <body>
+    <header class="crm-header">
+      <a class="brand" href="/">
+        <img src="assets/brand/logo-sambah-oficial.png" alt="SamBah">
+        <span>SamBah CRM</span>
+      </a>
+      <nav aria-label="CRM">
+        <a href="/crm">Resumo</a>
+        <a href="/clientes">Clientes</a>
+        <a href="/leads">Leads</a>
+        <a href="/oportunidades">Oportunidades</a>
+        <a href="/atendimentos">Atendimentos</a>
+        <a href="/eventos">Eventos</a>
+        <a href="/precomandas">Pre-comandas</a>
+      </nav>
+    </header>
+
+    <main class="crm-shell">
+      <section class="crm-hero">
+        <div>
+          <p>SamBah comercial</p>
+          <h1 id="pageTitle">Resumo CRM</h1>
+          <span>O site abre a porta, o WhatsApp continua o atendimento e o CRM guarda o caminho do cliente.</span>
+        </div>
+        <a class="home-link" href="/">Voltar para a home</a>
+      </section>
+
+      <section class="quick-panel">
+        <div>
+          <h2>Registrar atendimento rapido</h2>
+          <p>Use para salvar conversa, pedido, orcamento ou evento antes de seguir no WhatsApp.</p>
+        </div>
+        <form id="quickCrmForm" class="quick-form">
+          <input name="nome" placeholder="Nome" autocomplete="name">
+          <input name="whatsapp" placeholder="WhatsApp" inputmode="tel">
+          <select name="interesse">
+            <option value="pedido">Pedido</option>
+            <option value="food_truck">Food truck</option>
+            <option value="orcamento">Orcamento</option>
+            <option value="festa_confraternizacao">Confraternizacao</option>
+            <option value="falar_com_neno">Falar com Neno</option>
+            <option value="falar_com_kazuko">Falar com Kazuko</option>
+            <option value="outro">Outro</option>
+          </select>
+          <textarea name="message" rows="2" placeholder="Mensagem do cliente"></textarea>
+          <button type="submit">Salvar no CRM</button>
+        </form>
+        <p id="quickResult" class="result-line" role="status"></p>
+      </section>
+
+      <section id="summary" class="summary-grid"></section>
+      <section id="content" class="content-list" aria-live="polite"></section>
+    </main>
+
+    <script src="crm.js"></script>
+  </body>
+</html>

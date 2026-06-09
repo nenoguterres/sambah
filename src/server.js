@@ -1,0 +1,1319 @@
+﻿import { createServer } from "node:http";
+import { readFile } from "node:fs/promises";
+import crypto from "node:crypto";
+import { extname, join, normalize } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { AuditService } from "./auditService.js";
+import { CrmService } from "./crmService.js";
+import { EventScheduleService } from "./eventScheduleService.js";
+import { buildMesaOrder, MesaIntegrationService } from "./mesaIntegrationService.js";
+import { MenuSyncService } from "./menuSyncService.js";
+import { OrderDraftService } from "./orderDraftService.js";
+import { OrderTrackingService } from "./orderTrackingService.js";
+import { SambahConversationService } from "./sambahConversationService.js";
+import { getPublicConfig, getRuntimeConfig, isAllowedCorsOrigin } from "./config.js";
+
+const publicDir = fileURLToPath(new URL("../public/", import.meta.url));
+const runtimeConfig = getRuntimeConfig();
+const dataFile = (name) => join(runtimeConfig.dataDir, name);
+const audit = new AuditService({ filePath: dataFile("audit-logs.json") });
+const mesa = new MesaIntegrationService({ queueFile: dataFile("mesa-queue.json") });
+const menu = new MenuSyncService({ cacheFile: dataFile("menu-cache.json") });
+const conversation = new SambahConversationService({ scriptsFile: dataFile("sambah-scripts.json") });
+const drafts = new OrderDraftService({ draftsFile: dataFile("order-drafts.json"), rulesFile: dataFile("sambah-menu-rules.json") });
+const events = new EventScheduleService({ leadsFile: dataFile("event-leads.json"), servicesFile: dataFile("insano-services.json") });
+const tracking = new OrderTrackingService({ filePath: dataFile("order-tracking.json") });
+const crm = new CrmService({
+  files: {
+    clientes: dataFile("clientes.json"),
+    leads: dataFile("leads.json"),
+    atendimentos: dataFile("atendimentos.json"),
+    eventos: dataFile("eventos.json"),
+    precomandas: dataFile("precomandas.json")
+  },
+  whatsappNumber: runtimeConfig.whatsappNumber
+});
+
+const MIME_TYPES = {
+  ".html": "text/html; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".js": "application/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".webp": "image/webp",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".ico": "image/x-icon"
+};
+
+export function createApp({
+  auditService = audit,
+  mesaService = mesa,
+  menuService = menu,
+  conversationService = conversation,
+  draftService = drafts,
+  eventService = events,
+  trackingService = tracking,
+  crmService = crm
+} = {}) {
+  return createServer(async (req, res) => {
+    try {
+      const url = new URL(req.url, "http://localhost");
+
+      const requestCorsHeaders = corsHeaders(req.headers.origin);
+      for (const [header, value] of Object.entries(requestCorsHeaders)) {
+        res.setHeader(header, value);
+      }
+
+      if (req.method === "OPTIONS") {
+        res.writeHead(204, requestCorsHeaders);
+        return res.end();
+      }
+
+      if (req.method === "GET" && url.pathname === "/health") {
+        return sendJson(res, 200, { ok: true, service: "sambha-automacao-whats" });
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/config") {
+        return sendJson(res, 200, getPublicConfig());
+      }
+
+      if (req.method === "GET" && ["/", "/pedir", "/eventos", "/empresas", "/xeriffe", "/whatsapp"].includes(url.pathname)) {
+        return serveStatic(res, "portal.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/sambah") {
+        return serveStatic(res, "site.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/oportunidades") {
+        return serveStatic(res, "oportunidades.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/admin") {
+        return serveStatic(res, "admin.html");
+      }
+
+      if (req.method === "GET" && ["/crm", "/clientes", "/leads", "/atendimentos", "/eventos", "/precomandas"].includes(url.pathname)) {
+        return serveStatic(res, "crm.html");
+      }
+
+      if (
+        req.method === "GET"
+        && (
+          url.pathname === "/admin/qrcodes"
+          || url.pathname === "/garcom"
+          || url.pathname === "/cozinha"
+          || url.pathname === "/evento/insano"
+          || /^\/cardapio\/(insano|xeriffe)$/.test(url.pathname)
+          || /^\/mesa\/(insano|xeriffe)\/\d+$/.test(url.pathname)
+        )
+      ) {
+        return serveStatic(res, "platform.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/conteudo") {
+        return serveStatic(res, "conteudo.html");
+      }
+
+      if (req.method === "GET" && ["/site.css", "/site.js", "/crm.css", "/crm.js", "/conteudo.css", "/platform.css", "/platform.js", "/oportunidades.css", "/oportunidades.js", "/portal.css", "/portal.js"].includes(url.pathname)) {
+        return serveStatic(res, url.pathname.slice(1));
+      }
+
+      if (req.method === "GET" && url.pathname.startsWith("/assets/")) {
+        return serveStatic(res, url.pathname.slice(1));
+      }
+
+      if (req.method === "GET" && url.pathname.startsWith("/admin/assets/")) {
+        return serveStatic(res, url.pathname.replace("/admin/assets/", ""));
+      }
+
+      if (req.method === "GET" && url.pathname === "/admin/audit/stats") {
+        return sendJson(res, 200, await auditService.stats());
+      }
+
+      if (req.method === "GET" && url.pathname === "/admin/audit/logs") {
+        return sendJson(res, 200, await auditService.listLogs({
+          limit: url.searchParams.get("limit"),
+          offset: url.searchParams.get("offset"),
+          type: url.searchParams.get("type"),
+          status: url.searchParams.get("status")
+        }));
+      }
+
+      if (req.method === "GET" && url.pathname === "/admin/mesa/status") {
+        const [health, queue] = await Promise.all([
+          mesaService.checkMesaHealth(),
+          mesaService.queueSnapshot({ limit: 10 })
+        ]);
+        return sendJson(res, 200, { ...health, queue });
+      }
+
+      if (req.method === "GET" && url.pathname === "/admin/mesa/queue") {
+        return sendJson(res, 200, await mesaService.queueSnapshot({
+          limit: url.searchParams.get("limit")
+        }));
+      }
+
+      if (req.method === "GET" && url.pathname === "/admin/orders/tracking") {
+        return sendJson(res, 200, await trackingService.list({
+          limit: url.searchParams.get("limit")
+        }));
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/order-tracking") {
+        return sendJson(res, 200, await trackingService.list({
+          limit: url.searchParams.get("limit")
+        }));
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/orders/tracking/refresh") {
+        return sendJson(res, 200, await trackingService.refreshStatuses({
+          mesaService,
+          limit: url.searchParams.get("limit")
+        }));
+      }
+
+      const markWhatsappMatch = url.pathname.match(/^\/api\/orders\/tracking\/([^/]+)\/mark-whatsapp-sent$/);
+      if (req.method === "POST" && markWhatsappMatch) {
+        const result = await trackingService.markWhatsappSent(decodeURIComponent(markWhatsappMatch[1]));
+        return sendJson(res, result.ok ? 200 : 404, result);
+      }
+
+      if (req.method === "POST" && url.pathname === "/admin/mesa/retry") {
+        const result = await mesaService.retryPendingOrders();
+        await auditService.record({
+          type: "mesa_retry",
+          status: result.failed ? "warning" : "success",
+          source: "mesa",
+          message: "Reenvio de pedidos pendentes ao Mesa",
+          context: { attempted: result.attempted, accepted: result.accepted, failed: result.failed }
+        });
+        return sendJson(res, 200, result);
+      }
+
+      if (req.method === "POST" && url.pathname === "/admin/mesa/send-test-order") {
+        const testOrder = buildMesaOrder({
+          eventId: `test-${Date.now()}`,
+          name: "Cliente Teste",
+          phone: "11999990000",
+          items: [{ productId: "kachurrasco", qty: 1, addons: [], serveMode: "Levar", note: "Pedido teste samBah!" }],
+          notes: "Pedido teste de integraÃ§Ã£o Mesa",
+          total: null
+        });
+        const entry = await mesaService.enqueueOrder(testOrder);
+        const result = await mesaService.sendOrderToMesa(entry);
+        await auditService.record({
+          type: "mesa_test_order",
+          status: result.ok ? "success" : "warning",
+          source: "mesa",
+          message: "Pedido teste enviado ao fluxo Mesa",
+          context: { queueId: entry.id, mesaStatus: result.ok ? "accepted" : "pending" }
+        });
+        return sendJson(res, 202, result);
+      }
+
+      if (req.method === "GET" && url.pathname === "/admin/menu/status") {
+        return sendJson(res, 200, await menuService.status());
+      }
+
+      if (req.method === "POST" && url.pathname === "/admin/menu/sync") {
+        const result = await menuService.syncMenu();
+        await auditService.record({
+          type: "menu_sync",
+          status: "success",
+          source: "mesa",
+          message: "Cardapio sincronizado do Mesa",
+          context: { totalItems: result.items.length, updatedAt: result.updatedAt }
+        });
+        return sendJson(res, 200, result);
+      }
+
+      if (req.method === "GET" && url.pathname === "/admin/menu/cache") {
+        return sendJson(res, 200, await menuService.cacheSnapshot());
+      }
+
+      if (req.method === "GET" && url.pathname === "/admin/orders/review") {
+        return sendJson(res, 200, await mesaService.reviewOrders({
+          limit: url.searchParams.get("limit")
+        }));
+      }
+
+      if (req.method === "POST" && url.pathname === "/admin/orders/review/cancel") {
+        const body = await readJson(req);
+        const result = await mesaService.cancelReviewOrder(body.id);
+        if (!result.ok) {
+          return sendJson(res, result.error === "order_not_found" ? 404 : 409, result);
+        }
+        await auditService.record({
+          type: "review_order_canceled",
+          status: "info",
+          source: "admin",
+          message: "Pedido em revisao cancelado pelo operador",
+          context: { queueId: body.id },
+          dedupeKey: `review-cancel:${body.id}`
+        });
+        return sendJson(res, 200, result);
+      }
+
+      if (req.method === "GET" && url.pathname === "/admin/orders/drafts") {
+        return sendJson(res, 200, await draftService.listDrafts({
+          limit: url.searchParams.get("limit")
+        }));
+      }
+
+      if (req.method === "GET" && url.pathname === "/admin/events/leads") {
+        return sendJson(res, 200, await eventService.listLeads({
+          limit: url.searchParams.get("limit"),
+          status: url.searchParams.get("status")
+        }));
+      }
+
+      if (req.method === "POST" && url.pathname === "/admin/events/leads") {
+        const body = await readJson(req);
+        const result = await eventService.createLead({ ...body, source: body.source || "admin / samBah!" });
+        await auditService.record({
+          type: "event_lead_created",
+          status: "info",
+          source: "agenda_insano",
+          message: "Lead criado na Agenda Insano",
+          context: { leadId: result.lead.id, duplicated: result.duplicated },
+          dedupeKey: result.lead.id
+        });
+        return sendJson(res, 201, result);
+      }
+
+      if (req.method === "POST" && url.pathname === "/admin/events/leads/update") {
+        const body = await readJson(req);
+        const result = await eventService.updateLead(body);
+        if (!result.ok) return sendJson(res, result.error === "lead_not_found" ? 404 : 409, result);
+        await auditService.record({
+          type: "event_lead_updated",
+          status: "info",
+          source: "agenda_insano",
+          message: "Lead atualizado na Agenda Insano",
+          context: { leadId: body.id, status: result.lead.status },
+          dedupeKey: `event-update:${body.id}:${result.lead.updatedAt}`
+        });
+        return sendJson(res, 200, result);
+      }
+
+      if (req.method === "POST" && url.pathname === "/admin/events/leads/cancel") {
+        const body = await readJson(req);
+        const result = await eventService.cancelLead(body);
+        if (!result.ok) return sendJson(res, result.error === "lead_not_found" ? 404 : 409, result);
+        await auditService.record({
+          type: "event_lead_canceled",
+          status: "info",
+          source: "agenda_insano",
+          message: "Lead cancelado na Agenda Insano",
+          context: { leadId: body.id },
+          dedupeKey: `event-cancel:${body.id}`
+        });
+        return sendJson(res, 200, result);
+      }
+
+      if (req.method === "GET" && url.pathname === "/admin/events/services") {
+        return sendJson(res, 200, await eventService.services());
+      }
+
+      if (req.method === "GET" && url.pathname === "/admin/events/stats") {
+        return sendJson(res, 200, await eventService.stats());
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/crm/resumo") {
+        return sendJson(res, 200, await crmService.resumo());
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/oportunidades") {
+        return sendJson(res, 200, await crmService.listarOportunidades());
+      }
+
+      const oportunidadeMatch = url.pathname.match(/^\/api\/oportunidades\/([^/]+)\/(retornado|arquivar|nota)$/);
+      if (req.method === "POST" && oportunidadeMatch) {
+        const id = decodeURIComponent(oportunidadeMatch[1]);
+        const action = oportunidadeMatch[2];
+        const body = action === "nota" ? await readJson(req, { requireBody: false }) : {};
+        const result = action === "retornado"
+          ? await crmService.marcarOportunidadeRetornada(id)
+          : action === "arquivar"
+            ? await crmService.arquivarOportunidade(id)
+            : await crmService.anotarOportunidade(id, body.nota || body.note || body.text || "");
+        return sendJson(res, result.ok ? 200 : 404, result);
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/crm/atendimento") {
+        const body = await readJson(req, { requireBody: true });
+        const result = await crmService.registrarAtendimentoComercial(body);
+        await safeAuditRecord(auditService, {
+          type: "crm_atendimento_created",
+          status: "info",
+          source: "crm",
+          message: "Atendimento comercial salvo no CRM SamBah",
+          context: { clienteId: result.cliente?.id, leadId: result.lead?.id, interesse: result.interesse },
+          dedupeKey: result.atendimento?.id
+        });
+        return sendJson(res, 201, result);
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/site/lead") {
+        const body = await readJson(req, { requireBody: true });
+        const result = await createSiteLead(crmService, body);
+        await safeAuditRecord(auditService, {
+          type: "site_lead_created",
+          status: "info",
+          source: "site_api",
+          message: "Lead externo salvo no CRM SamBah",
+          context: { id: result.id, operation: result.operation, pipeline: result.pipeline },
+          dedupeKey: result.id
+        });
+        return sendJson(res, 201, result);
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/site/insano/lead") {
+        const body = await readJson(req, { requireBody: true });
+        const result = await createSiteLead(crmService, insanoSitePayload(body, { pipeline: body.pipeline || "food_truck_evento", tipo: "lead" }));
+        await safeAuditRecord(auditService, {
+          type: "insano_site_lead_created",
+          status: "info",
+          source: "insanofoodtruck.com.br",
+          message: "Lead do site Insano salvo no CRM SamBah",
+          context: { id: result.id, operation: result.operation, pipeline: result.pipeline },
+          dedupeKey: result.id
+        });
+        return sendJson(res, 201, result);
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/site/orcamento-evento") {
+        const body = await readJson(req, { requireBody: true });
+        const result = await createSiteEventQuote(crmService, body);
+        await safeAuditRecord(auditService, {
+          type: "site_event_quote_created",
+          status: "info",
+          source: "site_api",
+          message: "Orcamento de evento externo salvo no CRM SamBah",
+          context: { id: result.id, operation: result.operation, pipeline: result.pipeline },
+          dedupeKey: result.id
+        });
+        return sendJson(res, 201, result);
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/site/insano/evento") {
+        const body = await readJson(req, { requireBody: true });
+        const result = await createSiteEventQuote(crmService, insanoSitePayload(body, { pipeline: "orcamento_corporativo", tipo: "evento" }));
+        await safeAuditRecord(auditService, {
+          type: "insano_site_event_created",
+          status: "info",
+          source: "insanofoodtruck.com.br",
+          message: "Orcamento de evento Insano salvo no CRM SamBah",
+          context: { id: result.id, operation: result.operation, pipeline: result.pipeline },
+          dedupeKey: result.id
+        });
+        return sendJson(res, 201, result);
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/site/pedido-rapido") {
+        const body = await readJson(req, { requireBody: true });
+        const result = await createSiteQuickOrder(crmService, body);
+        return sendJson(res, 201, result);
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/site/insano/pedido") {
+        const body = await readJson(req, { requireBody: true });
+        const result = await createSiteQuickOrder(crmService, insanoSitePayload(body, { pipeline: "pedido_rapido", tipo: "pedido" }));
+        return sendJson(res, 201, result);
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/site/precomanda") {
+        const body = await readJson(req, { requireBody: true });
+        const result = await createSitePrecomanda(crmService, body);
+        return sendJson(res, 201, result);
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/site/whatsapp") {
+        const body = await readJson(req, { requireBody: false });
+        const result = await createSiteWhatsapp(crmService, body);
+        await safeAuditRecord(auditService, {
+          type: "site_whatsapp_requested",
+          status: "info",
+          source: "site_api",
+          message: "WhatsApp externo solicitado",
+          context: { operation: result.operation, pipeline: result.pipeline },
+          dedupeKey: body.eventId || body.id
+        });
+        return sendJson(res, 201, result);
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/site/insano/whatsapp") {
+        const body = await readJson(req, { requireBody: false });
+        const result = await createSiteWhatsapp(crmService, insanoSitePayload(body, { pipeline: "atendimento_humano", tipo: "whatsapp" }));
+        await safeAuditRecord(auditService, {
+          type: "insano_site_whatsapp_requested",
+          status: "info",
+          source: "insanofoodtruck.com.br",
+          message: "WhatsApp externo do site Insano solicitado",
+          context: { id: result.id, operation: result.operation, pipeline: result.pipeline },
+          dedupeKey: body.eventId || body.id || result.id
+        });
+        return sendJson(res, 201, result);
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/clientes") {
+        return sendJson(res, 200, await crmService.listarClientes());
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/clientes") {
+        const body = await readJson(req, { requireBody: true });
+        return sendJson(res, 201, await crmService.salvarCliente(body));
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/leads") {
+        return sendJson(res, 200, await crmService.listarLeads());
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/leads") {
+        const body = await readJson(req, { requireBody: true });
+        return sendJson(res, 201, await crmService.salvarLead(body));
+      }
+
+      const leadConvertMatch = url.pathname.match(/^\/api\/crm\/leads\/([^/]+)\/convert-event$/);
+      if (req.method === "POST" && leadConvertMatch) {
+        const result = await crmService.converterLeadEmEvento(decodeURIComponent(leadConvertMatch[1]));
+        await safeAuditRecord(auditService, {
+          type: "crm_lead_converted_event",
+          status: result.ok ? "info" : "warning",
+          source: "crm",
+          message: result.ok ? "Lead convertido em evento no CRM SamBah" : "Falha ao converter lead em evento",
+          context: { leadId: decodeURIComponent(leadConvertMatch[1]), eventId: result.event?.id, duplicated: result.duplicated },
+          dedupeKey: result.event?.id || decodeURIComponent(leadConvertMatch[1])
+        });
+        return sendJson(res, result.ok ? 200 : 404, result);
+      }
+
+      const leadActionMatch = url.pathname.match(/^\/api\/crm\/leads\/([^/]+)\/(mark-contacted|mark-quote-sent|mark-won|mark-lost)$/);
+      if (req.method === "POST" && leadActionMatch) {
+        const leadId = decodeURIComponent(leadActionMatch[1]);
+        const action = leadActionMatch[2];
+        const body = ["mark-lost", "mark-won"].includes(action) ? await readJson(req, { requireBody: false }) : {};
+        const result = await handleCrmLeadAction(crmService, leadId, action, body);
+        await safeAuditRecord(auditService, {
+          type: "crm_lead_commercial_action",
+          status: result.ok ? "info" : "warning",
+          source: "crm",
+          message: `Acao comercial ${action} no lead CRM SamBah`,
+          context: { leadId, action, ok: result.ok },
+          dedupeKey: `${leadId}:${action}:${Date.now()}`
+        });
+        return sendJson(res, result.ok ? 200 : 404, result);
+      }
+
+      const leadMatch = url.pathname.match(/^\/api\/leads\/([^/]+)$/);
+      if (req.method === "PATCH" && leadMatch) {
+        const body = await readJson(req, { requireBody: true });
+        const result = await crmService.atualizarLead(decodeURIComponent(leadMatch[1]), body);
+        return sendJson(res, result.ok ? 200 : 404, result);
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/atendimentos") {
+        return sendJson(res, 200, await crmService.listarAtendimentos());
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/atendimentos") {
+        const body = await readJson(req, { requireBody: true });
+        return sendJson(res, 201, await crmService.salvarAtendimento(body));
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/eventos") {
+        return sendJson(res, 200, await crmService.listarEventos());
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/eventos") {
+        const body = await readJson(req, { requireBody: true });
+        return sendJson(res, 201, await crmService.salvarEvento(body));
+      }
+
+      const eventoMatch = url.pathname.match(/^\/api\/eventos\/([^/]+)$/);
+      if (req.method === "PATCH" && eventoMatch) {
+        const body = await readJson(req, { requireBody: true });
+        const result = await crmService.atualizarEvento(decodeURIComponent(eventoMatch[1]), body);
+        return sendJson(res, result.ok ? 200 : 404, result);
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/precomandas") {
+        return sendJson(res, 200, await crmService.listarPrecomandas());
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/precomandas") {
+        const body = await readJson(req, { requireBody: true });
+        return sendJson(res, 201, await crmService.salvarPrecomanda(body));
+      }
+
+      const precomandaMatch = url.pathname.match(/^\/api\/precomandas\/([^/]+)$/);
+      if (req.method === "PATCH" && precomandaMatch) {
+        const body = await readJson(req, { requireBody: true });
+        const result = await crmService.atualizarPrecomanda(decodeURIComponent(precomandaMatch[1]), body);
+        return sendJson(res, result.ok ? 200 : 404, result);
+      }
+
+      if (req.method === "POST" && url.pathname === "/admin/orders/drafts/test-parse") {
+        const body = await readJson(req);
+        const menuCache = await menuService.cacheSnapshot();
+        const draft = await draftService.createDraft({
+          text: body.text || "",
+          customer: body.customer || {},
+          source: body.source || "WhatsApp / samBah!",
+          menu: menuCache
+        });
+        await auditService.record({
+          type: "order_draft_created",
+          status: draft.status === "needs_review" ? "warning" : "info",
+          source: "draft",
+          message: "Rascunho de pedido criado para conferencia",
+          context: { draftId: draft.id, intent: draft.intent, confidence: draft.confidence, status: draft.status },
+          dedupeKey: draft.id
+        });
+        return sendJson(res, 200, { ok: true, draft });
+      }
+
+      if (req.method === "POST" && url.pathname === "/admin/orders/drafts/confirm") {
+        const body = await readJson(req);
+        const menuCache = await menuService.cacheSnapshot();
+        const result = await draftService.confirmDraft(body.id, menuCache);
+        if (!result.ok) {
+          return sendJson(res, result.error === "draft_not_found" ? 404 : 409, result);
+        }
+        const mesaOrder = buildMesaOrder(result.order);
+        const queueEntry = await mesaService.enqueueOrder(mesaOrder);
+        const mesaResult = await mesaService.sendOrderToMesa(queueEntry);
+        await auditService.record({
+          type: "order_draft_confirmed",
+          status: mesaResult.ok ? "success" : "warning",
+          source: "draft",
+          message: mesaResult.ok ? "Rascunho confirmado e enviado ao Mesa" : "Rascunho confirmado e mantido na fila Mesa",
+          context: { draftId: body.id, queueId: queueEntry.id, mesaStatus: mesaResult.ok ? "accepted" : "pending" },
+          dedupeKey: body.id
+        });
+        const scripts = await conversationService.loadScripts();
+        return sendJson(res, 202, {
+          ok: true,
+          draft: result.draft,
+          responseText: mesaResult.ok ? scripts.pedido_enviado : scripts.mesa_fora_do_ar,
+          mesa: { status: mesaResult.ok ? "accepted" : "pending", queueId: queueEntry.id }
+        });
+      }
+
+      if (req.method === "POST" && url.pathname === "/admin/orders/drafts/cancel") {
+        const body = await readJson(req);
+        const result = await draftService.cancelDraft(body.id);
+        if (!result.ok) {
+          return sendJson(res, result.error === "draft_not_found" ? 404 : 409, result);
+        }
+        await auditService.record({
+          type: "order_draft_canceled",
+          status: "info",
+          source: "draft",
+          message: "Rascunho de pedido cancelado",
+          context: { draftId: body.id },
+          dedupeKey: `draft-cancel:${body.id}`
+        });
+        return sendJson(res, 200, result);
+      }
+
+      if (req.method === "POST" && ["/webhook/whatsapp", "/webhook/site"].includes(url.pathname)) {
+        return handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, draftService, eventService, trackingService, crmService);
+      }
+
+      return sendJson(res, 404, { error: "not_found" });
+    } catch (error) {
+      await safeAuditRecord(auditService, {
+        type: "system_error",
+        status: "error",
+        source: "http",
+        message: "Unhandled HTTP error",
+        error,
+        dedupeKey: `${req.method}:${req.url}`
+      });
+      return sendJson(res, 500, { error: "internal_error" });
+    }
+  });
+}
+
+async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, draftService, eventService, trackingService, crmService) {
+  let body = {};
+  try {
+    body = await readJson(req, { requireBody: true });
+    await safeAuditRecord(auditService, {
+      type: "webhook_received",
+      status: "info",
+      source: body.source === "site" ? "site" : "whatsapp",
+      message: body.source === "site" ? "Webhook site recebido" : "Webhook WhatsApp recebido",
+      context: {
+        eventId: body.eventId,
+        phone: body.phone || body.from,
+        messageType: body.messageType || body.type
+      },
+      dedupeKey: body.eventId
+    });
+
+    if (body.triggerError) {
+      throw new Error("Simulated processing failure");
+    }
+
+    if (body.type === "pre_order") {
+      const result = await handlePreOrderWebhook(body, { auditService, mesaService, trackingService, crmService });
+      return sendJson(res, 202, result);
+    }
+
+    const crmResult = await safeCrmRecord(crmService, {
+      ...body,
+      canal: req.url?.includes("/site") ? "site" : "whatsapp",
+      origem: body.source || (req.url?.includes("/site") ? "site" : "whatsapp")
+    });
+
+    const menuCache = await menuService.cacheSnapshot();
+    const classification = await conversationService.classify(body, menuCache);
+    await safeAuditRecord(auditService, {
+      type: "conversation_classified",
+      status: classification.intent === "needs_review" ? "warning" : "info",
+      source: classification.channel || "whatsapp",
+      message: `Atendimento classificado como ${classification.intent}`,
+      context: {
+        eventId: body.eventId,
+        intent: classification.intent,
+        route: classification.route,
+        reason: classification.reason,
+        assignee: classification.assignee
+      },
+      dedupeKey: body.eventId ? `classify:${body.eventId}` : undefined
+    });
+
+    if (["event_lead", "reservation"].includes(classification.intent)) {
+      const eventResult = await eventService.createLead({
+        ...body,
+        classification,
+        source: body.source === "site" ? "site / samBah!" : "whatsapp / samBah!"
+      });
+      await safeAuditRecord(auditService, {
+        type: "event_lead_created",
+        status: "info",
+        source: "agenda_insano",
+        message: "Atendimento registrado na Agenda Insano",
+        context: {
+          eventId: body.eventId,
+          leadId: eventResult.lead.id,
+          intent: classification.intent,
+          route: "agenda_insano"
+        },
+        dedupeKey: body.eventId ? `event:${body.eventId}` : eventResult.lead.id
+      });
+      return sendJson(res, 202, {
+        ok: true,
+        intent: classification.intent,
+        route: "agenda_insano",
+        lead: eventResult.lead,
+        crm: summarizeCrmResult(crmResult),
+        responseText: classification.responseText
+      });
+    }
+
+    if (!["immediate_order", "needs_review"].includes(classification.intent)) {
+      return sendJson(res, 202, {
+        ok: true,
+        intent: classification.intent,
+        route: classification.route,
+        assignee: classification.assignee || null,
+        crm: summarizeCrmResult(crmResult),
+        responseText: classification.responseText
+      });
+    }
+
+    const text = body.message || body.text || body.body || body.order?.notes || body.notes || "";
+    if (!body.confirmed) {
+      const draft = await draftService.createDraft({
+        text,
+        customer: body.customer || { name: body.name || "", phone: body.phone || body.from || "" },
+        source: body.source === "site" ? "Site / samBah!" : "WhatsApp / samBah!",
+        menu: menuCache
+      });
+      await safeAuditRecord(auditService, {
+        type: "order_draft_created",
+        status: draft.status === "needs_review" ? "warning" : "info",
+        source: "conversation",
+        message: "Mensagem convertida em rascunho de pedido",
+        context: { draftId: draft.id, eventId: body.eventId, status: draft.status, confidence: draft.confidence },
+        dedupeKey: body.eventId ? `draft:${body.eventId}` : draft.id
+      });
+      const scripts = await conversationService.loadScripts();
+      const reviewText = draft.questions?.[0]?.reason === "productId_invalido"
+        ? scripts.produto_nao_encontrado
+        : scripts.pedido_confuso;
+      const draftText = scripts.rascunho_entendido.replace("{orderSummary}", formatDraftSummary(draft));
+      return sendJson(res, 202, {
+        ok: true,
+        intent: draft.intent,
+        draft,
+        crm: summarizeCrmResult(crmResult),
+        responseText: draft.status === "needs_review" ? reviewText : draftText
+      });
+    }
+
+    const operationalPayload = classification.enrichedPayload || body;
+    const mesaOrder = buildMesaOrder(operationalPayload);
+    const queueEntry = await mesaService.enqueueOrder(mesaOrder);
+    await safeAuditRecord(auditService, {
+      type: "mesa_order_queued",
+      status: "info",
+      source: "mesa",
+      message: "Pedido WhatsApp salvo na fila Mesa",
+      context: { queueId: queueEntry.id, eventId: mesaOrder.externalId },
+      dedupeKey: mesaOrder.externalId
+    });
+
+    if (classification.intent === "needs_review") {
+      const review = {
+        ok: false,
+        reason: classification.reason || "needs_review",
+        message: classification.responseText || "Pedido precisa de revisao manual",
+        problems: [{ reason: classification.reason || "needs_review", text: classification.text }]
+      };
+      await mesaService.markNeedsReview(queueEntry, review);
+      await safeAuditRecord(auditService, {
+        type: "conversation_needs_review",
+        status: "warning",
+        source: "conversation",
+        message: review.message,
+        context: { queueId: queueEntry.id, eventId: mesaOrder.externalId, reason: review.reason },
+        dedupeKey: mesaOrder.externalId
+      });
+      return sendJson(res, 202, {
+        ok: true,
+        intent: classification.intent,
+        mesa: { status: "needs_review", queueId: queueEntry.id },
+        crm: summarizeCrmResult(crmResult),
+        review
+      });
+    }
+
+    const validation = await menuService.validateOrder(mesaOrder);
+    if (!validation.ok) {
+      await mesaService.markNeedsReview(queueEntry, validation);
+      await safeAuditRecord(auditService, {
+        type: "menu_validation_review",
+        status: "warning",
+        source: "menu",
+        message: validation.message,
+        context: { queueId: queueEntry.id, eventId: mesaOrder.externalId, reason: validation.reason },
+        dedupeKey: mesaOrder.externalId
+      });
+      return sendJson(res, 202, {
+        ok: true,
+        intent: classification.intent,
+        mesa: { status: "needs_review", queueId: queueEntry.id },
+        review: validation
+      });
+    }
+
+    const mesaResult = await mesaService.sendOrderToMesa(queueEntry);
+    await safeAuditRecord(auditService, {
+      type: mesaResult.ok ? "mesa_order_sent" : "mesa_order_pending",
+      status: mesaResult.ok ? "success" : "warning",
+      source: "mesa",
+      message: mesaResult.ok ? "Pedido encaminhado ao Mesa" : "Mesa indisponivel; pedido mantido na fila",
+      context: { queueId: queueEntry.id, eventId: mesaOrder.externalId },
+      dedupeKey: mesaOrder.externalId
+    });
+
+    await safeAuditRecord(auditService, {
+      type: "webhook_processed",
+      status: "success",
+      source: body.source === "site" ? "site" : "whatsapp",
+      message: body.source === "site" ? "Webhook site processado" : "Webhook WhatsApp processado",
+      context: { eventId: body.eventId, mesaStatus: mesaResult.ok ? "accepted" : "pending" },
+      dedupeKey: body.eventId
+    });
+    return sendJson(res, 202, {
+      ok: true,
+      intent: classification.intent,
+      responseText: mesaResult.ok ? classification.responseText : undefined,
+      mesa: { status: mesaResult.ok ? "accepted" : "pending", queueId: queueEntry.id },
+      crm: summarizeCrmResult(crmResult)
+    });
+  } catch (error) {
+    if (error.statusCode === 400) {
+      await safeAuditRecord(auditService, {
+        type: "webhook_invalid_payload",
+        status: "warning",
+        source: req.url?.includes("/site") ? "site" : "whatsapp",
+        message: error.message,
+        context: { code: error.code },
+        dedupeKey: `${req.url}:${error.code}`
+      });
+      return sendJson(res, 400, { ok: false, error: error.code, message: error.message });
+    }
+
+    const bodyEventId = body.eventId || "unknown";
+    await safeAuditRecord(auditService, {
+      type: "processing_error",
+      status: "error",
+      source: body.source === "site" ? "site" : "whatsapp",
+      message: "Falha operacional ao processar webhook",
+      context: { eventId: bodyEventId },
+      error,
+      dedupeKey: bodyEventId
+    });
+    return sendJson(res, 500, { error: "processing_error" });
+  }
+}
+
+async function handlePreOrderWebhook(body, { auditService, mesaService, trackingService, crmService }) {
+  const validation = validatePreOrderPayload(body);
+  if (!validation.ok) {
+    return {
+      ok: false,
+      type: "pre_order",
+      error: "invalid_pre_order",
+      missing: validation.missing,
+      responseText: "Pra deixar redondo, falta completar os dados da prÃ©-comanda."
+    };
+  }
+
+  const sambahOrderId = body.eventId || body.sambahOrderId || `sambah_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`;
+  const mesaOrder = buildPreOrderMesaOrder(body, sambahOrderId);
+  const queueEntry = await mesaService.enqueueOrder(mesaOrder);
+  const mesaResult = await mesaService.sendOrderToMesa(queueEntry);
+  const mesaOrderId = extractMesaOrderId(mesaResult);
+  const mesaStatus = mesaResult.ok
+    ? mesaResult.mesaResponse?.status || "pending"
+    : "pending_mesa";
+  const lastMessageSent = mesaResult.ok
+    ? "PrÃ©-comanda enviada para a equipe. O SamBah continua contigo pelo WhatsApp."
+    : "O sistema de pedidos estÃ¡ em conferÃªncia. Recebi tua prÃ©-comanda e a equipe vai confirmar pelo WhatsApp.";
+
+  const tracking = await trackingService.createTracking({
+    sambahOrderId,
+    mesaOrderId,
+    operation: body.operation,
+    customerName: body.customer?.name,
+    customerPhone: body.customer?.phone,
+    channel: body.source || "site",
+    serviceType: body.customer?.serviceType,
+    paymentMethod: body.customer?.paymentMethod,
+    lastMesaStatus: mesaStatus,
+    lastWhatsappStatusSent: "pre_order_sent",
+    lastMessageSent,
+    whatsappDeliveryStatus: "wa_link_generated",
+    queueId: mesaResult.entry?.id || queueEntry.id
+  });
+
+  await safeAuditRecord(auditService, {
+    type: mesaResult.ok ? "pre_order_sent_to_mesa" : "pre_order_queued_for_mesa",
+    status: mesaResult.ok ? "success" : "warning",
+    source: "site",
+    message: lastMessageSent,
+    context: { sambahOrderId, mesaOrderId, queueId: queueEntry.id, mesaStatus },
+    dedupeKey: sambahOrderId
+  });
+
+  const crmResult = await safeCrmRecord(crmService, {
+    ...body,
+    type: "pre_order",
+    interesse: "pedido",
+    mesa: {
+      status: mesaResult.ok ? "accepted" : "pending",
+      mesaOrderId,
+      queueId: queueEntry.id
+    }
+  });
+
+  return {
+    ok: true,
+    type: "pre_order",
+    responseText: lastMessageSent,
+    mesa: {
+      status: mesaResult.ok ? "accepted" : "pending",
+      mesaOrderId,
+      queueId: queueEntry.id
+    },
+    crm: summarizeCrmResult(crmResult),
+    tracking
+  };
+}
+
+async function createSiteLead(crmService, body = {}) {
+  const operation = normalizeOperation(body.operation || body.operacao || body.site || body.origem);
+  const pipeline = body.pipeline || (operation === "Buteco Xeriffe" ? "festa_xeriffe" : "food_truck_evento");
+  const tracking = siteTrackingFields(body);
+  const leadResult = await crmService.salvarLead({
+    ...body,
+    ...tracking,
+    nome: body.nome || body.name || body.customerName || body.customer?.name || "",
+    whatsapp: body.whatsapp || body.phone || body.customer?.phone || "",
+    operacao: operation,
+    operation,
+    pipeline,
+    origem: body.source || body.origem || "site_externo",
+    interesse: body.interesse || body.interest || (operation === "Buteco Xeriffe" ? "festa_xeriffe" : "food_truck"),
+    mensagem_original: body.message || body.text || body.observacoes || ""
+  });
+  const whatsappUrl = buildSiteWhatsAppUrl(body, operation);
+  return siteResponse({ id: leadResult.lead.id, pipeline, operation, whatsappUrl, lead: leadResult.lead });
+}
+
+async function createSiteEventQuote(crmService, body = {}) {
+  const operation = normalizeOperation(body.operation || body.operacao || body.site || body.origem);
+  const pipeline = body.pipeline || (operation === "Buteco Xeriffe" ? "festa_xeriffe" : "food_truck_evento");
+  const tracking = siteTrackingFields(body);
+  const atendimento = await crmService.registrarAtendimentoComercial({
+    ...body,
+    ...tracking,
+    nome: body.nome || body.name || body.customerName || body.customer?.name || "",
+    whatsapp: body.whatsapp || body.phone || body.customer?.phone || "",
+    operacao: operation,
+    operation,
+    origem: body.source || body.origem || "site_externo",
+    pipeline,
+    interesse: operation === "Buteco Xeriffe" ? "festa_xeriffe" : "orcamento",
+    status: "orcamento_solicitado",
+    message: body.message || body.text || body.observacoes || "Orcamento de evento solicitado pelo site"
+  });
+  return siteResponse({
+    id: atendimento.lead?.id || atendimento.evento?.id,
+    pipeline,
+    operation,
+    whatsappUrl: atendimento.whatsappUrl || buildSiteWhatsAppUrl(body, operation),
+    lead: atendimento.lead,
+    evento: atendimento.evento
+  });
+}
+
+async function createSiteQuickOrder(crmService, body = {}) {
+  const operation = normalizeOperation(body.operation || body.operacao || body.site || body.origem);
+  const tracking = siteTrackingFields(body);
+  const pipeline = body.pipeline || "pedido_rapido";
+  const result = await crmService.registrarAtendimentoComercial({
+    ...body,
+    ...tracking,
+    nome: body.nome || body.name || body.customerName || body.customer?.name || "",
+    whatsapp: body.whatsapp || body.phone || body.customer?.phone || "",
+    operacao: operation,
+    operation,
+    origem: body.source || body.origem || "site_externo",
+    pipeline,
+    interesse: "pedido",
+    message: body.message || body.text || body.observacoes || formatRequestItems(body.items || body.itens)
+  });
+  return siteResponse({
+    id: result.precomanda?.id || result.atendimento?.id,
+    pipeline,
+    operation,
+    whatsappUrl: result.whatsappUrl || buildSiteWhatsAppUrl(body, operation),
+    precomanda: result.precomanda,
+    atendimento: result.atendimento
+  });
+}
+
+async function createSitePrecomanda(crmService, body = {}) {
+  const operation = normalizeOperation(body.operation || body.operacao || body.site || body.origem);
+  const tracking = siteTrackingFields(body);
+  const pipeline = body.pipeline || "pedido_rapido";
+  const result = await crmService.salvarPrecomanda({
+    ...body,
+    ...tracking,
+    nome: body.nome || body.name || body.customerName || body.customer?.name || "",
+    whatsapp: body.whatsapp || body.phone || body.customer?.phone || "",
+    operacao: operation,
+    operation,
+    origem: body.source || body.origem || "site_externo",
+    pipeline,
+    status: body.status || "novo"
+  });
+  return siteResponse({
+    id: result.precomanda.id,
+    pipeline: result.precomanda.pipeline || pipeline,
+    operation,
+    whatsappUrl: result.whatsappUrl || buildSiteWhatsAppUrl(body, operation),
+    precomanda: result.precomanda,
+    status: result.precomanda.status
+  });
+}
+
+async function createSiteWhatsapp(crmService, body = {}) {
+  const operation = normalizeOperation(body.operation || body.operacao || body.site || body.origem);
+  const tracking = siteTrackingFields(body);
+  const result = await crmService.registrarAtendimentoComercial({
+    ...body,
+    ...tracking,
+    nome: body.nome || body.name || body.customerName || body.customer?.name || "Contato WhatsApp",
+    whatsapp: body.whatsapp || body.phone || body.customer?.phone || "",
+    operacao: operation,
+    operation,
+    origem: body.source || body.origem || "site_whatsapp",
+    interesse: body.interesse || body.contexto || "atendimento_humano",
+    mensagem: body.mensagem || body.message || "Contato solicitado pelo botao WhatsApp do site",
+    pipeline: body.pipeline || "atendimento_humano",
+    status: body.status || "aguardando_atendimento"
+  });
+  return siteResponse({
+    id: result.atendimento?.id || result.lead?.id || body.id || body.eventId || `wa_${Date.now()}`,
+    pipeline: result.pipeline || body.pipeline || "atendimento_humano",
+    operation,
+    whatsappUrl: result.whatsappUrl || buildSiteWhatsAppUrl(body, operation),
+    atendimento: result.atendimento || null,
+    lead: result.lead || null
+  });
+}
+
+function insanoSitePayload(body = {}, overrides = {}) {
+  return {
+    ...body,
+    ...overrides,
+    operation: "Insano",
+    operacao: "Insano",
+    source: "insanofoodtruck.com.br",
+    origem: "insanofoodtruck.com.br",
+    channel: "site",
+    canal: "site",
+    page: body.page || body.pagina || body.referrer || "",
+    campaign: body.campaign || body.utm_campaign || "",
+    utm_source: body.utm_source || "",
+    utm_medium: body.utm_medium || "",
+    utm_campaign: body.utm_campaign || body.campaign || "",
+    utm_content: body.utm_content || "",
+    utm_term: body.utm_term || "",
+    tipo: overrides.tipo || body.tipo || body.type || "lead"
+  };
+}
+
+function siteTrackingFields(body = {}) {
+  const page = body.page || body.pagina || body.referrer || "";
+  const campaign = body.campaign || body.utm_campaign || "";
+  return {
+    source: body.source || body.origem || "site_externo",
+    origem: body.origem || body.source || "site_externo",
+    channel: body.channel || body.canal || "site",
+    canal: body.canal || body.channel || "site",
+    page,
+    campaign,
+    utm_source: body.utm_source || "",
+    utm_medium: body.utm_medium || "",
+    utm_campaign: body.utm_campaign || campaign,
+    utm_content: body.utm_content || "",
+    utm_term: body.utm_term || "",
+    tipo: body.tipo || body.type || ""
+  };
+}
+
+function siteResponse({ id, pipeline, operation, whatsappUrl, status, ...extra }) {
+  return {
+    ok: true,
+    id,
+    pipeline,
+    operation,
+    status: status || "registrado",
+    whatsappUrl,
+    ...extra
+  };
+}
+
+function normalizeOperation(value = "") {
+  const normalized = String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (normalized.includes("xeriffe") || normalized.includes("buteco")) return "Buteco Xeriffe";
+  return "Insano";
+}
+
+function buildSiteWhatsAppUrl(body = {}, operation = "Insano") {
+  const number = getRuntimeConfig().whatsappNumber;
+  const name = body.nome || body.name || body.customer?.name || "";
+  const phone = body.whatsapp || body.phone || body.customer?.phone || "";
+  const text = [
+    "Buenas, SamBah!",
+    `Operacao: ${operation}`,
+    name ? `Nome: ${name}` : "",
+    phone ? `WhatsApp: ${phone}` : "",
+    body.mesa ? `Mesa: ${body.mesa}` : "",
+    body.message || body.text || body.observacoes || body.notes || formatRequestItems(body.items || body.itens)
+  ].filter(Boolean).join("\n");
+  return `https://wa.me/${number}?text=${encodeURIComponent(text)}`;
+}
+
+function formatRequestItems(items = []) {
+  if (!Array.isArray(items) || !items.length) return "";
+  return items.map((item) => `${item.quantity || item.qty || item.quantidade || 1}x ${item.name || item.nome || item.product || item.productId || ""}`).join("; ");
+}
+
+function validatePreOrderPayload(body) {
+  const missing = [];
+  if (!body.customer?.name) missing.push("nome do cliente");
+  if (!body.customer?.phone) missing.push("WhatsApp");
+  if (!body.customer?.serviceType) missing.push("tipo de atendimento");
+  if (!body.customer?.paymentMethod) missing.push("forma de pagamento");
+  if (body.customer?.serviceType === "entrega" && !body.customer?.address) missing.push("endereÃ§o");
+  if (!Array.isArray(body.items) || !body.items.length) missing.push("pelo menos 1 item");
+  return { ok: missing.length === 0, missing };
+}
+
+function buildPreOrderMesaOrder(body, sambahOrderId) {
+  const items = body.items.map((item) => ({
+    quantity: Number(item.quantity) || 1,
+    qty: Number(item.quantity) || 1,
+    name: item.name,
+    product: item.name,
+    note: item.note || ""
+  }));
+  const notes = [
+    `PrÃ©-comanda SamBah - ${body.operation}`,
+    `Tipo: ${body.customer?.serviceType || ""}`,
+    `Pagamento: ${body.customer?.paymentMethod || ""}`,
+    body.customer?.address ? `EndereÃ§o: ${body.customer.address}` : "",
+    body.notes || ""
+  ].filter(Boolean).join("\n");
+
+  return {
+    ...buildMesaOrder({
+      eventId: sambahOrderId,
+      customer: body.customer,
+      items,
+      notes
+    }),
+    source: "site",
+    channel: "sambah",
+    origin: "SamBah",
+    operation: body.operation,
+    order: {
+      type: "pre_order",
+      table: null,
+      items,
+      notes,
+      total: null
+    },
+    status: "confirmed_by_customer"
+  };
+}
+
+function extractMesaOrderId(mesaResult = {}) {
+  return mesaResult.mesaResponse?.id
+    || mesaResult.mesaResponse?.orderId
+    || mesaResult.mesaResponse?.externalId
+    || null;
+}
+
+async function readJson(req, { requireBody = false } = {}) {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  const raw = Buffer.concat(chunks).toString("utf8").trim();
+  if (!raw) {
+    if (!requireBody) return {};
+    throw httpError(400, "empty_body", "Body JSON vazio");
+  }
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    throw httpError(400, "invalid_json", "JSON invalido", error);
+  }
+}
+
+async function serveStatic(res, fileName) {
+  const safeName = normalize(fileName).replace(/^(\.\.[/\\])+/, "");
+  const filePath = safeName.startsWith("brand/") || safeName.startsWith("brand\\") || safeName.startsWith("favicon.")
+    ? join(publicDir, "assets", safeName)
+    : join(publicDir, safeName);
+  try {
+    const body = await readFile(filePath);
+    res.writeHead(200, { "content-type": MIME_TYPES[extname(filePath)] || "application/octet-stream" });
+    res.end(body);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return sendJson(res, 404, { error: "asset_not_found" });
+    }
+    throw error;
+  }
+}
+
+function sendJson(res, statusCode, payload) {
+  if (res.writableEnded) return;
+  const headers = { "content-type": "application/json; charset=utf-8" };
+  if (!res.hasHeader("access-control-allow-origin")) {
+    Object.assign(headers, corsHeaders());
+  }
+  res.writeHead(statusCode, headers);
+  res.end(JSON.stringify(payload));
+}
+
+function corsHeaders(origin = "") {
+  const headers = {
+    "access-control-allow-methods": "GET,POST,PATCH,OPTIONS",
+    "access-control-allow-headers": "content-type"
+  };
+  headers["access-control-allow-origin"] = origin && isAllowedCorsOrigin(origin) ? origin : "*";
+  return headers;
+}
+
+async function safeAuditRecord(auditService, event) {
+  try {
+    return await auditService.record(event);
+  } catch (error) {
+    console.error("[samBah audit]", error);
+    return { event: null, duplicated: false, error };
+  }
+}
+
+async function safeCrmRecord(crmService, payload) {
+  try {
+    if (!crmService) return null;
+    return await crmService.registrarAtendimentoComercial(payload);
+  } catch (error) {
+    console.error("[samBah crm]", error);
+    return { ok: false, error: "crm_record_failed" };
+  }
+}
+
+async function handleCrmLeadAction(crmService, leadId, action, body = {}) {
+  if (!crmService) return { ok: false, error: "crm_service_unavailable" };
+  if (action === "mark-contacted") return crmService.marcarLeadContatado(leadId);
+  if (action === "mark-quote-sent") return crmService.marcarLeadOrcamentoEnviado(leadId);
+  if (action === "mark-won") return crmService.marcarLeadFechado(leadId, body.valorFechado || body.valor_fechado || body.valor_estimado);
+  if (action === "mark-lost") return crmService.marcarLeadPerdido(leadId, body.motivo_perda || body.lossReason || "outro");
+  return { ok: false, error: "unknown_commercial_action", action };
+}
+
+function summarizeCrmResult(result) {
+  if (!result) return null;
+  return {
+    ok: Boolean(result.ok),
+    clienteId: result.cliente?.id || null,
+    leadId: result.lead?.id || null,
+    atendimentoId: result.atendimento?.id || null,
+    eventoId: result.evento?.id || null,
+    precomandaId: result.precomanda?.id || null,
+    interesse: result.interesse || null,
+    whatsappUrl: result.whatsappUrl || null
+  };
+}
+
+function httpError(statusCode, code, message, cause) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  error.code = code;
+  if (cause) error.cause = cause;
+  return error;
+}
+
+function formatDraftSummary(draft) {
+  if (!draft.items?.length) return draft.rawText || "Pedido sem item confirmado";
+  return draft.items.map((item) => {
+    const note = item.note ? ` (${item.note})` : "";
+    return `${item.qty || 1}x ${item.name || item.productId}${note}`;
+  }).join("\n");
+}
+
+const isCliRun = globalThis.process?.argv?.[1] && import.meta.url === pathToFileURL(globalThis.process.argv[1]).href;
+
+if (isCliRun) {
+  const port = getRuntimeConfig().port;
+  createApp().listen(port, () => {
+    console.log(`samBah! admin em http://localhost:${port}/admin`);
+  });
+}
+
+
