@@ -357,6 +357,9 @@ export function createApp({
         return sendJson(res, 201, result);
       }
 
+      if (req.method === "GET" && url.pathname === "/api/site/cardapio") {
+        return sendJson(res, 200, getInsanoSiteCardapio());
+      }
       if (req.method === "POST" && url.pathname === "/api/site/lead") {
         const body = await readJson(req, { requireBody: true });
         const result = await createSiteLead(crmService, body);
@@ -411,6 +414,19 @@ export function createApp({
           dedupeKey: result.id
         });
         return sendJson(res, 201, result);
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/site/pedido") {
+        const siteOrderConfig = getRuntimeConfig();
+        if (siteOrderConfig.siteOrdersEnabled === false) {
+          return sendJson(res, 503, { ok: false, error: "Pedidos do site estao desativados" });
+        }
+        if (siteOrderConfig.sitePublicToken && req.headers["x-site-token"] !== siteOrderConfig.sitePublicToken) {
+          return sendJson(res, 401, { ok: false, error: "Token do site invalido" });
+        }
+        const body = await readJson(req, { requireBody: true });
+        const result = await createSitePedido(crmService, body);
+        return sendJson(res, result.ok ? 201 : 400, result);
       }
 
       if (req.method === "POST" && url.pathname === "/api/site/pedido-rapido") {
@@ -1013,6 +1029,148 @@ async function createSiteQuickOrder(crmService, body = {}) {
   });
 }
 
+function getInsanoSiteCardapio() {
+  const categorias = [
+    "Burgers",
+    "Assados & Buteco",
+    "Pizzas",
+    "Porções",
+    "Espetinhos",
+    "Bebidas",
+    "Eventos"
+  ];
+  const produtosBase = [
+    ["Burguer Insano", "Burgers", ["burger", "insano"], true],
+    ["Cordeiro Insano", "Burgers", ["cordeiro", "burger"], false],
+    ["Joelho de Porco", "Assados & Buteco", ["assado", "buteco"], false],
+    ["Frango Assado", "Assados & Buteco", ["frango", "assado"], false],
+    ["Costela / Assado da Casa", "Assados & Buteco", ["costela", "assado"], false],
+    ["Pizza da Casa", "Pizzas", ["pizza"], false],
+    ["Pizza Insana", "Pizzas", ["pizza", "insano"], true],
+    ["Pizza para Eventos", "Pizzas", ["pizza", "eventos"], false],
+    ["Fritas", "Porções", ["porção", "buteco"], false],
+    ["Polenta", "Porções", ["porção", "buteco"], false],
+    ["Frango", "Porções", ["porção", "frango"], false],
+    ["Porção de Boteco Insana", "Porções", ["porção", "buteco", "insano"], true],
+    ["Espetinho de Fraldinha", "Espetinhos", ["espetinho", "fraldinha"], false],
+    ["Espetinho de Frango", "Espetinhos", ["espetinho", "frango"], false],
+    ["Espetinho Misto", "Espetinhos", ["espetinho"], false],
+    ["Espetinho de Coração", "Espetinhos", ["espetinho", "coração"], false],
+    ["Refrigerantes", "Bebidas", ["bebida"], false],
+    ["Água", "Bebidas", ["bebida"], false],
+    ["Cervejas", "Bebidas", ["bebida", "cerveja"], false],
+    ["Chope Artesanal Insano / Beerlina", "Bebidas", ["bebida", "chope"], true],
+    ["Food Truck para Eventos", "Eventos", ["evento", "food truck"], true],
+    ["Insaninha Food Truck", "Eventos", ["evento", "food truck"], false],
+    ["Churrasco para Eventos", "Eventos", ["evento", "churrasco"], true],
+    ["Pizza para Eventos", "Eventos", ["evento", "pizza"], false],
+    ["Comida de Buteco para Eventos", "Eventos", ["evento", "buteco"], false]
+  ];
+
+  return {
+    ok: true,
+    marca: "Insano Food Truck",
+    origem: "site-insano",
+    categorias,
+    produtos: produtosBase.map(([nome, categoria, tags, destaque]) => ({
+      id: slugifySiteCardapio(nome),
+      nome,
+      descricao: "",
+      categoria,
+      preco: null,
+      ativo: true,
+      destaque,
+      imagem: "",
+      tags
+    }))
+  };
+}
+
+function slugifySiteCardapio(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/&/g, "e")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+async function createSitePedido(crmService, body = {}) {
+  const nome = cleanSiteOrderText(body.nome || body.name || body.customerName || body.customer?.name);
+  if (!nome) return { ok: false, error: "Informe o nome do cliente" };
+
+  const telefone = cleanSiteOrderText(body.telefone || body.whatsapp || body.phone || body.customer?.phone);
+  if (!telefone) return { ok: false, error: "Informe o telefone do cliente" };
+
+  const itensResult = normalizeSitePedidoItems(body.itens || body.items);
+  if (!itensResult.ok) return { ok: false, error: itensResult.error };
+
+  const origem = cleanSiteOrderText(body.origem || body.source) || "site-insano";
+  const tipo = cleanSiteOrderText(body.tipo || body.type) || "pedido";
+  const status = "novo";
+  const createdAt = new Date().toISOString();
+  const formaEntrega = cleanSiteOrderText(body.formaEntrega || body.deliveryMode || body.customer?.serviceType);
+  const endereco = cleanSiteOrderText(body.endereco || body.address || body.customer?.address);
+  const formaPagamento = cleanSiteOrderText(body.formaPagamento || body.paymentMethod || body.customer?.paymentMethod);
+  const observacoes = cleanSiteOrderText(body.observacoes || body.notes || body.observation);
+  const totalEstimado = normalizeSitePedidoTotal(body.totalEstimado || body.estimatedTotal || body.total);
+  const operation = normalizeOperation(body.operation || body.operacao || origem);
+  const pipeline = body.pipeline || "pedido_rapido";
+  const whatsappMessage = buildSitePedidoWhatsappMessage({
+    nome,
+    telefone,
+    origem,
+    itens: itensResult.items,
+    formaEntrega,
+    endereco,
+    formaPagamento,
+    totalEstimado,
+    observacoes,
+    status
+  });
+  const whatsappUrl = buildSitePedidoWhatsappUrl(whatsappMessage);
+
+  const result = await crmService.salvarPrecomanda({
+    ...body,
+    nome,
+    whatsapp: telefone,
+    telefone,
+    phone: telefone,
+    origem,
+    source: origem,
+    tipo,
+    type: tipo,
+    itens: itensResult.items,
+    items: itensResult.items,
+    formaEntrega,
+    endereco,
+    formaPagamento,
+    observacoes,
+    totalEstimado,
+    total: totalEstimado,
+    pipeline,
+    status,
+    createdAt,
+    operacao: operation,
+    operation,
+    customer: {
+      ...(body.customer || {}),
+      name: nome,
+      phone: telefone,
+      serviceType: formaEntrega,
+      address: endereco,
+      paymentMethod: formaPagamento
+    }
+  });
+
+  return {
+    ok: true,
+    pedidoId: result.precomanda.id,
+    status: result.precomanda.status || status,
+    whatsappMessage,
+    whatsappUrl
+  };
+}
 async function createSitePrecomanda(crmService, body = {}) {
   const operation = normalizeOperation(body.operation || body.operacao || body.site || body.origem);
   const tracking = siteTrackingFields(body);
@@ -1137,6 +1295,79 @@ function buildSiteWhatsAppUrl(body = {}, operation = "Insano") {
   return `https://wa.me/${number}?text=${encodeURIComponent(text)}`;
 }
 
+function normalizeSitePedidoItems(items = []) {
+  if (!Array.isArray(items) || !items.length) {
+    return { ok: false, error: "Informe pelo menos um item do pedido" };
+  }
+  const normalized = [];
+  for (const item of items) {
+    const nome = cleanSiteOrderText(item?.nome || item?.name || item?.product || item?.productId);
+    if (!nome) return { ok: false, error: "Informe o nome de todos os itens" };
+
+    const quantidade = Number(item?.quantidade ?? item?.quantity ?? item?.qty ?? 1);
+    if (!Number.isFinite(quantidade) || quantidade <= 0) {
+      return { ok: false, error: "Informe uma quantidade valida para todos os itens" };
+    }
+
+    const preco = normalizeSitePedidoTotal(item?.preco ?? item?.price ?? item?.valor);
+    const observacao = cleanSiteOrderText(item?.observacao || item?.note || item?.observacoes || item?.notes);
+    normalized.push({
+      nome,
+      name: nome,
+      quantidade,
+      quantity: quantidade,
+      preco,
+      price: preco,
+      observacao,
+      note: observacao
+    });
+  }
+  return { ok: true, items: normalized };
+}
+
+function buildSitePedidoWhatsappMessage({ nome, telefone, origem, itens, formaEntrega, endereco, formaPagamento, totalEstimado, observacoes, status }) {
+  const itemLines = itens.map((item) => {
+    const price = item.preco ? ` - ${formatSitePedidoMoney(item.preco)}` : "";
+    const note = item.observacao ? ` (${item.observacao})` : "";
+    return `- ${item.quantidade}x ${item.nome}${price}${note}`;
+  }).join("\n");
+
+  return [
+    "🔥 NOVO PEDIDO INSANO",
+    "",
+    `Nome: ${nome}`,
+    `Telefone: ${telefone}`,
+    `Origem: ${origem}`,
+    "Itens:",
+    itemLines,
+    `Entrega/retirada: ${formaEntrega || "nao informado"}`,
+    `Endereco: ${endereco || "nao informado"}`,
+    `Pagamento: ${formaPagamento || "nao informado"}`,
+    `Total estimado: ${formatSitePedidoMoney(totalEstimado)}`,
+    `Observacoes: ${observacoes || "nenhuma"}`,
+    `Status: ${status}`
+  ].join("\n");
+}
+
+function buildSitePedidoWhatsappUrl(message) {
+  const number = String(getRuntimeConfig().insanoWhatsappNumber || "").replace(/\D/g, "");
+  if (!number) return null;
+  return `https://wa.me/${number}?text=${encodeURIComponent(message)}`;
+}
+
+function cleanSiteOrderText(value = "") {
+  return String(value || "").trim();
+}
+
+function normalizeSitePedidoTotal(value) {
+  const total = Number(value || 0);
+  return Number.isFinite(total) ? total : 0;
+}
+
+function formatSitePedidoMoney(value) {
+  const amount = normalizeSitePedidoTotal(value);
+  return amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
 function formatRequestItems(items = []) {
   if (!Array.isArray(items) || !items.length) return "";
   return items.map((item) => `${item.quantity || item.qty || item.quantidade || 1}x ${item.name || item.nome || item.product || item.productId || ""}`).join("; ");
@@ -1315,5 +1546,8 @@ if (isCliRun) {
     console.log(`samBah! admin em http://localhost:${port}/admin`);
   });
 }
+
+
+
 
 

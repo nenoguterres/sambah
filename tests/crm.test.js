@@ -52,6 +52,95 @@ test("CRM salva atendimento de evento, cliente, lead e link WhatsApp", async () 
   }
 });
 
+
+test("site pedido canonico cria pedido e valida payload", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-site-pedido-"));
+  const previousNumber = process.env.INSANO_WHATSAPP_NUMBER;
+  const previousToken = process.env.SITE_PUBLIC_TOKEN;
+  const previousEnabled = process.env.SITE_ORDERS_ENABLED;
+  process.env.INSANO_WHATSAPP_NUMBER = "5551980413745";
+  process.env.SITE_PUBLIC_TOKEN = "";
+  process.env.SITE_ORDERS_ENABLED = "true";
+
+  const crmService = new CrmService({ files: crmFiles(dir), whatsappNumber: "5551980413745" });
+  const server = createApp({ crmService });
+  await new Promise((resolve) => server.listen(0, resolve));
+  const { port } = server.address();
+  const base = `http://127.0.0.1:${port}`;
+  const post = async (body) => {
+    const response = await fetch(`${base}/api/site/pedido`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    return { status: response.status, body: await response.json() };
+  };
+
+  try {
+    const cardapioResponse = await fetch(`${base}/api/site/cardapio`);
+    const cardapio = await cardapioResponse.json();
+    assert.equal(cardapioResponse.status, 200);
+    assert.equal(cardapio.ok, true);
+    assert.ok(Array.isArray(cardapio.categorias));
+    assert.ok(cardapio.categorias.includes("Burgers"));
+    assert.ok(Array.isArray(cardapio.produtos));
+    const burguerInsano = cardapio.produtos.find((produto) => produto.nome === "Burguer Insano");
+    assert.ok(burguerInsano);
+    assert.equal(burguerInsano.preco, null);
+    assert.equal(cardapio.produtos.every((produto) => produto.preco === null), true);
+
+    const valid = await post({
+      nome: "Cliente Wix",
+      telefone: "51999999999",
+      origem: "site-insano",
+      tipo: "pedido",
+      itens: [{ nome: "Burguer Insano", quantidade: 1, preco: 30, observacao: "sem cebola" }],
+      formaEntrega: "retirada",
+      endereco: "",
+      formaPagamento: "pix",
+      observacoes: "opcional",
+      totalEstimado: 30
+    });
+
+    assert.equal(valid.status, 201);
+    assert.equal(valid.body.ok, true);
+    assert.ok(valid.body.pedidoId);
+    assert.equal(valid.body.status, "novo");
+    assert.match(valid.body.whatsappMessage, /NOVO PEDIDO INSANO/);
+    assert.match(valid.body.whatsappMessage, /Burguer Insano/);
+    assert.match(valid.body.whatsappUrl, /^https:\/\/wa\.me\/5551980413745/);
+
+    const withoutName = await post({ telefone: "51999999999", itens: [{ nome: "Burguer", quantidade: 1 }] });
+    assert.equal(withoutName.status, 400);
+    assert.equal(withoutName.body.ok, false);
+
+    const withoutPhone = await post({ nome: "Cliente", itens: [{ nome: "Burguer", quantidade: 1 }] });
+    assert.equal(withoutPhone.status, 400);
+    assert.equal(withoutPhone.body.ok, false);
+
+    const withoutItems = await post({ nome: "Cliente", telefone: "51999999999", itens: [] });
+    assert.equal(withoutItems.status, 400);
+    assert.equal(withoutItems.body.ok, false);
+
+    const withoutItemName = await post({ nome: "Cliente", telefone: "51999999999", itens: [{ quantidade: 1 }] });
+    assert.equal(withoutItemName.status, 400);
+    assert.equal(withoutItemName.body.ok, false);
+
+    const invalidQuantity = await post({ nome: "Cliente", telefone: "51999999999", itens: [{ nome: "Burguer", quantidade: 0 }] });
+    assert.equal(invalidQuantity.status, 400);
+    assert.equal(invalidQuantity.body.ok, false);
+  } finally {
+    server.close();
+    if (previousNumber === undefined) delete process.env.INSANO_WHATSAPP_NUMBER;
+    else process.env.INSANO_WHATSAPP_NUMBER = previousNumber;
+    if (previousToken === undefined) delete process.env.SITE_PUBLIC_TOKEN;
+    else process.env.SITE_PUBLIC_TOKEN = previousToken;
+    if (previousEnabled === undefined) delete process.env.SITE_ORDERS_ENABLED;
+    else process.env.SITE_ORDERS_ENABLED = previousEnabled;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("plataformas externas, cardapios, mesa, garcom e cozinha respondem", async () => {
   const dir = await mkdtemp(join(tmpdir(), "sambha-platforms-"));
   const auditService = new AuditService({ filePath: join(dir, "audit.json") });
@@ -1060,6 +1149,8 @@ test("rotas CRM expÃµem listas e webhook pre_order salva pre-comanda", async (
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+
 
 
 

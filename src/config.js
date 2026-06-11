@@ -25,7 +25,20 @@ export function getRuntimeConfig(env = globalThis.process?.env || {}) {
     publicBaseUrl: env.PUBLIC_BASE_URL || "https://insanofoodtruck.com.br",
     corsOrigins: parseList(env.CORS_ORIGINS, DEFAULT_CORS_ORIGINS),
     whatsappNumber: env.WHATSAPP_NUMBER || "5551980413745",
-    dataDir: env.DATA_DIR || "data"
+    insanoWhatsappNumber: env.INSANO_WHATSAPP_NUMBER || "",
+    sitePublicToken: env.SITE_PUBLIC_TOKEN || "",
+    siteOrdersEnabled: env.SITE_ORDERS_ENABLED !== "false",
+    dataDir: env.DATA_DIR || "data",
+    whatsappBusiness: {
+      provider: env.WHATSAPP_PROVIDER || "meta",
+      sendEnabled: env.WHATSAPP_SEND_ENABLED === "true",
+      verifyToken: env.WHATSAPP_VERIFY_TOKEN || "",
+      accessToken: env.WHATSAPP_ACCESS_TOKEN || "",
+      phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID || "",
+      businessAccountId: env.WHATSAPP_BUSINESS_ACCOUNT_ID || "",
+      webhookSecret: env.WHATSAPP_WEBHOOK_SECRET || "",
+      apiBaseUrl: env.WHATSAPP_API_BASE_URL || "https://graph.facebook.com/v20.0"
+    }
   };
 }
 
@@ -44,6 +57,8 @@ export function getPublicConfig(env = globalThis.process?.env || {}) {
     endpoints: {
       siteLead: "/api/site/lead",
       eventQuote: "/api/site/orcamento-evento",
+      siteCardapio: "/api/site/cardapio",
+      sitePedido: "/api/site/pedido",
       quickOrder: "/api/site/pedido-rapido",
       precomanda: "/api/site/precomanda",
       whatsapp: "/api/site/whatsapp",
@@ -59,3 +74,6 @@ function parseList(value, fallback) {
   if (!value) return [...fallback];
   return String(value).split(",").map((item) => item.trim()).filter(Boolean);
 }
+
+
+
