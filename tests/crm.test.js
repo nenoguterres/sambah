@@ -1,4 +1,4 @@
-﻿import test from "node:test";
+import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -106,9 +106,25 @@ test("site pedido canonico cria pedido e valida payload", async () => {
     assert.equal(valid.body.ok, true);
     assert.ok(valid.body.pedidoId);
     assert.equal(valid.body.status, "novo");
-    assert.match(valid.body.whatsappMessage, /NOVO PEDIDO INSANO/);
-    assert.match(valid.body.whatsappMessage, /Burguer Insano/);
+    assert.match(valid.body.whatsappMessage, /NOVA PRÉ-COMANDA INSANO/);
+    assert.match(valid.body.whatsappMessage, /PedidoId:/);
+    assert.match(valid.body.whatsappMessage, /WhatsApp: 51999999999/);
+    assert.match(valid.body.whatsappMessage, /Operação: Insano/);
+    assert.match(valid.body.whatsappMessage, /- 1x Burguer Insano/);
+    assert.match(valid.body.whatsappMessage, /Status: novo/);
     assert.match(valid.body.whatsappUrl, /^https:\/\/wa\.me\/5551980413745/);
+
+    const mesaPedidos = await fetch(`${base}/api/mesa/pedidos-site?status=novo`).then((response) => response.json());
+    assert.equal(mesaPedidos.ok, true);
+    assert.ok(mesaPedidos.items.some((item) => item.id === valid.body.pedidoId && item.whatsapp === "51999999999"));
+
+    const mesaStatus = await fetch(`${base}/api/mesa/pedidos-site/${encodeURIComponent(valid.body.pedidoId)}/status`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status: "aceito", observacao: "Importado pelo Mesa do Xeriffe", origemAtualizacao: "mesa-xeriffe" })
+    }).then((response) => response.json());
+    assert.equal(mesaStatus.ok, true);
+    assert.equal(mesaStatus.status, "aceito");
 
     const withoutName = await post({ telefone: "51999999999", itens: [{ nome: "Burguer", quantidade: 1 }] });
     assert.equal(withoutName.status, 400);
@@ -1149,14 +1165,3 @@ test("rotas CRM expÃµem listas e webhook pre_order salva pre-comanda", async (
     await rm(dir, { recursive: true, force: true });
   }
 });
-
-
-
-
-
-
-
-
-
-
-

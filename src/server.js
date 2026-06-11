@@ -1,4 +1,4 @@
-﻿import { createServer } from "node:http";
+import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import crypto from "node:crypto";
 import { extname, join, normalize } from "node:path";
@@ -556,6 +556,18 @@ export function createApp({
         return sendJson(res, result.ok ? 200 : 404, result);
       }
 
+      if (req.method === "GET" && url.pathname === "/api/mesa/pedidos-site") {
+        const result = await listarPedidosSiteParaMesa(crmService, url.searchParams.get("status"));
+        return sendJson(res, 200, result);
+      }
+
+      const mesaPedidoStatusMatch = url.pathname.match(/^\/api\/mesa\/pedidos-site\/([^/]+)\/status$/);
+      if (req.method === "POST" && mesaPedidoStatusMatch) {
+        const body = await readJson(req, { requireBody: true });
+        const result = await atualizarStatusPedidoSiteParaMesa(crmService, decodeURIComponent(mesaPedidoStatusMatch[1]), body);
+        return sendJson(res, result.ok ? 200 : 400, result);
+      }
+
       if (req.method === "GET" && url.pathname === "/api/precomandas") {
         return sendJson(res, 200, await crmService.listarPrecomandas());
       }
@@ -964,7 +976,7 @@ async function createSiteLead(crmService, body = {}) {
     ...body,
     ...tracking,
     nome: body.nome || body.name || body.customerName || body.customer?.name || "",
-    whatsapp: body.whatsapp || body.phone || body.customer?.phone || "",
+    whatsapp: body.whatsapp || body.telefone || body.phone || body.customer?.phone || "",
     operacao: operation,
     operation,
     pipeline,
@@ -984,7 +996,7 @@ async function createSiteEventQuote(crmService, body = {}) {
     ...body,
     ...tracking,
     nome: body.nome || body.name || body.customerName || body.customer?.name || "",
-    whatsapp: body.whatsapp || body.phone || body.customer?.phone || "",
+    whatsapp: body.whatsapp || body.telefone || body.phone || body.customer?.phone || "",
     operacao: operation,
     operation,
     origem: body.source || body.origem || "site_externo",
@@ -1011,7 +1023,7 @@ async function createSiteQuickOrder(crmService, body = {}) {
     ...body,
     ...tracking,
     nome: body.nome || body.name || body.customerName || body.customer?.name || "",
-    whatsapp: body.whatsapp || body.phone || body.customer?.phone || "",
+    whatsapp: body.whatsapp || body.telefone || body.phone || body.customer?.phone || "",
     operacao: operation,
     operation,
     origem: body.source || body.origem || "site_externo",
@@ -1116,19 +1128,7 @@ async function createSitePedido(crmService, body = {}) {
   const totalEstimado = normalizeSitePedidoTotal(body.totalEstimado || body.estimatedTotal || body.total);
   const operation = normalizeOperation(body.operation || body.operacao || origem);
   const pipeline = body.pipeline || "pedido_rapido";
-  const whatsappMessage = buildSitePedidoWhatsappMessage({
-    nome,
-    telefone,
-    origem,
-    itens: itensResult.items,
-    formaEntrega,
-    endereco,
-    formaPagamento,
-    totalEstimado,
-    observacoes,
-    status
-  });
-  const whatsappUrl = buildSitePedidoWhatsappUrl(whatsappMessage);
+  const horario = cleanSiteOrderText(body.horario || body.time || body.customer?.time);
 
   const result = await crmService.salvarPrecomanda({
     ...body,
@@ -1145,6 +1145,7 @@ async function createSitePedido(crmService, body = {}) {
     formaEntrega,
     endereco,
     formaPagamento,
+    horario,
     observacoes,
     totalEstimado,
     total: totalEstimado,
@@ -1163,6 +1164,21 @@ async function createSitePedido(crmService, body = {}) {
     }
   });
 
+  const whatsappMessage = buildSitePedidoWhatsappMessage({
+    pedidoId: result.precomanda.id,
+    nome,
+    telefone,
+    operation,
+    itens: itensResult.items,
+    formaEntrega,
+    endereco,
+    horario,
+    formaPagamento,
+    observacoes,
+    status: result.precomanda.status || status
+  });
+  const whatsappUrl = buildSitePedidoWhatsappUrl(whatsappMessage);
+
   return {
     ok: true,
     pedidoId: result.precomanda.id,
@@ -1179,7 +1195,7 @@ async function createSitePrecomanda(crmService, body = {}) {
     ...body,
     ...tracking,
     nome: body.nome || body.name || body.customerName || body.customer?.name || "",
-    whatsapp: body.whatsapp || body.phone || body.customer?.phone || "",
+    whatsapp: body.whatsapp || body.telefone || body.phone || body.customer?.phone || "",
     operacao: operation,
     operation,
     origem: body.source || body.origem || "site_externo",
@@ -1203,7 +1219,7 @@ async function createSiteWhatsapp(crmService, body = {}) {
     ...body,
     ...tracking,
     nome: body.nome || body.name || body.customerName || body.customer?.name || "Contato WhatsApp",
-    whatsapp: body.whatsapp || body.phone || body.customer?.phone || "",
+    whatsapp: body.whatsapp || body.telefone || body.phone || body.customer?.phone || "",
     operacao: operation,
     operation,
     origem: body.source || body.origem || "site_whatsapp",
@@ -1243,6 +1259,102 @@ function insanoSitePayload(body = {}, overrides = {}) {
   };
 }
 
+const SITE_ORDER_ORIGINS_FOR_MESA = new Set([
+  "site-insano",
+  "site_insano",
+  "portal-insano",
+  "portal_insano",
+  "wix-insano",
+  "wix_insano",
+  "teste-html-insano",
+  "teste_html_insano",
+  "insanofoodtruck.com.br"
+]);
+
+const MESA_SITE_ORDER_STATUSES = new Set(["novo", "aceito", "em_preparo", "pronto", "finalizado", "cancelado"]);
+
+async function listarPedidosSiteParaMesa(crmService, statusFilter = "") {
+  const normalizedFilter = normalizeMesaSiteStatus(statusFilter || "");
+  const precomandas = await crmService.listarPrecomandas();
+  const items = precomandas.items
+    .filter(isSiteOrderForMesa)
+    .filter((item) => !normalizedFilter || normalizeMesaSiteStatus(item.status) === normalizedFilter)
+    .map(mapSiteOrderForMesa);
+  return { ok: true, count: items.length, pedidos: items, items };
+}
+
+async function atualizarStatusPedidoSiteParaMesa(crmService, id, body = {}) {
+  const status = normalizeMesaSiteStatus(body.status);
+  if (!MESA_SITE_ORDER_STATUSES.has(status) || status === "novo") {
+    return { ok: false, error: "Status invalido para pedido do site" };
+  }
+  const result = await crmService.atualizarPrecomanda(id, {
+    status,
+    status_mesa: status,
+    origemAtualizacao: body.origemAtualizacao || "mesa-xeriffe",
+    observacao_mesa: body.observacao || "",
+    atualizado_em: new Date().toISOString()
+  });
+  if (!result.ok) return { ok: false, error: "Pedido do site nao encontrado" };
+  return { ok: true, id, status, pedido: mapSiteOrderForMesa(result.item || result.precomanda || result.updated || {}) };
+}
+
+function isSiteOrderForMesa(item = {}) {
+  const sourceText = normalizeMesaSource([item.origem, item.source, item.channel, item.canal].filter(Boolean).join(" "));
+  const status = normalizeMesaSiteStatus(item.status);
+  return [...SITE_ORDER_ORIGINS_FOR_MESA].some((origin) => sourceText.includes(normalizeMesaSource(origin)))
+    && MESA_SITE_ORDER_STATUSES.has(status || "novo");
+}
+
+function mapSiteOrderForMesa(item = {}) {
+  return {
+    id: item.id,
+    pedidoId: item.id,
+    status: normalizeMesaSiteStatus(item.status) || "novo",
+    origem: item.origem || item.source || "site-insano",
+    source: item.source || item.origem || "site-insano",
+    operation: item.operacao || item.operation || "Insano",
+    nome: item.nome || item.customerName || "Cliente",
+    customerName: item.customerName || item.nome || "Cliente",
+    telefone: item.whatsapp || item.phone || "",
+    phone: item.phone || item.whatsapp || "",
+    whatsapp: item.whatsapp || item.phone || "",
+    itens: Array.isArray(item.itens) ? item.itens : [],
+    items: Array.isArray(item.itens) ? item.itens.map((orderItem) => ({
+      name: orderItem.nome || orderItem.name || orderItem.product || orderItem.productId || "Item",
+      product: orderItem.nome || orderItem.name || orderItem.product || orderItem.productId || "Item",
+      quantity: Number(orderItem.quantidade || orderItem.quantity || orderItem.qty) || 1,
+      qty: Number(orderItem.quantidade || orderItem.quantity || orderItem.qty) || 1,
+      note: orderItem.observacao || orderItem.note || orderItem.notes || "",
+      price: Number(orderItem.preco ?? orderItem.price ?? 0) || 0,
+      preco: Number(orderItem.preco ?? orderItem.price ?? 0) || 0
+    })) : [],
+    formaEntrega: item.formaEntrega || item.tipo || item.serviceType || "",
+    serviceType: item.formaEntrega || item.tipo || item.serviceType || "",
+    endereco: item.endereco || item.address || "",
+    address: item.endereco || item.address || "",
+    formaPagamento: item.formaPagamento || item.pagamento || item.paymentMethod || "",
+    paymentMethod: item.formaPagamento || item.pagamento || item.paymentMethod || "",
+    observacoes: item.observacoes || item.notes || "",
+    notes: item.observacoes || item.notes || "",
+    horario: item.horario || "",
+    createdAt: item.createdAt || item.criado_em || "",
+    updatedAt: item.atualizado_em || item.updatedAt || ""
+  };
+}
+
+function normalizeMesaSiteStatus(status = "") {
+  const normalized = String(status || "novo").trim().toLowerCase();
+  if (["nova", "pending", "pendente"].includes(normalized)) return "novo";
+  if (["accepted", "recebido", "importado"].includes(normalized)) return "aceito";
+  if (["preparo", "em preparo"].includes(normalized)) return "em_preparo";
+  if (["finalizada", "entregue"].includes(normalized)) return "finalizado";
+  return normalized;
+}
+
+function normalizeMesaSource(value = "") {
+  return String(value || "").trim().toLowerCase().replace(/_/g, "-");
+}
 function siteTrackingFields(body = {}) {
   const page = body.page || body.pagina || body.referrer || "";
   const campaign = body.campaign || body.utm_campaign || "";
@@ -1325,28 +1437,36 @@ function normalizeSitePedidoItems(items = []) {
   return { ok: true, items: normalized };
 }
 
-function buildSitePedidoWhatsappMessage({ nome, telefone, origem, itens, formaEntrega, endereco, formaPagamento, totalEstimado, observacoes, status }) {
-  const itemLines = itens.map((item) => {
-    const price = item.preco ? ` - ${formatSitePedidoMoney(item.preco)}` : "";
-    const note = item.observacao ? ` (${item.observacao})` : "";
-    return `- ${item.quantidade}x ${item.nome}${price}${note}`;
-  }).join("\n");
+function buildSitePedidoWhatsappMessage({ pedidoId, nome, telefone, operation, itens, formaEntrega, endereco, horario, formaPagamento, observacoes, status }) {
+  const itemLines = formatSitePedidoWhatsappItems(itens);
+  const retiradaEntrega = [formaEntrega, endereco].filter(Boolean).join(" - ");
 
   return [
-    "🔥 NOVO PEDIDO INSANO",
+    "🔥 NOVA PRÉ-COMANDA INSANO",
     "",
-    `Nome: ${nome}`,
-    `Telefone: ${telefone}`,
-    `Origem: ${origem}`,
+    `PedidoId: ${pedidoId || ""}`,
+    `Nome: ${nome || ""}`,
+    `WhatsApp: ${telefone || ""}`,
+    `Operação: ${operation || "Insano"}`,
+    "",
     "Itens:",
     itemLines,
-    `Entrega/retirada: ${formaEntrega || "nao informado"}`,
-    `Endereco: ${endereco || "nao informado"}`,
+    "",
+    `Retirada/Entrega: ${retiradaEntrega || "nao informado"}`,
+    `Horário: ${horario || "nao informado"}`,
     `Pagamento: ${formaPagamento || "nao informado"}`,
-    `Total estimado: ${formatSitePedidoMoney(totalEstimado)}`,
-    `Observacoes: ${observacoes || "nenhuma"}`,
-    `Status: ${status}`
+    `Observações: ${observacoes || "nenhuma"}`,
+    `Status: ${status || "novo"}`
   ].join("\n");
+}
+
+function formatSitePedidoWhatsappItems(items = []) {
+  if (!Array.isArray(items) || !items.length) return "- Item sem nome";
+  return items.map((item) => {
+    const quantidade = Number(item.quantidade || item.quantity || item.qty) || 1;
+    const nome = item.nome || item.name || item.product || item.productId || "Item sem nome";
+    return `- ${quantidade}x ${nome}`;
+  }).join("\n");
 }
 
 function buildSitePedidoWhatsappUrl(message) {
@@ -1546,8 +1666,3 @@ if (isCliRun) {
     console.log(`samBah! admin em http://localhost:${port}/admin`);
   });
 }
-
-
-
-
-

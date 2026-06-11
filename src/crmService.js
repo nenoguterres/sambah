@@ -588,7 +588,7 @@ export class CrmService {
     const now = this.now().toISOString();
     const customer = input.customer || {};
     const nome = input.nome || input.name || customer.name || "";
-    const whatsapp = normalizePhone(input.whatsapp || input.phone || customer.phone);
+    const whatsapp = normalizePhone(input.whatsapp || input.telefone || input.phone || customer.phone);
     let clienteId = input.cliente_id || input.clienteId || "";
     let atendimentoId = input.atendimento_id || input.atendimentoId || "";
     if (!clienteId && whatsapp) {
@@ -597,7 +597,7 @@ export class CrmService {
         whatsapp,
         origem: input.origem || input.source || "precomanda",
         tags: ["pedido"],
-        historicoMensagem: "Pre-comanda vinculada ao cliente"
+        historicoMensagem: "Pré-comanda vinculada ao cliente"
       });
       clienteId = clienteResult.cliente.id;
     }
@@ -611,7 +611,7 @@ export class CrmService {
         cliente_id: clienteId,
         canal: input.canal || input.channel || "site",
         origem: input.origem || input.source || "precomanda",
-        mensagem_cliente: input.observacoes || input.notes || "Pre-comanda registrada",
+        mensagem_cliente: input.observacoes || input.notes || "Pré-comanda registrada",
         dados_coletados: { nome, whatsapp, operacao: input.operacao || input.operation || "SamBah" },
         faltantes,
         status: faltantes.length ? "aguardando_dados" : "registrado",
@@ -628,7 +628,7 @@ export class CrmService {
       nome,
       customerName: input.customerName || nome,
       whatsapp,
-      phone: normalizePhone(input.phone || input.whatsapp || customer.phone),
+      phone: normalizePhone(input.phone || input.telefone || input.whatsapp || customer.phone),
       operacao: input.operacao || input.operation || "SamBah",
       origem: input.origem || input.source || "precomanda",
       source: input.source || input.origem || "precomanda",
@@ -657,7 +657,7 @@ export class CrmService {
       criado_em: input.criado_em || input.createdAt || now,
       createdAt: input.createdAt || input.criado_em || now,
       atualizado_em: input.atualizado_em || input.updatedAt || now,
-      historico: addHistory(input.historico || [], "precomanda_criada", "Pre-comanda salva no CRM", this.now)
+      historico: addHistory(input.historico || [], "precomanda_criada", "Pré-comanda salva no CRM", this.now)
     };
     precomanda.whatsappUrl = input.whatsappUrl || buildWaUrl(this.whatsappNumber, buildPrecomandaWhatsappMessage(precomanda));
     precomandas.unshift(precomanda);
@@ -1191,7 +1191,7 @@ function extractEventLocation(raw = "") {
   const source = String(raw || "");
   const bairro = source.match(/\b(?:no|na)\s+bairro\s+([^.,;\n]+?)(?=\s+(?:dia|em|para|com|as|às|a\s+\d)|[.,;\n]|$)/i);
   if (bairro) return cleanExtractedText(bairro[1]);
-  const cidade = source.match(/\bem\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÀ-ÿ\s]+?)(?=\s+(?:dia|para|com|as|às|a\s+\d)|[.,;\n]|$)/);
+  const cidade = source.match(/\bem\s+([\p{L}][\p{L}\s]+?)(?=\s+(?:dia|para|com|as|às|a\s+\d)|[.,;\n]|$)/iu);
   if (cidade) return cleanExtractedText(cidade[1]);
   const known = [
     "Moinhos de Vento",
@@ -1851,18 +1851,33 @@ Pode me ajudar?`;
 }
 
 function buildPrecomandaWhatsappMessage(precomanda = {}) {
-  return `Buenas, SamBah!
-Quero confirmar uma pre-comanda.
+  const retiradaEntrega = [precomanda.formaEntrega || precomanda.tipo, precomanda.endereco].filter(Boolean).join(" - ");
+  return [
+    "🔥 NOVA PRÉ-COMANDA INSANO",
+    "",
+    `PedidoId: ${precomanda.id || ""}`,
+    `Nome: ${precomanda.nome || ""}`,
+    `WhatsApp: ${precomanda.whatsapp || precomanda.phone || ""}`,
+    `Operação: ${precomanda.operacao || precomanda.operation || "Insano"}`,
+    "",
+    "Itens:",
+    formatItemsLines(precomanda.itens || []),
+    "",
+    `Retirada/Entrega: ${retiradaEntrega || ""}`,
+    `Horário: ${precomanda.horario || ""}`,
+    `Pagamento: ${precomanda.formaPagamento || precomanda.pagamento || ""}`,
+    `Observações: ${precomanda.observacoes || ""}`,
+    `Status: ${precomanda.status || "novo"}`
+  ].join("\n");
+}
 
-Nome: ${precomanda.nome || ""}
-WhatsApp: ${precomanda.whatsapp || ""}
-Operacao: ${precomanda.operacao || ""}
-Pedido: ${formatItems(precomanda.itens || [])}
-Retirada, entrega ou local: ${precomanda.tipo || ""}
-Forma de pagamento: ${precomanda.pagamento || ""}
-Observacoes: ${precomanda.observacoes || ""}
-
-Pode organizar minha comanda?`;
+function formatItemsLines(items = []) {
+  if (!Array.isArray(items) || !items.length) return "- Item sem nome";
+  return items.map((item) => {
+    const quantidade = Number(item.quantidade || item.quantity || item.qty) || 1;
+    const nome = item.nome || item.name || item.product || item.productId || item.produto || "Item sem nome";
+    return `- ${quantidade}x ${nome}`;
+  }).join("\n");
 }
 
 function buildWaUrl(number = "", message = "") {
