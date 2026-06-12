@@ -118,6 +118,26 @@ test("site pedido canonico cria pedido e valida payload", async () => {
     assert.equal(mesaPedidos.ok, true);
     assert.ok(mesaPedidos.items.some((item) => item.id === valid.body.pedidoId && item.whatsapp === "51999999999"));
 
+    const mesaBloqueio = await fetch(`${base}/api/mesa/pedidos-site/${encodeURIComponent(valid.body.pedidoId)}/bloqueio`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        reason: "estoque_turno",
+        message: "Conferir/liberar estoque do turno antes de importar.",
+        mesaStatus: "bloqueado_estoque"
+      })
+    }).then((response) => response.json());
+    assert.equal(mesaBloqueio.ok, true);
+    assert.equal(mesaBloqueio.status, "bloqueado_estoque");
+
+    const mesaBloqueados = await fetch(`${base}/api/mesa/pedidos-site?status=bloqueado_estoque`).then((response) => response.json());
+    assert.equal(mesaBloqueados.ok, true);
+    assert.ok(mesaBloqueados.items.some((item) => item.id === valid.body.pedidoId && item.status === "bloqueado_estoque"));
+
+    const mesaTodos = await fetch(`${base}/api/mesa/pedidos-site?status=todos`).then((response) => response.json());
+    assert.equal(mesaTodos.ok, true);
+    assert.ok(mesaTodos.items.some((item) => item.id === valid.body.pedidoId));
+
     const mesaStatus = await fetch(`${base}/api/mesa/pedidos-site/${encodeURIComponent(valid.body.pedidoId)}/status`, {
       method: "POST",
       headers: { "content-type": "application/json" },

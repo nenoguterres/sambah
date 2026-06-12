@@ -561,6 +561,13 @@ export function createApp({
         return sendJson(res, 200, result);
       }
 
+      const mesaPedidoBloqueioMatch = url.pathname.match(/^\/api\/mesa\/pedidos-site\/([^/]+)\/bloqueio$/);
+      if (req.method === "POST" && mesaPedidoBloqueioMatch) {
+        const body = await readJson(req, { requireBody: true });
+        const result = await bloquearPedidoSiteParaMesa(crmService, decodeURIComponent(mesaPedidoBloqueioMatch[1]), body);
+        return sendJson(res, result.ok ? 200 : 404, result);
+      }
+
       const mesaPedidoStatusMatch = url.pathname.match(/^\/api\/mesa\/pedidos-site\/([^/]+)\/status$/);
       if (req.method === "POST" && mesaPedidoStatusMatch) {
         const body = await readJson(req, { requireBody: true });
@@ -1271,10 +1278,12 @@ const SITE_ORDER_ORIGINS_FOR_MESA = new Set([
   "insanofoodtruck.com.br"
 ]);
 
-const MESA_SITE_ORDER_STATUSES = new Set(["novo", "aceito", "em_preparo", "pronto", "finalizado", "cancelado"]);
+const MESA_SITE_ORDER_STATUSES = new Set(["novo", "bloqueado_estoque", "aceito", "em_preparo", "pronto", "finalizado", "cancelado"]);
 
 async function listarPedidosSiteParaMesa(crmService, statusFilter = "") {
-  const normalizedFilter = normalizeMesaSiteStatus(statusFilter || "");
+  const rawFilter = String(statusFilter || "").trim().toLowerCase();
+  const listarTodos = ["todos", "all"].includes(rawFilter);
+  const normalizedFilter = listarTodos ? "" : normalizeMesaSiteStatus(rawFilter);
   const precomandas = await crmService.listarPrecomandas();
   const items = precomandas.items
     .filter(isSiteOrderForMesa)
@@ -1285,7 +1294,7 @@ async function listarPedidosSiteParaMesa(crmService, statusFilter = "") {
 
 async function atualizarStatusPedidoSiteParaMesa(crmService, id, body = {}) {
   const status = normalizeMesaSiteStatus(body.status);
-  if (!MESA_SITE_ORDER_STATUSES.has(status) || status === "novo") {
+  if (!MESA_SITE_ORDER_STATUSES.has(status) || ["novo", "bloqueado_estoque"].includes(status)) {
     return { ok: false, error: "Status invalido para pedido do site" };
   }
   const result = await crmService.atualizarPrecomanda(id, {
@@ -1293,6 +1302,27 @@ async function atualizarStatusPedidoSiteParaMesa(crmService, id, body = {}) {
     status_mesa: status,
     origemAtualizacao: body.origemAtualizacao || "mesa-xeriffe",
     observacao_mesa: body.observacao || "",
+    atualizado_em: new Date().toISOString()
+  });
+  if (!result.ok) return { ok: false, error: "Pedido do site nao encontrado" };
+  return { ok: true, id, status, pedido: mapSiteOrderForMesa(result.item || result.precomanda || result.updated || {}) };
+}
+
+async function bloquearPedidoSiteParaMesa(crmService, id, body = {}) {
+  const status = normalizeMesaSiteStatus(body.mesaStatus || body.status || "bloqueado_estoque");
+  if (status !== "bloqueado_estoque") return { ok: false, error: "Status de bloqueio invalido" };
+  const message = body.message || "Conferir/liberar estoque do turno antes de importar.";
+  const result = await crmService.atualizarPrecomanda(id, {
+    status,
+    status_mesa: status,
+    origemAtualizacao: body.origemAtualizacao || "mesa-xeriffe",
+    bloqueio_mesa: {
+      reason: body.reason || "estoque_turno",
+      message,
+      mesaStatus: status,
+      at: new Date().toISOString()
+    },
+    observacao_mesa: message,
     atualizado_em: new Date().toISOString()
   });
   if (!result.ok) return { ok: false, error: "Pedido do site nao encontrado" };
@@ -1311,6 +1341,7 @@ function mapSiteOrderForMesa(item = {}) {
     id: item.id,
     pedidoId: item.id,
     status: normalizeMesaSiteStatus(item.status) || "novo",
+    bloqueio_mesa: item.bloqueio_mesa || null,
     origem: item.origem || item.source || "site-insano",
     source: item.source || item.origem || "site-insano",
     operation: item.operacao || item.operation || "Insano",
@@ -1346,6 +1377,7 @@ function mapSiteOrderForMesa(item = {}) {
 function normalizeMesaSiteStatus(status = "") {
   const normalized = String(status || "novo").trim().toLowerCase();
   if (["nova", "pending", "pendente"].includes(normalized)) return "novo";
+  if (["bloqueado", "bloqueado-estoque", "estoque_bloqueado", "stock_blocked"].includes(normalized)) return "bloqueado_estoque";
   if (["accepted", "recebido", "importado"].includes(normalized)) return "aceito";
   if (["preparo", "em preparo"].includes(normalized)) return "em_preparo";
   if (["finalizada", "entregue"].includes(normalized)) return "finalizado";
