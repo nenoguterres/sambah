@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, stat } from "node:fs/promises";
 import crypto from "node:crypto";
-import { extname, join, normalize } from "node:path";
+import { dirname, extname, join, normalize } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { AuditService } from "./auditService.js";
 import { CrmService } from "./crmService.js";
@@ -73,6 +73,10 @@ export function createApp({
 
       if (req.method === "GET" && url.pathname === "/health") {
         return sendJson(res, 200, { ok: true, service: "sambha-automacao-whats" });
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/admin/storage-status") {
+        return sendJson(res, 200, await buildStorageStatus(crmService));
       }
 
       if (req.method === "GET" && url.pathname === "/api/config") {
@@ -1708,6 +1712,76 @@ function escapeStatusHtml(value = "") {
   })[char]);
 }
 
+async function buildStorageStatus(crmService) {
+  const runtime = getRuntimeConfig();
+  const dataDir = resolveStorageDataDir(crmService, runtime.dataDir);
+  const status = {
+    ok: true,
+    dataDir,
+    ambiente: runtime.nodeEnv,
+    persistenciaConfigurada: isPersistenceConfigured(runtime, dataDir),
+    arquivosEncontrados: [],
+    filesFound: [],
+    totais: {
+      leads: 0,
+      atendimentos: 0,
+      eventos: 0,
+      precomandas: 0,
+      oportunidades: 0,
+      pedidosSite: 0,
+      bloqueiosEstoque: 0
+    }
+  };
+
+  try {
+    await mkdir(dataDir, { recursive: true });
+    const entries = await readdir(dataDir, { withFileTypes: true });
+    status.arquivosEncontrados = await Promise.all(entries
+      .filter((entry) => entry.isFile())
+      .map(async (entry) => {
+        const filePath = join(dataDir, entry.name);
+        const info = await stat(filePath);
+        return { name: entry.name, bytes: info.size, updatedAt: info.mtime.toISOString() };
+      }));
+    status.filesFound = status.arquivosEncontrados;
+  } catch (error) {
+    status.ok = false;
+    status.storageError = error.message;
+  }
+
+  const [leads, atendimentos, eventos, precomandas, oportunidades] = await Promise.all([
+    crmService.listarLeads(),
+    crmService.listarAtendimentos(),
+    crmService.listarEventos(),
+    crmService.listarPrecomandas(),
+    crmService.listarOportunidades()
+  ]);
+  status.totais.leads = leads.items.length;
+  status.totais.atendimentos = atendimentos.items.length;
+  status.totais.eventos = eventos.items.length;
+  status.totais.precomandas = precomandas.items.length;
+  status.totais.oportunidades = oportunidades.items.length;
+  status.totais.pedidosSite = precomandas.items.filter(isSiteOrderForMesa).length;
+  status.totais.bloqueiosEstoque = precomandas.items.filter((item) => item.status === "bloqueado_estoque" || item.bloqueio_mesa).length;
+  status.totalLeads = status.totais.leads;
+  status.totalPrecomandas = status.totais.precomandas;
+  status.totalOportunidades = status.totais.oportunidades;
+  return status;
+}
+
+function resolveStorageDataDir(crmService, fallback) {
+  const files = Object.values(crmService.files || {}).filter(Boolean);
+  if (files.length) return dirname(files[0]);
+  return fallback;
+}
+
+function isPersistenceConfigured(runtime, dataDir) {
+  const configured = Boolean(globalThis.process?.env?.DATA_DIR);
+  const normalizedRuntimeDir = String(runtime.dataDir || "").replace(/\\/g, "/").replace(/\/$/, "");
+  const normalizedDataDir = String(dataDir || "").replace(/\\/g, "/").replace(/\/$/, "");
+  if (!configured) return false;
+  return !["data", "./data"].includes(normalizedRuntimeDir) && !/\/opt\/render\/project\/src\/data$/.test(normalizedDataDir);
+}
 async function renderPedidoStatusPage(crmService, id) {
   const precomandas = await crmService.listarPrecomandas();
   const pedido = precomandas.items.find((item) => item.id === id);

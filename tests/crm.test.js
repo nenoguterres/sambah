@@ -187,6 +187,82 @@ test("site pedido canonico cria pedido e valida payload", async () => {
   }
 });
 
+test("storage status usa DATA_DIR persistente e mantem pedido apos reinicio", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-storage-"));
+  const previousDataDir = process.env.DATA_DIR;
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousNumber = process.env.INSANO_WHATSAPP_NUMBER;
+  const previousEnabled = process.env.SITE_ORDERS_ENABLED;
+  process.env.DATA_DIR = dir;
+  process.env.NODE_ENV = "production";
+  process.env.INSANO_WHATSAPP_NUMBER = "5551980413745";
+  process.env.SITE_ORDERS_ENABLED = "true";
+
+  let server;
+  let restartedServer;
+  try {
+    const crmService = new CrmService({ files: crmFiles(dir), whatsappNumber: "5551980413745" });
+    server = createApp({ crmService });
+    await new Promise((resolve) => server.listen(0, resolve));
+    const base = `http://127.0.0.1:${server.address().port}`;
+
+    const createdResponse = await fetch(`${base}/api/site/pedido`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        nome: "Cliente Persistente",
+        telefone: "51999990000",
+        origem: "site-insano",
+        tipo: "pedido",
+        itens: [{ nome: "Burguer Insano", quantidade: 1 }],
+        formaEntrega: "retirada",
+        formaPagamento: "pix"
+      })
+    });
+    const created = await createdResponse.json();
+    assert.equal(createdResponse.status, 201);
+    assert.equal(created.ok, true);
+    assert.ok(created.pedidoId);
+
+    const beforeRestart = await fetch(`${base}/api/admin/storage-status`).then((response) => response.json());
+    assert.equal(beforeRestart.ok, true);
+    assert.equal(beforeRestart.dataDir, dir);
+    assert.equal(beforeRestart.persistenciaConfigurada, true);
+    assert.equal(beforeRestart.totais.precomandas, 1);
+    assert.equal(beforeRestart.totais.pedidosSite, 1);
+    assert.ok(beforeRestart.arquivosEncontrados.some((file) => file.name === "precomandas.json"));
+
+    await new Promise((resolve) => server.close(resolve));
+    server = null;
+
+    const crmServiceAfterRestart = new CrmService({ files: crmFiles(dir), whatsappNumber: "5551980413745" });
+    restartedServer = createApp({ crmService: crmServiceAfterRestart });
+    await new Promise((resolve) => restartedServer.listen(0, resolve));
+    const restartedBase = `http://127.0.0.1:${restartedServer.address().port}`;
+
+    const afterRestart = await fetch(`${restartedBase}/api/admin/storage-status`).then((response) => response.json());
+    assert.equal(afterRestart.ok, true);
+    assert.equal(afterRestart.dataDir, dir);
+    assert.equal(afterRestart.totais.precomandas, 1);
+    assert.equal(afterRestart.totalPrecomandas, 1);
+
+    const statusPage = await fetch(`${restartedBase}/pedido/${encodeURIComponent(created.pedidoId)}/status`);
+    assert.equal(statusPage.status, 200);
+  } finally {
+    if (server) await new Promise((resolve) => server.close(resolve));
+    if (restartedServer) await new Promise((resolve) => restartedServer.close(resolve));
+    if (previousDataDir === undefined) delete process.env.DATA_DIR;
+    else process.env.DATA_DIR = previousDataDir;
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+    if (previousNumber === undefined) delete process.env.INSANO_WHATSAPP_NUMBER;
+    else process.env.INSANO_WHATSAPP_NUMBER = previousNumber;
+    if (previousEnabled === undefined) delete process.env.SITE_ORDERS_ENABLED;
+    else process.env.SITE_ORDERS_ENABLED = previousEnabled;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("plataformas externas, cardapios, mesa, garcom e cozinha respondem", async () => {
   const dir = await mkdtemp(join(tmpdir(), "sambha-platforms-"));
   const auditService = new AuditService({ filePath: join(dir, "audit.json") });

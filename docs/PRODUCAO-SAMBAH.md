@@ -42,6 +42,16 @@ Checklist minimo antes de publicar o SamBah para operacao real sem derrubar o si
 - Para producao longa, planejar migracao para banco persistente.
 - Antes da migracao, garantir volume/disco persistente para `DATA_DIR`.
 
+## Persistencia no Render
+- O filesystem padrao do Render pode ser recriado em deploy, restart ou spin down; nao usar `data/` local para producao definitiva.
+- Criar um Persistent Disk no servico do SamBah e montar em `/var/data/sambah`.
+- Configurar a variavel `DATA_DIR=/var/data/sambah` no Render.
+- O SamBah cria os diretorios automaticamente quando grava os JSON.
+- Validar `GET /api/admin/storage-status` apos o deploy.
+- A resposta deve mostrar `persistenciaConfigurada: true`, `dataDir: "/var/data/sambah"` e contadores coerentes.
+- Teste obrigatorio antes de producao: criar pedido, reiniciar o servico no Render e confirmar que o pedido continua em `/api/admin/storage-status` e `/api/mesa/pedidos-site`.
+- Alternativa futura: PostgreSQL para operacao com escala, multi-instancia e relatorios, mas sem migracao sem aprovacao.
+
 ## Logs
 - Coletar stdout/stderr do processo Node.
 - Preservar logs de auditoria em `DATA_DIR`.
