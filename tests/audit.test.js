@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { AuditService, maskSensitive } from "../src/auditService.js";
 import { CrmService } from "../src/crmService.js";
 import { createApp } from "../src/server.js";
+import { WhatsAppConversationService } from "../src/whatsappConversationService.js";
 
 function tempCrm(dir) {
   return new CrmService({
@@ -184,3 +185,136 @@ test("webhook site nao derruba servidor com auditoria corrompida, body vazio ou 
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("Central de Conversas recebe texto e audio do WhatsApp sem envio automatico", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-whatsapp-ai-"));
+  const previousVerifyToken = process.env.WHATSAPP_VERIFY_TOKEN;
+  const previousSendEnabled = process.env.WHATSAPP_SEND_ENABLED;
+  const previousAccessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+  const previousVoiceEnabled = process.env.VOICE_REPLY_ENABLED;
+  process.env.WHATSAPP_VERIFY_TOKEN = "token-teste";
+  process.env.WHATSAPP_SEND_ENABLED = "false";
+  process.env.WHATSAPP_ACCESS_TOKEN = "";
+  process.env.VOICE_REPLY_ENABLED = "false";
+
+  const audit = new AuditService({ filePath: join(dir, "audit.json") });
+  const crmService = tempCrm(dir);
+  const whatsappConversationService = new WhatsAppConversationService({
+    filePath: join(dir, "whatsapp-conversas.json"),
+    now: () => new Date("2026-06-13T12:00:00.000Z")
+  });
+  const server = createApp({ auditService: audit, crmService, whatsappConversationService });
+  await new Promise((resolve) => server.listen(0, resolve));
+  const { port } = server.address();
+  const base = `http://127.0.0.1:${port}`;
+
+  try {
+    const verifyResponse = await fetch(`${base}/webhook/whatsapp?hub.mode=subscribe&hub.verify_token=token-teste&hub.challenge=abc123`);
+    assert.equal(verifyResponse.status, 200);
+    assert.equal(await verifyResponse.text(), "abc123");
+
+    const textResponse = await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(metaPayload({
+        from: "5551980413745",
+        id: "wamid-text-1",
+        type: "text",
+        text: { body: "quero pedir um lanche" }
+      }))
+    });
+    const textBody = await textResponse.json();
+    assert.equal(textResponse.status, 200);
+    assert.equal(textBody.ok, true);
+    assert.equal(textBody.intent, "pedido");
+    assert.match(textBody.respostaSugerida, /delivery/);
+    assert.equal(textBody.enviado, false);
+
+    const audioResponse = await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(metaPayload({
+        from: "5551980413745",
+        id: "wamid-audio-1",
+        type: "audio",
+        audio: { id: "media-audio-1", mime_type: "audio/ogg" }
+      }))
+    });
+    const audioBody = await audioResponse.json();
+    assert.equal(audioResponse.status, 200);
+    assert.equal(audioBody.ok, true);
+    assert.equal(audioBody.conversa.status, "pendente_configuracao");
+
+    const conversations = await fetch(`${base}/api/conversas`).then((response) => response.json());
+    assert.equal(conversations.ok, true);
+    assert.equal(conversations.count, 1);
+    assert.equal(conversations.items[0].telefone, "5551980413745");
+    assert.ok(conversations.items[0].respostaSugerida);
+
+    const detail = await fetch(`${base}/api/conversas/${encodeURIComponent(conversations.items[0].id)}`).then((response) => response.json());
+    assert.equal(detail.ok, true);
+    assert.equal(detail.conversa.audio.mediaId, "media-audio-1");
+
+    const reply = await fetch(`${base}/api/conversas/${encodeURIComponent(conversations.items[0].id)}/responder`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "Perfeito. Vou te ajudar." })
+    }).then((response) => response.json());
+    assert.equal(reply.ok, true);
+    assert.equal(reply.enviado, false);
+    assert.equal(reply.reason, "registrada_sem_envio");
+
+    const humanResponse = await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(metaPayload({
+        from: "5551980413000",
+        id: "wamid-human-1",
+        type: "text",
+        text: { body: "quero falar com humano" }
+      }))
+    }).then((response) => response.json());
+    assert.equal(humanResponse.intent, "humano");
+    assert.match(humanResponse.respostaSugerida, /encaminhar/);
+
+    const eventResponse = await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(metaPayload({
+        from: "5551980413999",
+        id: "wamid-event-1",
+        type: "text",
+        text: { body: "tenho evento para 80 pessoas" }
+      }))
+    }).then((response) => response.json());
+    assert.equal(eventResponse.intent, "evento");
+
+    const page = await fetch(`${base}/conversas`);
+    assert.equal(page.status, 200);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    if (previousVerifyToken === undefined) delete process.env.WHATSAPP_VERIFY_TOKEN;
+    else process.env.WHATSAPP_VERIFY_TOKEN = previousVerifyToken;
+    if (previousSendEnabled === undefined) delete process.env.WHATSAPP_SEND_ENABLED;
+    else process.env.WHATSAPP_SEND_ENABLED = previousSendEnabled;
+    if (previousAccessToken === undefined) delete process.env.WHATSAPP_ACCESS_TOKEN;
+    else process.env.WHATSAPP_ACCESS_TOKEN = previousAccessToken;
+    if (previousVoiceEnabled === undefined) delete process.env.VOICE_REPLY_ENABLED;
+    else process.env.VOICE_REPLY_ENABLED = previousVoiceEnabled;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+function metaPayload(message) {
+  return {
+    object: "whatsapp_business_account",
+    entry: [{
+      changes: [{
+        value: {
+          contacts: [{ profile: { name: "Cliente Teste" }, wa_id: message.from }],
+          messages: [message]
+        }
+      }]
+    }]
+  };
+}

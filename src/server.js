@@ -11,6 +11,7 @@ import { MenuSyncService } from "./menuSyncService.js";
 import { OrderDraftService } from "./orderDraftService.js";
 import { OrderTrackingService } from "./orderTrackingService.js";
 import { SambahConversationService } from "./sambahConversationService.js";
+import { WhatsAppConversationService } from "./whatsappConversationService.js";
 import { getPublicConfig, getRuntimeConfig, isAllowedCorsOrigin } from "./config.js";
 
 const publicDir = fileURLToPath(new URL("../public/", import.meta.url));
@@ -20,6 +21,7 @@ const audit = new AuditService({ filePath: dataFile("audit-logs.json") });
 const mesa = new MesaIntegrationService({ queueFile: dataFile("mesa-queue.json") });
 const menu = new MenuSyncService({ cacheFile: dataFile("menu-cache.json") });
 const conversation = new SambahConversationService({ scriptsFile: dataFile("sambah-scripts.json") });
+const whatsappConversations = new WhatsAppConversationService({ filePath: dataFile("whatsapp-conversas.json") });
 const drafts = new OrderDraftService({ draftsFile: dataFile("order-drafts.json"), rulesFile: dataFile("sambah-menu-rules.json") });
 const events = new EventScheduleService({ leadsFile: dataFile("event-leads.json"), servicesFile: dataFile("insano-services.json") });
 const tracking = new OrderTrackingService({ filePath: dataFile("order-tracking.json") });
@@ -52,6 +54,7 @@ export function createApp({
   mesaService = mesa,
   menuService = menu,
   conversationService = conversation,
+  whatsappConversationService = whatsappConversations,
   draftService = drafts,
   eventService = events,
   trackingService = tracking,
@@ -95,6 +98,10 @@ export function createApp({
         return serveStatic(res, "oportunidades.html");
       }
 
+      if (req.method === "GET" && url.pathname === "/conversas") {
+        return serveStatic(res, "conversas.html");
+      }
+
       if (req.method === "GET" && url.pathname === "/admin") {
         return serveStatic(res, "admin.html");
       }
@@ -121,7 +128,7 @@ export function createApp({
         return serveStatic(res, "conteudo.html");
       }
 
-      if (req.method === "GET" && ["/site.css", "/site.js", "/crm.css", "/crm.js", "/conteudo.css", "/platform.css", "/platform.js", "/oportunidades.css", "/oportunidades.js", "/portal.css", "/portal.js"].includes(url.pathname)) {
+      if (req.method === "GET" && ["/site.css", "/site.js", "/crm.css", "/crm.js", "/conteudo.css", "/platform.css", "/platform.js", "/oportunidades.css", "/oportunidades.js", "/conversas.css", "/conversas.js", "/portal.css", "/portal.js"].includes(url.pathname)) {
         return serveStatic(res, url.pathname.slice(1));
       }
 
@@ -170,6 +177,35 @@ export function createApp({
         return sendJson(res, 200, await trackingService.list({
           limit: url.searchParams.get("limit")
         }));
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/conversas") {
+        return sendJson(res, 200, await whatsappConversationService.list());
+      }
+
+      const conversaMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)$/);
+      if (req.method === "GET" && conversaMatch) {
+        const result = await whatsappConversationService.get(decodeURIComponent(conversaMatch[1]));
+        return sendJson(res, result.ok ? 200 : 404, result);
+      }
+
+      const conversaResponderMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/responder$/);
+      if (req.method === "POST" && conversaResponderMatch) {
+        const body = await readJson(req, { requireBody: true });
+        const result = await whatsappConversationService.addOutgoing(decodeURIComponent(conversaResponderMatch[1]), body, { runtimeConfig: getRuntimeConfig() });
+        return sendJson(res, result.ok ? 200 : 404, result);
+      }
+
+      const conversaHumanoMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/humano$/);
+      if (req.method === "POST" && conversaHumanoMatch) {
+        const result = await whatsappConversationService.markHuman(decodeURIComponent(conversaHumanoMatch[1]));
+        return sendJson(res, result.ok ? 200 : 404, result);
+      }
+
+      const conversaResolvidoMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/resolvido$/);
+      if (req.method === "POST" && conversaResolvidoMatch) {
+        const result = await whatsappConversationService.markResolved(decodeURIComponent(conversaResolvidoMatch[1]));
+        return sendJson(res, result.ok ? 200 : 404, result);
       }
 
       if (req.method === "GET" && url.pathname === "/api/orders/tracking/refresh") {
@@ -665,8 +701,12 @@ export function createApp({
         return sendJson(res, 200, result);
       }
 
+      if (req.method === "GET" && url.pathname === "/webhook/whatsapp") {
+        return verifyWhatsAppWebhook(req, res, url);
+      }
+
       if (req.method === "POST" && ["/webhook/whatsapp", "/webhook/site"].includes(url.pathname)) {
-        return handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, draftService, eventService, trackingService, crmService);
+        return handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService);
       }
 
       return sendJson(res, 404, { error: "not_found" });
@@ -684,7 +724,23 @@ export function createApp({
   });
 }
 
-async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, draftService, eventService, trackingService, crmService) {
+function verifyWhatsAppWebhook(req, res, url) {
+  const config = getRuntimeConfig();
+  const mode = url.searchParams.get("hub.mode");
+  const token = url.searchParams.get("hub.verify_token");
+  const challenge = url.searchParams.get("hub.challenge");
+  if (mode === "subscribe" && token && token === config.whatsappBusiness.verifyToken) {
+    res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+    return res.end(challenge || "");
+  }
+  return sendJson(res, 403, { ok: false, error: "Token de verificacao invalido" });
+}
+
+function isMetaWhatsAppPayload(body = {}) {
+  return Array.isArray(body.entry) && Boolean(body.entry[0]?.changes?.[0]?.value?.messages?.[0]);
+}
+
+async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService) {
   let body = {};
   try {
     body = await readJson(req, { requireBody: true });
@@ -708,6 +764,23 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
     if (body.type === "pre_order") {
       const result = await handlePreOrderWebhook(body, { auditService, mesaService, trackingService, crmService });
       return sendJson(res, 202, result);
+    }
+
+    if (req.url?.includes("/webhook/whatsapp")) {
+      const conversationResult = await whatsappConversationService.recordIncoming(body, {
+        runtimeConfig: getRuntimeConfig(),
+        crmService
+      });
+      if (isMetaWhatsAppPayload(body)) {
+        return sendJson(res, 200, {
+          ok: true,
+          conversa: conversationResult.conversa,
+          intent: conversationResult.intent,
+          respostaSugerida: conversationResult.respostaSugerida,
+          enviado: false,
+          automaticoAtivo: conversationResult.sendEnabled
+        });
+      }
     }
 
     const crmResult = await safeCrmRecord(crmService, {

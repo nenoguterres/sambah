@@ -38,6 +38,23 @@ export function getRuntimeConfig(env = globalThis.process?.env || {}) {
       businessAccountId: env.WHATSAPP_BUSINESS_ACCOUNT_ID || "",
       webhookSecret: env.WHATSAPP_WEBHOOK_SECRET || "",
       apiBaseUrl: env.WHATSAPP_API_BASE_URL || "https://graph.facebook.com/v20.0"
+    },
+    ai: {
+      provider: env.AI_PROVIDER || "openai",
+      openaiApiKey: env.OPENAI_API_KEY || "",
+      openaiModel: env.OPENAI_MODEL || "",
+      openaiTranscribeModel: env.OPENAI_TRANSCRIBE_MODEL || "",
+      openaiTtsModel: env.OPENAI_TTS_MODEL || "",
+      openaiTtsVoice: env.OPENAI_TTS_VOICE || "",
+      sttProvider: env.STT_PROVIDER || "google",
+      googleApplicationCredentials: env.GOOGLE_APPLICATION_CREDENTIALS || "",
+      googleSttLanguage: env.GOOGLE_STT_LANGUAGE || "pt-BR",
+      ttsProvider: env.TTS_PROVIDER || "google",
+      googleTtsLanguage: env.GOOGLE_TTS_LANGUAGE || "pt-BR",
+      googleTtsVoice: env.GOOGLE_TTS_VOICE || "",
+      voiceReplyEnabled: env.VOICE_REPLY_ENABLED === "true",
+      humanHandoffEnabled: env.HUMAN_HANDOFF_ENABLED !== "false",
+      hasTranscriptionCredentials: Boolean(env.OPENAI_API_KEY || env.GOOGLE_APPLICATION_CREDENTIALS)
     }
   };
 }
