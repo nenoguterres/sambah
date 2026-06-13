@@ -106,13 +106,17 @@ test("site pedido canonico cria pedido e valida payload", async () => {
     assert.equal(valid.body.ok, true);
     assert.ok(valid.body.pedidoId);
     assert.equal(valid.body.status, "novo");
-    assert.match(valid.body.whatsappMessage, /NOVA PRÉ-COMANDA INSANO/);
-    assert.match(valid.body.whatsappMessage, /PedidoId:/);
+    assert.match(valid.body.whatsappMessage, /Olá, equipe Insano/);
+    assert.match(valid.body.whatsappMessage, /Sou o SamBah e organizei um novo atendimento pelo Portal Insano/);
+    assert.match(valid.body.whatsappMessage, /ID:/);
+    assert.match(valid.body.whatsappMessage, /Cliente: Cliente Wix/);
     assert.match(valid.body.whatsappMessage, /WhatsApp: 51999999999/);
-    assert.match(valid.body.whatsappMessage, /Operação: Insano/);
+    assert.match(valid.body.whatsappMessage, /Tipo de atendimento: Retirar/);
     assert.match(valid.body.whatsappMessage, /- 1x Burguer Insano/);
-    assert.match(valid.body.whatsappMessage, /Status: novo/);
+    assert.match(valid.body.whatsappMessage, /Status: aguardando confirmação da equipe/);
     assert.match(valid.body.whatsappUrl, /^https:\/\/wa\.me\/5551980413745/);
+    assert.ok(valid.body.statusUrl);
+    assert.equal(valid.body.confirmation.title, "✅ Pedido recebido pelo SamBah");
 
     const mesaPedidos = await fetch(`${base}/api/mesa/pedidos-site?status=novo`).then((response) => response.json());
     assert.equal(mesaPedidos.ok, true);
@@ -145,6 +149,12 @@ test("site pedido canonico cria pedido e valida payload", async () => {
     }).then((response) => response.json());
     assert.equal(mesaStatus.ok, true);
     assert.equal(mesaStatus.status, "aceito");
+
+    const statusPage = await fetch(`${base}${valid.body.statusUrl}`);
+    const statusHtml = await statusPage.text();
+    assert.equal(statusPage.status, 200);
+    assert.match(statusHtml, /Pedido recebido/);
+    assert.match(statusHtml, /Aguardando confirmação/);
 
     const withoutName = await post({ telefone: "51999999999", itens: [{ nome: "Burguer", quantidade: 1 }] });
     assert.equal(withoutName.status, 400);
@@ -246,6 +256,9 @@ test("plataformas externas, cardapios, mesa, garcom e cozinha respondem", async 
     assert.equal(pre.ok, true);
     assert.equal(pre.operation, "Buteco Xeriffe");
     assert.match(pre.whatsappUrl, /^https:\/\/wa\.me\/5551980413745/);
+    assert.match(pre.whatsappMessage, /Olá, equipe Insano/);
+    assert.match(pre.whatsappMessage, /Mesa: 7/);
+    assert.ok(pre.statusUrl);
 
     const whatsapp = await post("/api/site/whatsapp", {
       nome: "Contato WhatsApp",
@@ -516,7 +529,14 @@ test("Portal Insano cria pedidos, eventos, empresas, Xeriffe e WhatsApp sem expo
     assert.ok(oportunidades.items.some((item) => item.recordId === xeriffe.id));
     assert.ok(oportunidades.items.some((item) => item.recordId === whatsapp.id));
 
-    assert.match(portalJs, /window\.open\(url, "_blank", "noopener,noreferrer"\)/);
+    assert.doesNotMatch(portalJs, /Pedido enviado para a cozinha\. Continuar no WhatsApp/);
+    assert.match(portalJs, /Enviando seu pedido\.\.\./);
+    assert.match(portalJs, /replaceFormWithResult/);
+    assert.match(portalJs, /Continuar atendimento no WhatsApp/);
+    assert.match(portalJs, /Acompanhar pedido/);
+    assert.match(portalJs, /Não conseguimos registrar agora/);
+    assert.match(portalJs, /Informe a mesa para continuar o atendimento/);
+    assert.match(portalJs, /data-form-shell/);    assert.match(portalJs, /window\.open\(url, "_blank", "noopener,noreferrer"\)/);
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await rm(dir, { recursive: true, force: true });

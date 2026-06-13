@@ -199,7 +199,7 @@ export function createApp({
           name: "Cliente Teste",
           phone: "11999990000",
           items: [{ productId: "kachurrasco", qty: 1, addons: [], serveMode: "Levar", note: "Pedido teste samBah!" }],
-          notes: "Pedido teste de integraÃ§Ã£o Mesa",
+          notes: "Pedido teste de integração Mesa",
           total: null
         });
         const entry = await mesaService.enqueueOrder(testOrder);
@@ -414,6 +414,12 @@ export function createApp({
           dedupeKey: result.id
         });
         return sendJson(res, 201, result);
+      }
+
+      const pedidoStatusMatch = url.pathname.match(/^\/pedido\/([^/]+)\/status$/);
+      if (req.method === "GET" && pedidoStatusMatch) {
+        const result = await renderPedidoStatusPage(crmService, decodeURIComponent(pedidoStatusMatch[1]));
+        return sendHtml(res, result.statusCode, result.html);
       }
 
       if (req.method === "POST" && url.pathname === "/api/site/pedido") {
@@ -909,7 +915,7 @@ async function handlePreOrderWebhook(body, { auditService, mesaService, tracking
       type: "pre_order",
       error: "invalid_pre_order",
       missing: validation.missing,
-      responseText: "Pra deixar redondo, falta completar os dados da prÃ©-comanda."
+      responseText: "Pra deixar redondo, falta completar os dados da pré-comanda."
     };
   }
 
@@ -922,8 +928,8 @@ async function handlePreOrderWebhook(body, { auditService, mesaService, tracking
     ? mesaResult.mesaResponse?.status || "pending"
     : "pending_mesa";
   const lastMessageSent = mesaResult.ok
-    ? "PrÃ©-comanda enviada para a equipe. O SamBah continua contigo pelo WhatsApp."
-    : "O sistema de pedidos estÃ¡ em conferÃªncia. Recebi tua prÃ©-comanda e a equipe vai confirmar pelo WhatsApp.";
+    ? "Pré-comanda enviada para a equipe. O SamBah continua contigo pelo WhatsApp."
+    : "O sistema de pedidos está em conferência. Recebi tua pré-comanda e a equipe vai confirmar pelo WhatsApp.";
 
   const tracking = await trackingService.createTracking({
     sambahOrderId,
@@ -991,8 +997,17 @@ async function createSiteLead(crmService, body = {}) {
     interesse: body.interesse || body.interest || (operation === "Buteco Xeriffe" ? "festa_xeriffe" : "food_truck"),
     mensagem_original: body.message || body.text || body.observacoes || ""
   });
-  const whatsappUrl = buildSiteWhatsAppUrl(body, operation);
-  return siteResponse({ id: leadResult.lead.id, pipeline, operation, whatsappUrl, lead: leadResult.lead });
+  const whatsappMessage = buildSiteAtendimentoWhatsappMessage({ id: leadResult.lead.id, operation, pipeline, body, tipo: body.tipo || body.type || "lead" });
+  const whatsappUrl = buildSitePedidoWhatsappUrl(whatsappMessage) || buildSiteWhatsAppUrl(body, operation);
+  return siteResponse({
+    id: leadResult.lead.id,
+    pipeline,
+    operation,
+    whatsappUrl,
+    whatsappMessage,
+    confirmation: buildSiteConfirmation("atendimento"),
+    lead: leadResult.lead
+  });
 }
 
 async function createSiteEventQuote(crmService, body = {}) {
@@ -1012,11 +1027,16 @@ async function createSiteEventQuote(crmService, body = {}) {
     status: "orcamento_solicitado",
     message: body.message || body.text || body.observacoes || "Orcamento de evento solicitado pelo site"
   });
+  const id = atendimento.lead?.id || atendimento.evento?.id;
+  const whatsappMessage = buildSiteAtendimentoWhatsappMessage({ id, operation, pipeline, body, tipo: body.tipo || body.type || "evento" });
+  const whatsappUrl = buildSitePedidoWhatsappUrl(whatsappMessage) || atendimento.whatsappUrl || buildSiteWhatsAppUrl(body, operation);
   return siteResponse({
-    id: atendimento.lead?.id || atendimento.evento?.id,
+    id,
     pipeline,
     operation,
-    whatsappUrl: atendimento.whatsappUrl || buildSiteWhatsAppUrl(body, operation),
+    whatsappUrl,
+    whatsappMessage,
+    confirmation: buildSiteConfirmation("atendimento"),
     lead: atendimento.lead,
     evento: atendimento.evento
   });
@@ -1038,11 +1058,16 @@ async function createSiteQuickOrder(crmService, body = {}) {
     interesse: "pedido",
     message: body.message || body.text || body.observacoes || formatRequestItems(body.items || body.itens)
   });
+  const id = result.precomanda?.id || result.atendimento?.id;
+  const whatsappMessage = buildSiteAtendimentoWhatsappMessage({ id, operation, pipeline, body, tipo: body.tipo || body.type || "pedido" });
+  const whatsappUrl = buildSitePedidoWhatsappUrl(whatsappMessage) || result.whatsappUrl || buildSiteWhatsAppUrl(body, operation);
   return siteResponse({
-    id: result.precomanda?.id || result.atendimento?.id,
+    id,
     pipeline,
     operation,
-    whatsappUrl: result.whatsappUrl || buildSiteWhatsAppUrl(body, operation),
+    whatsappUrl,
+    whatsappMessage,
+    confirmation: buildSiteConfirmation("pedido"),
     precomanda: result.precomanda,
     atendimento: result.atendimento
   });
@@ -1053,7 +1078,7 @@ function getInsanoSiteCardapio() {
     "Burgers",
     "Assados & Buteco",
     "Pizzas",
-    "Porções",
+    "PorÃ§Ãµes",
     "Espetinhos",
     "Bebidas",
     "Eventos"
@@ -1067,16 +1092,16 @@ function getInsanoSiteCardapio() {
     ["Pizza da Casa", "Pizzas", ["pizza"], false],
     ["Pizza Insana", "Pizzas", ["pizza", "insano"], true],
     ["Pizza para Eventos", "Pizzas", ["pizza", "eventos"], false],
-    ["Fritas", "Porções", ["porção", "buteco"], false],
-    ["Polenta", "Porções", ["porção", "buteco"], false],
-    ["Frango", "Porções", ["porção", "frango"], false],
-    ["Porção de Boteco Insana", "Porções", ["porção", "buteco", "insano"], true],
+    ["Fritas", "PorÃ§Ãµes", ["porÃ§Ã£o", "buteco"], false],
+    ["Polenta", "PorÃ§Ãµes", ["porÃ§Ã£o", "buteco"], false],
+    ["Frango", "PorÃ§Ãµes", ["porÃ§Ã£o", "frango"], false],
+    ["PorÃ§Ã£o de Boteco Insana", "PorÃ§Ãµes", ["porÃ§Ã£o", "buteco", "insano"], true],
     ["Espetinho de Fraldinha", "Espetinhos", ["espetinho", "fraldinha"], false],
     ["Espetinho de Frango", "Espetinhos", ["espetinho", "frango"], false],
     ["Espetinho Misto", "Espetinhos", ["espetinho"], false],
-    ["Espetinho de Coração", "Espetinhos", ["espetinho", "coração"], false],
+    ["Espetinho de CoraÃ§Ã£o", "Espetinhos", ["espetinho", "coraÃ§Ã£o"], false],
     ["Refrigerantes", "Bebidas", ["bebida"], false],
-    ["Água", "Bebidas", ["bebida"], false],
+    ["Ãgua", "Bebidas", ["bebida"], false],
     ["Cervejas", "Bebidas", ["bebida", "cerveja"], false],
     ["Chope Artesanal Insano / Beerlina", "Bebidas", ["bebida", "chope"], true],
     ["Food Truck para Eventos", "Eventos", ["evento", "food truck"], true],
@@ -1182,16 +1207,25 @@ async function createSitePedido(crmService, body = {}) {
     horario,
     formaPagamento,
     observacoes,
+    mesa: body.mesa || body.customer?.mesa || "",
     status: result.precomanda.status || status
   });
   const whatsappUrl = buildSitePedidoWhatsappUrl(whatsappMessage);
+  const statusUrl = `/pedido/${encodeURIComponent(result.precomanda.id)}/status`;
 
   return {
     ok: true,
     pedidoId: result.precomanda.id,
     status: result.precomanda.status || status,
+    atendimentoStatus: "aguardando_confirmacao",
     whatsappMessage,
-    whatsappUrl
+    whatsappUrl,
+    statusUrl,
+    confirmation: {
+      title: "✅ Pedido recebido pelo SamBah",
+      text: "Seu atendimento foi iniciado. Agora vamos abrir o WhatsApp com os dados já organizados para nossa equipe continuar o atendimento.",
+      status: "aguardando confirmação"
+    }
   };
 }
 async function createSitePrecomanda(crmService, body = {}) {
@@ -1209,11 +1243,34 @@ async function createSitePrecomanda(crmService, body = {}) {
     pipeline,
     status: body.status || "novo"
   });
+  const whatsappMessage = buildSitePedidoWhatsappMessage({
+    pedidoId: result.precomanda.id,
+    nome: result.precomanda.nome,
+    telefone: result.precomanda.whatsapp,
+    operation,
+    itens: result.precomanda.items || result.precomanda.itens || [],
+    formaEntrega: result.precomanda.type || result.precomanda.tipo || result.precomanda.customer?.serviceType || body.type || body.tipo,
+    endereco: result.precomanda.endereco || result.precomanda.address || body.endereco || body.address || "",
+    horario: result.precomanda.horario || body.horario || body.retirada || "",
+    formaPagamento: result.precomanda.formaPagamento || result.precomanda.customer?.paymentMethod || body.formaPagamento || body.paymentMethod || "",
+    observacoes: result.precomanda.observacoes || result.precomanda.notes || "",
+    mesa: result.precomanda.mesa || body.mesa || "",
+    status: result.precomanda.status
+  });
+  const whatsappUrl = buildSitePedidoWhatsappUrl(whatsappMessage) || result.whatsappUrl;
   return siteResponse({
     id: result.precomanda.id,
+    pedidoId: result.precomanda.id,
     pipeline: result.precomanda.pipeline || pipeline,
     operation,
-    whatsappUrl: result.whatsappUrl || buildSiteWhatsAppUrl(body, operation),
+    whatsappUrl,
+    whatsappMessage,
+    statusUrl: `/pedido/${encodeURIComponent(result.precomanda.id)}/status`,
+    confirmation: {
+      title: "✅ Pedido recebido pelo SamBah",
+      text: "Seu atendimento foi iniciado. Agora vamos abrir o WhatsApp com os dados já organizados para nossa equipe continuar o atendimento.",
+      status: "aguardando confirmação"
+    },
     precomanda: result.precomanda,
     status: result.precomanda.status
   });
@@ -1235,11 +1292,17 @@ async function createSiteWhatsapp(crmService, body = {}) {
     pipeline: body.pipeline || "atendimento_humano",
     status: body.status || "aguardando_atendimento"
   });
+  const id = result.atendimento?.id || result.lead?.id || body.id || body.eventId || `wa_${Date.now()}`;
+  const pipeline = result.pipeline || body.pipeline || "atendimento_humano";
+  const whatsappMessage = buildSiteAtendimentoWhatsappMessage({ id, operation, pipeline, body, tipo: body.tipo || body.type || "whatsapp" });
+  const whatsappUrl = buildSitePedidoWhatsappUrl(whatsappMessage) || result.whatsappUrl || buildSiteWhatsAppUrl(body, operation);
   return siteResponse({
-    id: result.atendimento?.id || result.lead?.id || body.id || body.eventId || `wa_${Date.now()}`,
-    pipeline: result.pipeline || body.pipeline || "atendimento_humano",
+    id,
+    pipeline,
     operation,
-    whatsappUrl: result.whatsappUrl || buildSiteWhatsAppUrl(body, operation),
+    whatsappUrl,
+    whatsappMessage,
+    confirmation: buildSiteConfirmation("atendimento"),
     atendimento: result.atendimento || null,
     lead: result.lead || null
   });
@@ -1426,17 +1489,126 @@ function normalizeOperation(value = "") {
 
 function buildSiteWhatsAppUrl(body = {}, operation = "Insano") {
   const number = getRuntimeConfig().whatsappNumber;
-  const name = body.nome || body.name || body.customer?.name || "";
-  const phone = body.whatsapp || body.phone || body.customer?.phone || "";
-  const text = [
-    "Buenas, SamBah!",
-    `Operacao: ${operation}`,
-    name ? `Nome: ${name}` : "",
-    phone ? `WhatsApp: ${phone}` : "",
-    body.mesa ? `Mesa: ${body.mesa}` : "",
-    body.message || body.text || body.observacoes || body.notes || formatRequestItems(body.items || body.itens)
+  const message = buildSiteAtendimentoWhatsappMessage({ id: body.id || body.eventId || "", operation, pipeline: body.pipeline || "atendimento_humano", body, tipo: body.tipo || body.type || "whatsapp" });
+  return `https://wa.me/${number}?text=${encodeURIComponent(message)}`;
+}
+
+function buildSiteConfirmation(kind = "atendimento") {
+  return {
+    title: "SamBah recebeu seu atendimento",
+    text: "Seu pedido ou solicitação foi organizado com sucesso. Agora vamos abrir o WhatsApp com os dados já preparados para nossa equipe continuar seu atendimento.",
+    status: "aguardando confirmação da equipe",
+    kind
+  };
+}
+
+function buildSiteAtendimentoWhatsappMessage({ id, operation = "Insano", pipeline = "", body = {}, tipo = "" }) {
+  if (operation === "Buteco Xeriffe" || pipeline === "festa_xeriffe") return buildXeriffeWhatsappMessage({ id, body });
+  if (pipeline === "orcamento_corporativo" || tipo === "empresa") return buildCorporateWhatsappMessage({ id, body });
+  if (pipeline === "food_truck_evento" || pipeline === "orcamento_evento" || tipo === "evento" || tipo === "lead") return buildFoodTruckWhatsappMessage({ id, body });
+  return buildGenericSiteWhatsappMessage({ id, operation, body });
+}
+
+function buildFoodTruckWhatsappMessage({ id, body = {} }) {
+  return [
+    "🔥 Olá, equipe Insano!",
+    "Sou o SamBah e organizei uma nova solicitação de Food Truck pelo site.",
+    "",
+    "Atendimento:",
+    `ID: ${id || ""}`,
+    `Cliente: ${siteBodyName(body)}`,
+    siteBodyPhone(body) ? `WhatsApp: ${siteBodyPhone(body)}` : "",
+    "Tipo: Food Truck",
+    siteBodyDate(body) ? `Data: ${siteBodyDate(body)}` : "",
+    siteBodyPeople(body) ? `Pessoas: ${siteBodyPeople(body)}` : "",
+    siteBodyPlace(body) ? `Local: ${siteBodyPlace(body)}` : "",
+    siteBodyNotes(body) ? `Observações: ${siteBodyNotes(body)}` : "",
+    "",
+    "Status: aguardando retorno da equipe.",
+    "",
+    "Pode seguir com esse atendimento?"
   ].filter(Boolean).join("\n");
-  return `https://wa.me/${number}?text=${encodeURIComponent(text)}`;
+}
+
+function buildCorporateWhatsappMessage({ id, body = {} }) {
+  return [
+    "🏢 Olá, equipe Insano!",
+    "Sou o SamBah e organizei uma nova solicitação de evento corporativo pelo site.",
+    "",
+    "Atendimento:",
+    `ID: ${id || ""}`,
+    `Cliente: ${siteBodyName(body)}`,
+    body.empresa ? `Empresa: ${body.empresa}` : "",
+    siteBodyPhone(body) ? `WhatsApp: ${siteBodyPhone(body)}` : "",
+    siteBodyDate(body) ? `Data: ${siteBodyDate(body)}` : "",
+    siteBodyPeople(body) ? `Pessoas: ${siteBodyPeople(body)}` : "",
+    (body.tipo_evento || body.tipo || body.type) ? `Necessidade: ${body.tipo_evento || body.tipo || body.type}` : "",
+    siteBodyNotes(body) ? `Observações: ${siteBodyNotes(body)}` : "",
+    "",
+    "Status: aguardando retorno da equipe.",
+    "",
+    "Pode seguir com esse atendimento?"
+  ].filter(Boolean).join("\n");
+}
+
+function buildXeriffeWhatsappMessage({ id, body = {} }) {
+  return [
+    "🤠 Olá, equipe Xeriffe!",
+    "Sou o SamBah e organizei um novo atendimento pelo site.",
+    "",
+    "Atendimento:",
+    `ID: ${id || ""}`,
+    `Cliente: ${siteBodyName(body)}`,
+    siteBodyPhone(body) ? `WhatsApp: ${siteBodyPhone(body)}` : "",
+    (body.message || body.tipo || body.type) ? `Tipo: ${body.message || body.tipo || body.type}` : "",
+    siteBodyNotes(body) ? `Detalhes: ${siteBodyNotes(body)}` : "",
+    "",
+    "Status: aguardando confirmação da equipe.",
+    "",
+    "Pode seguir com esse atendimento?"
+  ].filter(Boolean).join("\n");
+}
+
+function buildGenericSiteWhatsappMessage({ id, operation = "Insano", body = {} }) {
+  return [
+    operation === "Buteco Xeriffe" ? "🤠 Olá, equipe Xeriffe!" : "🍔 Olá, equipe Insano!",
+    "Sou o SamBah e organizei um novo atendimento pelo site.",
+    "",
+    "Atendimento:",
+    `ID: ${id || ""}`,
+    `Cliente: ${siteBodyName(body)}`,
+    siteBodyPhone(body) ? `WhatsApp: ${siteBodyPhone(body)}` : "",
+    (body.message || body.tipo || body.type) ? `Tipo: ${body.message || body.tipo || body.type}` : "",
+    siteBodyNotes(body) ? `Detalhes: ${siteBodyNotes(body)}` : "",
+    "",
+    "Status: aguardando confirmação da equipe.",
+    "",
+    "Pode seguir com esse atendimento?"
+  ].filter(Boolean).join("\n");
+}
+
+function siteBodyName(body = {}) {
+  return body.nome || body.name || body.customerName || body.customer?.name || "Cliente";
+}
+
+function siteBodyPhone(body = {}) {
+  return body.whatsapp || body.telefone || body.phone || body.customer?.phone || "";
+}
+
+function siteBodyDate(body = {}) {
+  return body.data || body.date || body.eventDate || "";
+}
+
+function siteBodyPeople(body = {}) {
+  return body.pessoas || body.quantidade_pessoas || body.people || body.guests || "";
+}
+
+function siteBodyPlace(body = {}) {
+  return body.local || body.endereco || body.address || body.bairro || "";
+}
+
+function siteBodyNotes(body = {}) {
+  return body.observacoes || body.notes || body.observacao || body.message || body.text || formatRequestItems(body.items || body.itens) || "";
 }
 
 function normalizeSitePedidoItems(items = []) {
@@ -1469,27 +1641,44 @@ function normalizeSitePedidoItems(items = []) {
   return { ok: true, items: normalized };
 }
 
-function buildSitePedidoWhatsappMessage({ pedidoId, nome, telefone, operation, itens, formaEntrega, endereco, horario, formaPagamento, observacoes, status }) {
+function buildSitePedidoWhatsappMessage({ pedidoId, nome, telefone, operation, itens, formaEntrega, endereco, horario, formaPagamento, observacoes, status, mesa }) {
   const itemLines = formatSitePedidoWhatsappItems(itens);
-  const retiradaEntrega = [formaEntrega, endereco].filter(Boolean).join(" - ");
+  const tipoAtendimento = formatTipoAtendimento(formaEntrega);
+  const details = [];
+  if (tipoAtendimento) details.push(`Tipo de atendimento: ${tipoAtendimento}`);
+  if (mesa) details.push(`Mesa: ${mesa}`);
+  if (horario) details.push(`Horario de retirada: ${horario}`);
+  if (endereco) details.push(`Endereco ou bairro: ${endereco}`);
+  if (formaPagamento) details.push(`Pagamento: ${formaPagamento}`);
+  if (observacoes) details.push(`Observações: ${observacoes}`);
 
   return [
-    "🔥 NOVA PRÉ-COMANDA INSANO",
+    "🍔 Olá, equipe Insano!",
+    "Sou o SamBah e organizei um novo atendimento pelo Portal Insano.",
     "",
-    `PedidoId: ${pedidoId || ""}`,
-    `Nome: ${nome || ""}`,
-    `WhatsApp: ${telefone || ""}`,
+    "Pedido:",
+    `ID: ${pedidoId || ""}`,
+    `Cliente: ${nome || ""}`,
+    telefone ? `WhatsApp: ${telefone}` : "",
     `Operação: ${operation || "Insano"}`,
+    details.join("\n"),
     "",
     "Itens:",
     itemLines,
     "",
-    `Retirada/Entrega: ${retiradaEntrega || "nao informado"}`,
-    `Horário: ${horario || "nao informado"}`,
-    `Pagamento: ${formaPagamento || "nao informado"}`,
-    `Observações: ${observacoes || "nenhuma"}`,
-    `Status: ${status || "novo"}`
-  ].join("\n");
+    `Status: ${status === "novo" ? "aguardando confirmação da equipe" : status || "aguardando confirmação da equipe"}`,
+    "",
+    "Pode dar sequência nesse atendimento?"
+  ].filter(Boolean).join("\n");
+}
+
+function formatTipoAtendimento(value = "") {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["delivery", "entrega"].includes(normalized)) return "Delivery";
+  if (["retirar", "retirada"].includes(normalized)) return "Retirar";
+  if (["mesa", "local", "consumir no local", "estou no local"].includes(normalized)) return "Estou no local";
+  if (["evento", "grande pedido", "evento / grande pedido"].includes(normalized)) return "Evento / Grande Pedido";
+  return value;
 }
 
 function formatSitePedidoWhatsappItems(items = []) {
@@ -1501,10 +1690,55 @@ function formatSitePedidoWhatsappItems(items = []) {
   }).join("\n");
 }
 
+// wa.me apenas abre a conversa com a mensagem pronta. Ele nao envia resposta automatica;
+// resposta automatica real depende da WhatsApp Business Cloud API ligada ao webhook.
 function buildSitePedidoWhatsappUrl(message) {
   const number = String(getRuntimeConfig().insanoWhatsappNumber || "").replace(/\D/g, "");
   if (!number) return null;
   return `https://wa.me/${number}?text=${encodeURIComponent(message)}`;
+}
+
+function escapeStatusHtml(value = "") {
+  return String(value || "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[char]);
+}
+
+async function renderPedidoStatusPage(crmService, id) {
+  const precomandas = await crmService.listarPrecomandas();
+  const pedido = precomandas.items.find((item) => item.id === id);
+  const status = pedido?.status || "aguardando_confirmacao";
+  const nome = pedido?.nome || pedido?.customerName || "Cliente";
+  const html = `<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Status do pedido SamBah</title>
+  <link rel="stylesheet" href="/portal.css">
+</head>
+<body>
+  <main class="portal-shell">
+    <section class="portal-card status-page">
+      <h1>Pedido recebido</h1>
+      <p>Aguardando confirmação</p>
+      <div class="status-summary">
+        <div><span>Pedido</span><strong>${escapeStatusHtml(id)}</strong></div>
+        <div><span>Cliente</span><strong>${escapeStatusHtml(nome)}</strong></div>
+        <div><span>Status</span><strong>${escapeStatusHtml(status)}</strong></div>
+        <div><span>WhatsApp</span><strong>aberto para atendimento</strong></div>
+      </div>
+      <p>Proximo passo: equipe confirma o pedido.</p>
+      <a class="choice-link" href="/">Voltar ao início</a>
+    </section>
+  </main>
+</body>
+</html>`;
+  return { statusCode: pedido ? 200 : 404, html };
 }
 
 function cleanSiteOrderText(value = "") {
@@ -1531,7 +1765,7 @@ function validatePreOrderPayload(body) {
   if (!body.customer?.phone) missing.push("WhatsApp");
   if (!body.customer?.serviceType) missing.push("tipo de atendimento");
   if (!body.customer?.paymentMethod) missing.push("forma de pagamento");
-  if (body.customer?.serviceType === "entrega" && !body.customer?.address) missing.push("endereÃ§o");
+  if (body.customer?.serviceType === "entrega" && !body.customer?.address) missing.push("endereço");
   if (!Array.isArray(body.items) || !body.items.length) missing.push("pelo menos 1 item");
   return { ok: missing.length === 0, missing };
 }
@@ -1545,10 +1779,10 @@ function buildPreOrderMesaOrder(body, sambahOrderId) {
     note: item.note || ""
   }));
   const notes = [
-    `PrÃ©-comanda SamBah - ${body.operation}`,
+    `Pré-comanda SamBah - ${body.operation}`,
     `Tipo: ${body.customer?.serviceType || ""}`,
     `Pagamento: ${body.customer?.paymentMethod || ""}`,
-    body.customer?.address ? `EndereÃ§o: ${body.customer.address}` : "",
+    body.customer?.address ? `Endereço: ${body.customer.address}` : "",
     body.notes || ""
   ].filter(Boolean).join("\n");
 
@@ -1611,6 +1845,11 @@ async function serveStatic(res, fileName) {
     }
     throw error;
   }
+}
+
+function sendHtml(res, statusCode, html) {
+  res.writeHead(statusCode, { "content-type": "text/html; charset=utf-8" });
+  res.end(html);
 }
 
 function sendJson(res, statusCode, payload) {

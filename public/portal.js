@@ -1,4 +1,4 @@
-﻿const app = document.querySelector("#portalApp");
+const app = document.querySelector("#portalApp");
 const route = location.pathname;
 const DEFAULT_PHONE = "5551980413745";
 
@@ -51,9 +51,9 @@ function renderOrder() {
     ${hero("Quero Pedir", modeLabel(mode))}
     ${form("orderForm", fields, "Enviar pedido")}
   `;
-  bindForm("orderForm", async (data) => {
+  bindForm("orderForm", async (data, formElement) => {
     const isTable = mode === "mesa";
-    const body = await post("/api/site/precomanda", portalPayload({
+    const body = await postWithFallback("/api/site/precomanda", portalPayload({
       operation: "Insano",
       type: isTable ? "mesa" : mode,
       pipeline: isTable ? "mesa" : "pedido_rapido",
@@ -63,12 +63,15 @@ function renderOrder() {
       whatsapp: data.telefone,
       mesa: data.mesa,
       notes: data.observacao,
-      observacoes: [data.endereco, data.retirada, data.pagamento, data.observacao].filter(Boolean).join(" | "),
+      observacoes: data.observacao,
+      endereco: data.endereco || "",
+      horario: data.retirada || "",
+      formaPagamento: data.pagamento || "a combinar",
       items: parseItems(data.produtos),
       customer: { name: data.nome, phone: data.telefone, serviceType: isTable ? "mesa" : mode, paymentMethod: data.pagamento || "a combinar" },
       status: "novo"
     }));
-    showResult(body, isTable ? "Pedido enviado para a cozinha." : "Pedido recebido.");
+    showResult(body, "Pedido recebido pelo SamBah.", { data, mode, isTable, formElement });
   });
 }
 
@@ -77,8 +80,8 @@ function renderOrderEvent() {
     ${hero("Grande Pedido", "Conta pra gente.")}
     ${form("eventOrderForm", `${row(input("nome", "Nome"), input("telefone", "Telefone"))}${row(input("data", "Data"), input("pessoas", "Quantidade de pessoas"))}${textarea("observacao", "Observacao")}`, "Enviar")}
   `;
-  bindForm("eventOrderForm", async (data) => {
-    const body = await post("/api/site/orcamento-evento", portalPayload({
+  bindForm("eventOrderForm", async (data, formElement) => {
+    const body = await postWithFallback("/api/site/orcamento-evento", portalPayload({
       operation: "Insano",
       type: "evento",
       pipeline: "orcamento_evento",
@@ -91,7 +94,7 @@ function renderOrderEvent() {
       notes: data.observacao,
       observacoes: data.observacao
     }));
-    showResult(body, "Recebido.");
+    showResult(body, "Recebido.", { data, mode: "evento", formElement });
   });
 }
 
@@ -100,8 +103,8 @@ function renderEvents() {
     ${hero("Tenho um Evento", "Que tipo de evento?")}
     ${form("eventForm", `${select("tipoEvento", ["Aniversario", "Confraternizacao", "Casamento", "Churrasco", "Outro"])}${row(input("nome", "Nome"), input("telefone", "Telefone"))}${row(input("data", "Data"), input("local", "Cidade/bairro"))}${input("pessoas", "Quantidade de pessoas")}${textarea("observacao", "Observacao")}`, "Enviar evento")}
   `;
-  bindForm("eventForm", async (data) => {
-    const body = await post("/api/site/orcamento-evento", portalPayload({
+  bindForm("eventForm", async (data, formElement) => {
+    const body = await postWithFallback("/api/site/orcamento-evento", portalPayload({
       operation: "Insano",
       type: "evento",
       pipeline: "orcamento_evento",
@@ -116,7 +119,7 @@ function renderEvents() {
       notes: data.observacao,
       observacoes: data.observacao
     }));
-    showResult(body, "Evento recebido.");
+    showResult(body, "Evento recebido.", { data, mode: "evento", formElement });
   });
 }
 
@@ -125,8 +128,8 @@ function renderCompanies() {
     ${hero("Sou Empresa", "O que sua empresa precisa?")}
     ${form("companyForm", `${select("tipo", ["Coffee break", "Churrasco corporativo", "Feira / Ativacao", "Evento interno", "Outro"])}${row(input("nome", "Nome"), input("empresa", "Empresa"))}${row(input("telefone", "Telefone"), input("email", "E-mail"))}${row(input("data", "Data"), input("pessoas", "Quantidade de pessoas"))}${textarea("observacao", "Observacao")}`, "Enviar")}
   `;
-  bindForm("companyForm", async (data) => {
-    const body = await post("/api/site/insano/evento", portalPayload({
+  bindForm("companyForm", async (data, formElement) => {
+    const body = await postWithFallback("/api/site/insano/evento", portalPayload({
       operation: "Insano",
       type: "empresa",
       pipeline: "orcamento_corporativo",
@@ -142,7 +145,7 @@ function renderCompanies() {
       notes: data.observacao,
       observacoes: data.observacao
     }));
-    showResult(body, "Empresa recebida.");
+    showResult(body, "Empresa recebida.", { data, mode: "empresa", formElement });
   });
 }
 
@@ -152,12 +155,12 @@ function renderXeriffe() {
     ${hero("Conhecer o Xeriffe", "O que voce procura?")}
     ${form("xeriffeForm", `${select("tipo", options)}${row(input("nome", "Nome"), input("telefone", "Telefone"))}${textarea("observacao", "Observacao")}`, "Enviar")}
   `;
-  bindForm("xeriffeForm", async (data) => {
+  bindForm("xeriffeForm", async (data, formElement) => {
     if (data.tipo === "Ver cardapio") {
       location.href = "/cardapio/xeriffe";
       return;
     }
-    const body = await post(data.tipo === "Fazer festa" ? "/api/site/orcamento-evento" : "/api/site/lead", portalPayload({
+    const body = await postWithFallback(data.tipo === "Fazer festa" ? "/api/site/orcamento-evento" : "/api/site/lead", portalPayload({
       operation: "Buteco Xeriffe",
       type: "xeriffe",
       pipeline: "festa_xeriffe",
@@ -169,8 +172,7 @@ function renderXeriffe() {
       observacoes: data.observacao,
       message: data.tipo
     }));
-    showResult(body, "Recebido.");
-    if (data.tipo === "Falar no WhatsApp" && body.whatsappUrl) openExternalWhatsApp(body.whatsappUrl);
+    showResult(body, "Recebido.", { data, mode: data.tipo, formElement });
   });
 }
 
@@ -185,15 +187,14 @@ function renderWhatsApp() {
   document.querySelectorAll("[data-whatsapp-topic]").forEach((button) => {
     button.addEventListener("click", async () => {
       const topic = button.dataset.whatsappTopic;
-      const body = await post("/api/site/whatsapp", portalPayload({
+      const body = await postWithFallback("/api/site/whatsapp", portalPayload({
         operation: topic === "Xeriffe" ? "Buteco Xeriffe" : "Insano",
         type: "whatsapp",
         pipeline: "atendimento_whatsapp",
         notes: topic,
         message: `Quero falar sobre: ${topic}`
       }));
-      showResult(body, "Abrindo WhatsApp.");
-      if (body.whatsappUrl) openExternalWhatsApp(body.whatsappUrl);
+      showResult(body, "WhatsApp preparado.", { data: { nome: "Cliente", observacao: topic }, mode: topic });
     });
   });
 }
@@ -213,7 +214,7 @@ function hero(title, subtitle) {
 }
 
 function form(id, fields, label) {
-  return `<section class="form-box"><form id="${id}">${fields}<button type="submit">${label}</button><p id="portalResult" class="result"></p></form></section>`;
+  return `<section class="form-box" data-form-shell="${id}"><form id="${id}">${fields}<button type="submit">${label}</button><p id="portalResult" class="result" aria-live="polite"></p></form></section>`;
 }
 
 function bindForm(id, handler) {
@@ -221,16 +222,57 @@ function bindForm(id, handler) {
     event.preventDefault();
     const formElement = event.currentTarget;
     const result = document.querySelector("#portalResult");
-    result.textContent = "Enviando...";
+    const submitButton = formElement.querySelector('[type="submit"]');
+    if (submitButton) submitButton.disabled = true;
+    result.textContent = "Enviando seu pedido...";
     const data = Object.fromEntries(new FormData(formElement).entries());
+    if (formElement.querySelector('[name="telefone"]') && !String(data.telefone || '').trim()) {
+      result.textContent = "Informe seu telefone para continuar o atendimento.";
+      if (submitButton) submitButton.disabled = false;
+      return;
+    }
+    if (formElement.querySelector('[name="nome"]') && !String(data.nome || '').trim()) {
+      result.textContent = "Informe seu nome para continuar o atendimento.";
+      if (submitButton) submitButton.disabled = false;
+      return;
+    }
+    if (formElement.id === "orderForm" && formElement.querySelector('[name="mesa"]') && !String(data.mesa || '').trim()) {
+      result.textContent = "Informe a mesa para continuar o atendimento.";
+      if (submitButton) submitButton.disabled = false;
+      return;
+    }
     try {
-      await handler(data);
-      formElement.reset();
+      await handler(data, formElement);
     } catch (error) {
       console.error("[portal] falha ao enviar", error);
-      result.textContent = "Nao consegui enviar agora.";
+      const whatsappMessage = buildFallbackWhatsappMessage(data);
+      replaceFormWithResult(formElement, renderFallbackCard(whatsappMessage, fallbackWhatsappUrl(whatsappMessage)));
+    } finally {
+      if (submitButton) submitButton.disabled = false;
     }
   });
+}
+
+async function postWithFallback(path, payload) {
+  try {
+    return await post(path, payload);
+  } catch (error) {
+    console.warn("[portal] API indisponivel, usando fallback WhatsApp", error);
+    const whatsappMessage = buildFallbackWhatsappMessage(payload);
+    return {
+      ok: true,
+      id: "pendente_whatsapp",
+      status: "aguardando confirmação da equipe",
+      whatsappMessage,
+      whatsappUrl: fallbackWhatsappUrl(whatsappMessage),
+      confirmation: {
+        title: "SamBah recebeu seu atendimento",
+        text: "Seu pedido ou solicitação foi organizado. Vamos abrir o WhatsApp com os dados preparados para nossa equipe continuar seu atendimento.",
+        status: "aguardando confirmação da equipe"
+      },
+      fallback: true
+    };
+  }
 }
 
 async function post(path, payload) {
@@ -271,11 +313,73 @@ function postWithXhr(path, payload) {
   });
 }
 
-function showResult(body, message) {
+function showResult(body, message, context = {}) {
   const result = document.querySelector("#portalResult");
-  result.innerHTML = `${message} ${body.whatsappUrl ? `<a href="${body.whatsappUrl}" data-whatsapp-url>Continuar no WhatsApp</a>` : ""}`;
+  const id = body.pedidoId || body.id || "";
+  const data = context.data || {};
+  const mode = context.mode || data.tipo || body.type || "";
+  const items = data.produtos || body.precomanda?.items?.map((item) => `${item.quantity || item.quantidade || 1}x ${item.name || item.nome}`).join("; ") || "";
+  const html = body.fallback
+    ? renderFallbackCard(body.whatsappMessage, body.whatsappUrl)
+    : renderConfirmationCard({ body, id, data, mode, items, isTable: context.isTable });
+  if (context.formElement) {
+    replaceFormWithResult(context.formElement, html);
+  } else if (result) {
+    result.innerHTML = html;
+  }
 }
 
+function renderConfirmationCard({ body, id, data, mode, items, isTable }) {
+  return `
+    <section class="portal-confirmation" role="status">
+      <h2>${escapeHtml(body.confirmation?.title || "✅ Pedido recebido pelo SamBah")}</h2>
+      <p>${escapeHtml(body.confirmation?.text || "Seu atendimento foi iniciado. Organizamos seu pedido e já deixamos tudo pronto para nossa equipe continuar.")}</p>
+      <div class="confirmation-summary">
+        ${id ? `<div><span>Número do pedido</span><strong>${escapeHtml(id)}</strong></div>` : ""}
+        ${data.nome ? `<div><span>Nome</span><strong>${escapeHtml(data.nome)}</strong></div>` : ""}
+        ${data.telefone ? `<div><span>Telefone</span><strong>${escapeHtml(data.telefone)}</strong></div>` : ""}
+        ${mode ? `<div><span>Tipo de atendimento</span><strong>${escapeHtml(modeLabel(mode))}</strong></div>` : ""}
+        ${isTable && data.mesa ? `<div><span>Mesa</span><strong>${escapeHtml(data.mesa)}</strong></div>` : ""}
+        ${data.retirada ? `<div><span>Horário de retirada</span><strong>${escapeHtml(data.retirada)}</strong></div>` : ""}
+        ${data.endereco ? `<div><span>Endereço ou bairro</span><strong>${escapeHtml(data.endereco)}</strong></div>` : ""}
+        ${items ? `<div><span>Itens</span><strong>${escapeHtml(String(items).slice(0, 240))}</strong></div>` : ""}
+        ${data.observacao ? `<div><span>Observação</span><strong>${escapeHtml(data.observacao)}</strong></div>` : ""}
+        <div><span>Status</span><strong>aguardando confirmação da equipe</strong></div>
+      </div>
+      <div class="confirm-actions">
+        ${body.whatsappUrl ? `<a class="whatsapp-action-button" href="${escapeHtml(body.whatsappUrl)}" data-whatsapp-url>Continuar atendimento no WhatsApp</a>` : ""}
+        ${body.statusUrl ? `<a class="status-action-button" href="${escapeHtml(body.statusUrl)}">Acompanhar pedido</a>` : ""}
+        <a class="back-button" href="/">Voltar ao início</a>
+      </div>
+      <small>O WhatsApp abre com a mensagem pronta. Envio e resposta automática dependem da API oficial do WhatsApp Business.</small>
+    </section>
+  `;
+}
+
+function renderFallbackCard(message, whatsappUrl) {
+  return `
+    <section class="portal-confirmation portal-confirmation-warning" role="alert">
+      <h2>⚠️ Não conseguimos registrar agora</h2>
+      <p>Mas seu pedido foi organizado pelo SamBah. Vamos abrir o WhatsApp para nossa equipe continuar seu atendimento.</p>
+      <div class="confirmation-summary">
+        <div><span>Status</span><strong>aguardando atendimento pelo WhatsApp</strong></div>
+      </div>
+      <div class="confirm-actions">
+        <a class="whatsapp-action-button" href="${escapeHtml(whatsappUrl)}" data-whatsapp-url>Continuar no WhatsApp</a>
+      </div>
+      <small>${escapeHtml(message || "Mensagem preparada pelo SamBah.")}</small>
+    </section>
+  `;
+}
+
+function replaceFormWithResult(formElement, html) {
+  const shell = formElement.closest(".form-box");
+  if (shell) {
+    shell.innerHTML = html;
+    return;
+  }
+  formElement.innerHTML = html;
+}
 function homeAction(href, label, image, alt, extraClass = "") {
   return `<a class="portal-action ${extraClass}" href="${href}"><span>${label}</span><img src="${image}" alt="${alt}" loading="lazy"></a>`;
 }
@@ -301,7 +405,45 @@ function select(name, options) {
 }
 
 function modeLabel(mode) {
-  return { delivery: "Delivery", retirar: "Retirar", mesa: "Estou no local" }[mode] || "Pedido";
+  return {
+    delivery: "Delivery",
+    retirar: "Retirar",
+    mesa: "Estou no local",
+    evento: "Preciso de Food Truck",
+    empresa: "Evento Corporativo",
+    Pedido: "Pedido",
+    Evento: "Evento",
+    Empresa: "Empresa",
+    Xeriffe: "Xeriffe"
+  }[mode] || mode || "Atendimento";
+}
+
+function buildFallbackWhatsappMessage(payload = {}) {
+  const operation = payload.operation === "Buteco Xeriffe" ? "Xeriffe" : "Insano";
+  const nome = payload.nome || payload.customerName || (payload.customer && payload.customer.name) || "Cliente";
+  const telefone = payload.whatsapp || payload.phone || payload.telefone || (payload.customer && payload.customer.phone) || "";
+  const tipo = modeLabel(payload.type || payload.tipo || payload.pipeline || "Atendimento");
+  const itens = Array.isArray(payload.items) ? payload.items.map((item) => String(item.quantity || item.quantidade || 1) + "x " + String(item.name || item.nome || "Item")).join("; ") : "";
+  const resumo = payload.observacoes || payload.notes || payload.message || itens || "Atendimento iniciado pelo site";
+  return [
+    operation === "Xeriffe" ? "Olá, equipe Xeriffe!" : "Olá, equipe Insano!",
+    "Sou o SamBah e organizei um novo atendimento pelo site.",
+    "",
+    "Atendimento:",
+    "ID: pendente_whatsapp",
+    "Cliente: " + nome,
+    telefone ? "WhatsApp: " + telefone : "",
+    "Tipo: " + tipo,
+    "Detalhes: " + resumo,
+    "",
+    "Status: aguardando confirmação da equipe.",
+    "",
+    "Pode seguir com esse atendimento?"
+  ].filter(Boolean).join("\n");
+}
+
+function fallbackWhatsappUrl(message) {
+  return "https://wa.me/" + DEFAULT_PHONE + "?text=" + encodeURIComponent(message);
 }
 
 function parseItems(text = "") {
