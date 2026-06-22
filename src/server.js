@@ -13,6 +13,7 @@ import { OrderTrackingService } from "./orderTrackingService.js";
 import { SambahConversationService } from "./sambahConversationService.js";
 import { WhatsAppConversationService } from "./whatsappConversationService.js";
 import { getPublicConfig, getRuntimeConfig, isAllowedCorsOrigin } from "./config.js";
+import { WhatsAppMetaProvider } from "./whatsappMetaProvider.js";
 
 const publicDir = fileURLToPath(new URL("../public/", import.meta.url));
 const runtimeConfig = getRuntimeConfig();
@@ -25,6 +26,7 @@ const whatsappConversations = new WhatsAppConversationService({ filePath: dataFi
 const drafts = new OrderDraftService({ draftsFile: dataFile("order-drafts.json"), rulesFile: dataFile("sambah-menu-rules.json") });
 const events = new EventScheduleService({ leadsFile: dataFile("event-leads.json"), servicesFile: dataFile("insano-services.json") });
 const tracking = new OrderTrackingService({ filePath: dataFile("order-tracking.json") });
+const whatsappMeta = new WhatsAppMetaProvider({ config: runtimeConfig.whatsappBusiness });
 const crm = new CrmService({
   files: {
     clientes: dataFile("clientes.json"),
@@ -58,7 +60,8 @@ export function createApp({
   draftService = drafts,
   eventService = events,
   trackingService = tracking,
-  crmService = crm
+  crmService = crm,
+  whatsappProvider = whatsappMeta
 } = {}) {
   return createServer(async (req, res) => {
     try {
@@ -705,8 +708,12 @@ export function createApp({
         return verifyWhatsAppWebhook(req, res, url);
       }
 
+      if (req.method === "GET" && url.pathname === "/admin/whatsapp/status") {
+        return sendJson(res, 200, whatsappProvider.status());
+      }
+
       if (req.method === "POST" && ["/webhook/whatsapp", "/webhook/site"].includes(url.pathname)) {
-        return handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService);
+        return handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappProvider);
       }
 
       return sendJson(res, 404, { error: "not_found" });
@@ -740,7 +747,7 @@ function isMetaWhatsAppPayload(body = {}) {
   return Array.isArray(body.entry) && Boolean(body.entry[0]?.changes?.[0]?.value?.messages?.[0]);
 }
 
-async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService) {
+async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappProvider) {
   let body = {};
   try {
     body = await readJson(req, { requireBody: true });
@@ -772,12 +779,33 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
         crmService
       });
       if (isMetaWhatsAppPayload(body)) {
+        const incomingMessageId = body.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.id;
+        const sendResult = await whatsappProvider.sendText({
+          to: conversationResult.conversa?.telefone,
+          text: conversationResult.respostaSugerida
+        });
+        await safeAuditRecord(auditService, {
+          type: "whatsapp_auto_reply",
+          status: sendResult.sent ? "success" : "warning",
+          source: "whatsapp_meta",
+          message: sendResult.sent ? "Resposta automatica enviada pela Meta" : "Resposta automatica nao enviada",
+          context: {
+            eventId: incomingMessageId,
+            sent: sendResult.sent,
+            provider: "meta",
+            error: sendResult.error || null
+          },
+          dedupeKey: incomingMessageId
+        });
         return sendJson(res, 200, {
           ok: true,
           conversa: conversationResult.conversa,
           intent: conversationResult.intent,
           respostaSugerida: conversationResult.respostaSugerida,
-          enviado: false,
+          enviado: sendResult.sent,
+          provider: "meta",
+          messageId: sendResult.messageId || null,
+          sendError: sendResult.error || null,
           automaticoAtivo: conversationResult.sendEnabled
         });
       }

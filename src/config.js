@@ -33,11 +33,13 @@ export function getRuntimeConfig(env = globalThis.process?.env || {}) {
       provider: env.WHATSAPP_PROVIDER || "meta",
       sendEnabled: env.WHATSAPP_SEND_ENABLED === "true",
       verifyToken: env.WHATSAPP_VERIFY_TOKEN || "",
-      accessToken: env.WHATSAPP_ACCESS_TOKEN || "",
+      accessToken: env.WHATSAPP_TOKEN || env.WHATSAPP_ACCESS_TOKEN || "",
       phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID || "",
       businessAccountId: env.WHATSAPP_BUSINESS_ACCOUNT_ID || "",
       webhookSecret: env.WHATSAPP_WEBHOOK_SECRET || "",
-      apiBaseUrl: env.WHATSAPP_API_BASE_URL || "https://graph.facebook.com/v20.0"
+      apiVersion: env.WHATSAPP_API_VERSION || "v21.0",
+      apiBaseUrl: env.WHATSAPP_API_BASE_URL || "https://graph.facebook.com",
+      publicWebhookUrl: env.WEBHOOK_PUBLIC_URL || ""
     },
     ai: {
       provider: env.AI_PROVIDER || "openai",
