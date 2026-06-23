@@ -230,6 +230,78 @@ test("POST /webhook/whatsapp envia resposta quando payload Meta vem sem field ex
   }
 });
 
+test("POST /webhook/whatsapp tenta nono digito brasileiro quando Meta recusa allowed list", async () => {
+  const previousSendEnabled = process.env.WHATSAPP_SEND_ENABLED;
+  const previousAccessToken = process.env.META_ACCESS_TOKEN;
+  const previousPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  process.env.WHATSAPP_SEND_ENABLED = "true";
+  process.env.META_ACCESS_TOKEN = "meta-token-teste";
+  process.env.WHATSAPP_PHONE_NUMBER_ID = "1234567890";
+
+  const graphCalls = [];
+  const { server, base, messagesFile, cleanup } = await createTestServer({
+    whatsappSendFetch: async (url, options) => {
+      graphCalls.push({ url, options });
+      if (graphCalls.length === 1) {
+        return new Response(JSON.stringify({
+          error: {
+            message: "(#131030) Recipient phone number not in allowed list",
+            code: 131030,
+            type: "OAuthException"
+          }
+        }), {
+          status: 400,
+          headers: { "content-type": "application/json" }
+        });
+      }
+      return new Response(JSON.stringify({
+        messaging_product: "whatsapp",
+        contacts: [{ input: "5551980413745", wa_id: "555180413745" }],
+        messages: [{ id: "wamid-auto-reply-retry" }]
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+  });
+  try {
+    const response = await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(metaPayload({
+        from: "555180413745",
+        id: "wamid-real-meta-br-retry",
+        type: "text",
+        text: { body: "hy" }
+      }, { phoneNumberId: "1234567890" }))
+    });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.enviado, true);
+    assert.equal(body.directAutoReply.sent, true);
+    assert.equal(body.directAutoReply.retried, true);
+    assert.equal(body.directAutoReply.originalTo, "555180413745");
+    assert.equal(body.directAutoReply.retryTo, "5551980413745");
+    assert.equal(graphCalls.length, 2);
+    assert.equal(JSON.parse(graphCalls[0].options.body).to, "555180413745");
+    assert.equal(JSON.parse(graphCalls[1].options.body).to, "5551980413745");
+    const history = JSON.parse(await readFile(messagesFile, "utf8"));
+    assert.equal(history[0].status, "sent");
+    assert.equal(history[0].httpStatus, 200);
+    assert.equal(history[0].response.messages[0].id, "wamid-auto-reply-retry");
+  } finally {
+    await close(server);
+    await cleanup();
+    if (previousSendEnabled === undefined) delete process.env.WHATSAPP_SEND_ENABLED;
+    else process.env.WHATSAPP_SEND_ENABLED = previousSendEnabled;
+    if (previousAccessToken === undefined) delete process.env.META_ACCESS_TOKEN;
+    else process.env.META_ACCESS_TOKEN = previousAccessToken;
+    if (previousPhoneNumberId === undefined) delete process.env.WHATSAPP_PHONE_NUMBER_ID;
+    else process.env.WHATSAPP_PHONE_NUMBER_ID = previousPhoneNumberId;
+  }
+});
+
 test("POST /webhook/whatsapp ignora callback Meta sem mensagens reais", async () => {
   const previousSendEnabled = process.env.WHATSAPP_SEND_ENABLED;
   const previousAccessToken = process.env.META_ACCESS_TOKEN;

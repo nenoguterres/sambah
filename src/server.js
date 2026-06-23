@@ -1599,43 +1599,59 @@ async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRun
   }
 
   const endpoint = `https://graph.facebook.com/v25.0/${encodeURIComponent(sendPhoneNumberId)}/messages`;
-  const requestBody = {
+  const baseRequestBody = {
     messaging_product: "whatsapp",
-    to: summary.from,
     type: "text",
     text: { body: WHATSAPP_AUTO_REPLY_TEXT }
   };
   try {
-    const response = await fetchImpl(endpoint, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${config.accessToken}`,
-        "content-type": "application/json"
-      },
-      body: JSON.stringify(requestBody)
+    const firstAttempt = await sendMetaTextMessage(fetchImpl, endpoint, config.accessToken, {
+      ...baseRequestBody,
+      to: summary.from
     });
-    const responseBody = await readResponseBody(response);
+    let attempt = firstAttempt;
+    const retryTo = metaBrazilianAllowedListRetryNumber(summary.from, attempt.response);
+    if (!attempt.ok && retryTo) {
+      const retryAttempt = await sendMetaTextMessage(fetchImpl, endpoint, config.accessToken, {
+        ...baseRequestBody,
+        to: retryTo
+      });
+      attempt = {
+        ...retryAttempt,
+        retried: true,
+        originalTo: summary.from,
+        retryTo,
+        firstResponse: sanitizeMetaResponse(firstAttempt.response, config.accessToken)
+      };
+    }
     const result = {
-      ok: response.ok,
-      sent: response.ok,
-      status: response.ok ? "sent" : "meta_error",
-      httpStatus: response.status,
-      response: sanitizeMetaResponse(responseBody, config.accessToken)
+      ok: attempt.ok,
+      sent: attempt.ok,
+      status: attempt.ok ? "sent" : "meta_error",
+      httpStatus: attempt.httpStatus,
+      response: sanitizeMetaResponse(attempt.response, config.accessToken),
+      ...(attempt.retried ? {
+        retried: true,
+        originalTo: attempt.originalTo,
+        retryTo: attempt.retryTo,
+        firstResponse: attempt.firstResponse
+      } : {})
     };
     console.info("whatsapp.webhook.auto_reply.sent", {
       sent: result.sent,
       status: result.status,
       httpStatus: result.httpStatus,
-      to: summary.from,
+      to: result.retryTo || summary.from,
+      originalTo: result.originalTo,
       phoneNumberId: sendPhoneNumberId,
       messageId: summary.messageId
     });
     await safeAuditRecord(auditService, {
       type: "whatsapp_cloud_auto_reply",
-      status: response.ok ? "success" : "warning",
+      status: result.sent ? "success" : "warning",
       source: "meta_whatsapp",
-      message: response.ok ? "Resposta automatica WhatsApp enviada" : "Falha no envio automatico WhatsApp",
-      context: { to: summary.from, httpStatus: response.status, messageId: summary.messageId, phoneNumberId: sendPhoneNumberId },
+      message: result.sent ? "Resposta automatica WhatsApp enviada" : "Falha no envio automatico WhatsApp",
+      context: { to: result.retryTo || summary.from, originalTo: result.originalTo, httpStatus: result.httpStatus, messageId: summary.messageId, phoneNumberId: sendPhoneNumberId, retried: result.retried },
       dedupeKey: summary.messageId ? `wa-auto-reply:${summary.messageId}` : undefined
     });
     return result;
@@ -1657,6 +1673,30 @@ async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRun
     });
     return { ok: false, sent: false, status: "request_failed", error: sanitizeMetaText(error.message, config.accessToken) };
   }
+}
+
+async function sendMetaTextMessage(fetchImpl, endpoint, accessToken, requestBody) {
+  const response = await fetchImpl(endpoint, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify(requestBody)
+  });
+  const responseBody = await readResponseBody(response);
+  return {
+    ok: response.ok,
+    httpStatus: response.status,
+    response: responseBody
+  };
+}
+
+function metaBrazilianAllowedListRetryNumber(phone = "", responseBody = {}) {
+  const digits = String(phone || "").replace(/\D/g, "");
+  if (!digits.startsWith("55") || digits.length !== 12) return "";
+  if (responseBody?.error?.code !== 131030) return "";
+  return `${digits.slice(0, 4)}9${digits.slice(4)}`;
 }
 
 async function recordDirectWhatsAppAutoReply(whatsappMessageService, payload = {}, sendResult = {}) {
