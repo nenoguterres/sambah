@@ -96,7 +96,7 @@ test("POST /webhook/whatsapp processa payload real da Meta e envia resposta simp
   const previousPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
   process.env.WHATSAPP_SEND_ENABLED = "true";
   process.env.META_ACCESS_TOKEN = "meta-token-teste";
-  process.env.WHATSAPP_PHONE_NUMBER_ID = "1234567890";
+  process.env.WHATSAPP_PHONE_NUMBER_ID = "env-phone-number-id";
 
   const graphCalls = [];
   const providerCalls = [];

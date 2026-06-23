@@ -1575,11 +1575,12 @@ async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRun
   if ((summary.field && summary.field !== "messages") || !summary.from || !summary.textBody) {
     return { ok: true, sent: false, status: "ignored_non_text_message" };
   }
-  if (!config.accessToken || !config.phoneNumberId) {
+  const sendPhoneNumberId = summary.phoneNumberIdReceived || config.phoneNumberId;
+  if (!config.accessToken || !sendPhoneNumberId) {
     return { ok: false, sent: false, status: "missing_meta_config" };
   }
 
-  const endpoint = `https://graph.facebook.com/v25.0/${encodeURIComponent(config.phoneNumberId)}/messages`;
+  const endpoint = `https://graph.facebook.com/v25.0/${encodeURIComponent(sendPhoneNumberId)}/messages`;
   const requestBody = {
     messaging_product: "whatsapp",
     to: summary.from,
@@ -1608,6 +1609,7 @@ async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRun
       status: result.status,
       httpStatus: result.httpStatus,
       to: summary.from,
+      phoneNumberId: sendPhoneNumberId,
       messageId: summary.messageId
     });
     await safeAuditRecord(auditService, {
@@ -1615,7 +1617,7 @@ async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRun
       status: response.ok ? "success" : "warning",
       source: "meta_whatsapp",
       message: response.ok ? "Resposta automatica WhatsApp enviada" : "Falha no envio automatico WhatsApp",
-      context: { to: summary.from, httpStatus: response.status, messageId: summary.messageId },
+      context: { to: summary.from, httpStatus: response.status, messageId: summary.messageId, phoneNumberId: sendPhoneNumberId },
       dedupeKey: summary.messageId ? `wa-auto-reply:${summary.messageId}` : undefined
     });
     return result;
@@ -1623,6 +1625,7 @@ async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRun
     console.info("whatsapp.webhook.auto_reply.failed", {
       status: "request_failed",
       to: summary.from,
+      phoneNumberId: sendPhoneNumberId,
       messageId: summary.messageId,
       error: sanitizeMetaText(error.message, config.accessToken)
     });
@@ -1631,7 +1634,7 @@ async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRun
       status: "error",
       source: "meta_whatsapp",
       message: "Erro ao enviar resposta automatica WhatsApp",
-      context: { to: summary.from, messageId: summary.messageId, error: sanitizeMetaText(error.message, config.accessToken) },
+      context: { to: summary.from, messageId: summary.messageId, phoneNumberId: sendPhoneNumberId, error: sanitizeMetaText(error.message, config.accessToken) },
       dedupeKey: summary.messageId ? `wa-auto-reply:${summary.messageId}` : undefined
     });
     return { ok: false, sent: false, status: "request_failed", error: sanitizeMetaText(error.message, config.accessToken) };
