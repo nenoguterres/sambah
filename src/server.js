@@ -1572,7 +1572,7 @@ async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRun
   if (config.sendEnabled !== true) {
     return { ok: true, sent: false, status: "disabled" };
   }
-  if (summary.field !== "messages" || !summary.from || !summary.textBody) {
+  if ((summary.field && summary.field !== "messages") || !summary.from || !summary.textBody) {
     return { ok: true, sent: false, status: "ignored_non_text_message" };
   }
   if (!config.accessToken || !config.phoneNumberId) {

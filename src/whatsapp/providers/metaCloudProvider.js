@@ -9,6 +9,7 @@ export class MetaCloudWhatsAppProvider {
     return {
       provider: this.name,
       configured: Boolean(this.config.phoneNumberId && this.config.accessToken),
+      sendEnabled: this.config.sendEnabled === true,
       phoneNumberIdConfigured: Boolean(this.config.phoneNumberId),
       accessTokenConfigured: Boolean(this.config.accessToken),
       verifyTokenConfigured: Boolean(this.config.verifyToken)
