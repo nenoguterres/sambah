@@ -24,7 +24,7 @@ import { PayPerolaBridgeController } from "./sambahPay/controllers/payPerolaBrid
 import { SambahAuthService } from "./auth/authService.js";
 import { createWhatsAppProvider } from "./whatsapp/whatsappProvider.js";
 import { WhatsAppMessageService } from "./whatsapp/whatsappMessageService.js";
-import { isMetaWhatsAppPayload } from "./whatsapp/whatsappWebhookParser.js";
+import { isMetaWhatsAppPayload, parseWhatsAppWebhookPayload } from "./whatsapp/whatsappWebhookParser.js";
 import { InstagramPublisher } from "./services/instagramPublisher.js";
 
 const publicDir = fileURLToPath(new URL("../public/", import.meta.url));
@@ -1299,6 +1299,7 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
         auditService
       });
       if (directAutoReply.sent || directAutoReply.status === "meta_error" || directAutoReply.status === "request_failed") {
+        await recordDirectWhatsAppAutoReply(whatsappMessageService, body, directAutoReply);
         return sendJson(res, 200, {
           ok: true,
           conversa: conversationResult.conversa,
@@ -1634,6 +1635,29 @@ async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRun
       dedupeKey: summary.messageId ? `wa-auto-reply:${summary.messageId}` : undefined
     });
     return { ok: false, sent: false, status: "request_failed", error: sanitizeMetaText(error.message, config.accessToken) };
+  }
+}
+
+async function recordDirectWhatsAppAutoReply(whatsappMessageService, payload = {}, sendResult = {}) {
+  try {
+    const normalized = parseWhatsAppWebhookPayload(payload);
+    await whatsappMessageService.appendMessage({ direction: "in", normalized });
+    await whatsappMessageService.appendMessage({
+      direction: "out",
+      normalized,
+      text: WHATSAPP_AUTO_REPLY_TEXT,
+      sendResult: {
+        ok: sendResult.ok,
+        sent: sendResult.sent,
+        status: sendResult.status,
+        httpStatus: sendResult.httpStatus
+      }
+    });
+  } catch (error) {
+    console.info("whatsapp.webhook.history.failed", {
+      status: "history_failed",
+      error: String(error?.message || error)
+    });
   }
 }
 

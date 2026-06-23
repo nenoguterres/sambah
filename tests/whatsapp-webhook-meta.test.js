@@ -103,7 +103,7 @@ test("POST /webhook/whatsapp processa payload real da Meta e envia resposta simp
   const logs = [];
   const previousConsoleInfo = console.info;
   console.info = (...args) => logs.push(args);
-  const { server, base, cleanup } = await createTestServer({
+  const { server, base, messagesFile, cleanup } = await createTestServer({
     provider: {
       name: "meta-test-provider",
       status: () => ({ provider: "meta-test-provider", configured: true }),
@@ -162,6 +162,13 @@ test("POST /webhook/whatsapp processa payload real da Meta e envia resposta simp
     assert.equal(receivedLog[1].messagesLength, 1);
     assert.equal(receivedLog[1].textBody, "Oi SamBah");
     assert.equal(receivedLog[1].from, "5551999999999");
+    const history = JSON.parse(await readFile(messagesFile, "utf8"));
+    assert.equal(history.length, 2);
+    assert.equal(history[0].direction, "out");
+    assert.equal(history[0].text, "Buenas! Eu sou o SamBah. Recebi tua mensagem e já vou te levar direto ao ponto.");
+    assert.equal(history[0].status, "sent");
+    assert.equal(history[1].direction, "in");
+    assert.equal(history[1].text, "Oi SamBah");
   } finally {
     console.info = previousConsoleInfo;
     await close(server);
@@ -239,6 +246,7 @@ async function createTestServer({ provider = new MockWhatsAppProvider({ logger: 
     server,
     base: `http://127.0.0.1:${server.address().port}`,
     auditFile: join(dir, "audit.json"),
+    messagesFile: join(dir, "messages.json"),
     cleanup: () => rm(dir, { recursive: true, force: true })
   };
 }
