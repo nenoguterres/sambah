@@ -18,6 +18,9 @@ export function getBaseApi(env = globalThis.process?.env || {}) {
 }
 
 export function getRuntimeConfig(env = globalThis.process?.env || {}) {
+  const metaAccessToken = env.META_ACCESS_TOKEN || env.WHATSAPP_META_ACCESS_TOKEN || env.SAMBAH_META_ACCESS_TOKEN || env.WHATSAPP_ACCESS_TOKEN || env.WHATSAPP_TOKEN || "";
+  const metaPhoneNumberId = env.META_PHONE_NUMBER_ID || env.WHATSAPP_META_PHONE_NUMBER_ID || env.SAMBAH_META_PHONE_NUMBER_ID || env.WHATSAPP_PHONE_NUMBER_ID || "";
+  const metaBusinessAccountId = env.META_WABA_ID || env.WHATSAPP_BUSINESS_ACCOUNT_ID || env.SAMBAH_META_WABA_ID || "";
   return {
     nodeEnv: env.NODE_ENV || "development",
     port: Number(env.PORT || 3000),
@@ -32,10 +35,10 @@ export function getRuntimeConfig(env = globalThis.process?.env || {}) {
     whatsappBusiness: {
       provider: env.WHATSAPP_PROVIDER || "meta",
       sendEnabled: env.WHATSAPP_SEND_ENABLED === "true",
-      verifyToken: env.WHATSAPP_VERIFY_TOKEN || "",
-      accessToken: env.WHATSAPP_ACCESS_TOKEN || "",
-      phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID || "",
-      businessAccountId: env.WHATSAPP_BUSINESS_ACCOUNT_ID || "",
+      verifyToken: env.WHATSAPP_VERIFY_TOKEN || env.META_VERIFY_TOKEN || env.WHATSAPP_META_VERIFY_TOKEN || env.SAMBAH_META_VERIFY_TOKEN || "",
+      accessToken: metaAccessToken,
+      phoneNumberId: metaPhoneNumberId,
+      businessAccountId: metaBusinessAccountId,
       webhookSecret: env.WHATSAPP_WEBHOOK_SECRET || "",
       apiBaseUrl: env.WHATSAPP_API_BASE_URL || "https://graph.facebook.com/v20.0"
     },

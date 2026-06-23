@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import crypto from "node:crypto";
+import { extractWhatsAppMessageText } from "./whatsapp/whatsappWebhookParser.js";
 
 const INTENT_RESPONSES = {
   pedido: "Perfeito. Tu quer delivery, retirada ou esta no local?",
@@ -194,9 +195,9 @@ export function parseWhatsAppIncoming(payload = {}) {
   const source = metaMessage || payload;
   const rawType = source.type || payload.messageType || "text";
   const tipo = normalizeMessageType(rawType);
-  const text = tipo === "text"
-    ? String(source.text?.body || source.message || source.text || source.body || payload.message || payload.text || "").trim()
-    : "";
+  const text = String(metaMessage
+    ? extractWhatsAppMessageText(metaMessage, payload)
+    : source.message || source.text || source.body || payload.message || payload.text || "").trim();
   const audio = source.audio || payload.audio || {};
   return {
     messageId: source.id || payload.eventId || payload.messageId || "",
@@ -237,7 +238,7 @@ export function suggestedWhatsAppResponse(intent) {
 
 function normalizeMessageType(type = "") {
   const normalized = String(type || "").toLowerCase();
-  if (["text", "audio", "image", "document", "interactive"].includes(normalized)) return normalized;
+  if (["text", "audio", "image", "video", "document", "interactive", "button", "order"].includes(normalized)) return normalized;
   return "unknown";
 }
 
