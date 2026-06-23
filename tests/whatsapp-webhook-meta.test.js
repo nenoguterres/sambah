@@ -99,10 +99,19 @@ test("POST /webhook/whatsapp processa payload real da Meta e envia resposta simp
   process.env.WHATSAPP_PHONE_NUMBER_ID = "1234567890";
 
   const graphCalls = [];
+  const providerCalls = [];
   const logs = [];
   const previousConsoleInfo = console.info;
   console.info = (...args) => logs.push(args);
   const { server, base, cleanup } = await createTestServer({
+    provider: {
+      name: "meta-test-provider",
+      status: () => ({ provider: "meta-test-provider", configured: true }),
+      sendText: async (input) => {
+        providerCalls.push(input);
+        return { ok: true, sent: true, status: "sent_by_provider" };
+      }
+    },
     whatsappSendFetch: async (url, options) => {
       graphCalls.push({ url, options });
       return new Response(JSON.stringify({
@@ -129,11 +138,12 @@ test("POST /webhook/whatsapp processa payload real da Meta e envia resposta simp
     const body = await response.json();
     assert.equal(response.status, 200);
     assert.equal(body.ok, true);
-    assert.equal(body.normalized.from, "5551999999999");
-    assert.equal(body.normalized.message, "Oi SamBah");
+    assert.equal(body.enviado, true);
+    assert.equal(body.automaticoAtivo, true);
     assert.equal(body.directAutoReply.sent, true);
     assert.equal(body.directAutoReply.httpStatus, 200);
     assert.equal(graphCalls.length, 1);
+    assert.equal(providerCalls.length, 0);
     assert.equal(graphCalls[0].url, "https://graph.facebook.com/v25.0/1234567890/messages");
     assert.equal(graphCalls[0].options.method, "POST");
     assert.equal(graphCalls[0].options.headers.authorization, "Bearer meta-token-teste");

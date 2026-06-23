@@ -1293,17 +1293,28 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
         runtimeConfig: getRuntimeConfig(),
         crmService
       });
+      const directAutoReply = await sendWhatsAppCloudAutoReply(body, {
+        runtimeConfig: getRuntimeConfig(),
+        fetchImpl: whatsappSendFetch,
+        auditService
+      });
+      if (directAutoReply.sent || directAutoReply.status === "meta_error" || directAutoReply.status === "request_failed") {
+        return sendJson(res, 200, {
+          ok: true,
+          conversa: conversationResult.conversa,
+          intent: conversationResult.intent,
+          respostaSugerida: conversationResult.respostaSugerida,
+          enviado: directAutoReply.sent,
+          automaticoAtivo: conversationResult.sendEnabled,
+          directAutoReply
+        });
+      }
       const autoResult = await whatsappMessageService.handleIncoming(body, {
         conversationService,
         menuService,
         draftService,
         eventService,
         mesaService,
-          auditService
-        });
-      const directAutoReply = await sendWhatsAppCloudAutoReply(body, {
-        runtimeConfig: getRuntimeConfig(),
-        fetchImpl: whatsappSendFetch,
         auditService
       });
       if (isMetaWhatsAppPayload(body)) {
@@ -1591,6 +1602,13 @@ async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRun
       httpStatus: response.status,
       response: sanitizeMetaResponse(responseBody, config.accessToken)
     };
+    console.info("whatsapp.webhook.auto_reply.sent", {
+      sent: result.sent,
+      status: result.status,
+      httpStatus: result.httpStatus,
+      to: summary.from,
+      messageId: summary.messageId
+    });
     await safeAuditRecord(auditService, {
       type: "whatsapp_cloud_auto_reply",
       status: response.ok ? "success" : "warning",
@@ -1601,6 +1619,12 @@ async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRun
     });
     return result;
   } catch (error) {
+    console.info("whatsapp.webhook.auto_reply.failed", {
+      status: "request_failed",
+      to: summary.from,
+      messageId: summary.messageId,
+      error: sanitizeMetaText(error.message, config.accessToken)
+    });
     await safeAuditRecord(auditService, {
       type: "whatsapp_cloud_auto_reply",
       status: "error",
