@@ -1289,6 +1289,20 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
     }
 
     if (req.url?.includes("/webhook/whatsapp")) {
+      if (isMetaWhatsAppEnvelope(body) && metaSummary.messagesLength === 0) {
+        await safeAuditRecord(auditService, {
+          type: "whatsapp_webhook_ignored",
+          status: "info",
+          source: "meta_whatsapp",
+          message: "Webhook WhatsApp sem mensagem real ignorado",
+          context: metaSummary
+        });
+        return sendJson(res, 200, {
+          ok: true,
+          ignored: true,
+          reason: "meta_webhook_without_messages"
+        });
+      }
       const conversationResult = await whatsappConversationService.recordIncoming(body, {
         runtimeConfig: getRuntimeConfig(),
         crmService
@@ -1564,6 +1578,10 @@ function summarizeWhatsAppPostPayload(payload = {}) {
     from: firstMessage.from || value.contacts?.[0]?.wa_id || payload.from || "",
     messageId: firstMessage.id || payload.eventId || payload.messageId || ""
   };
+}
+
+function isMetaWhatsAppEnvelope(payload = {}) {
+  return Array.isArray(payload.entry);
 }
 
 async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRuntimeConfig(), fetchImpl = globalThis.fetch, auditService = null } = {}) {

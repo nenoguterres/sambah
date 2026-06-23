@@ -230,6 +230,67 @@ test("POST /webhook/whatsapp envia resposta quando payload Meta vem sem field ex
   }
 });
 
+test("POST /webhook/whatsapp ignora callback Meta sem mensagens reais", async () => {
+  const previousSendEnabled = process.env.WHATSAPP_SEND_ENABLED;
+  const previousAccessToken = process.env.META_ACCESS_TOKEN;
+  const previousPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  process.env.WHATSAPP_SEND_ENABLED = "true";
+  process.env.META_ACCESS_TOKEN = "meta-token-teste";
+  process.env.WHATSAPP_PHONE_NUMBER_ID = "1234567890";
+
+  const graphCalls = [];
+  const { server, base, auditFile, cleanup } = await createTestServer({
+    whatsappSendFetch: async (url, options) => {
+      graphCalls.push({ url, options });
+      return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+    }
+  });
+  try {
+    const response = await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        object: "whatsapp_business_account",
+        entry: [{
+          changes: [{
+            field: "messages",
+            value: {
+              messaging_product: "whatsapp",
+              metadata: {
+                display_phone_number: "5551980413745",
+                phone_number_id: "1234567890"
+              },
+              statuses: [{
+                id: "wamid-status-only",
+                status: "sent",
+                timestamp: "1782214373",
+                recipient_id: "5551999999999"
+              }]
+            }
+          }]
+        }]
+      })
+    });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.ignored, true);
+    assert.equal(body.reason, "meta_webhook_without_messages");
+    assert.equal(graphCalls.length, 0);
+    const audit = JSON.parse(await readFile(auditFile, "utf8"));
+    assert.ok(audit.some((event) => event.type === "whatsapp_webhook_ignored"));
+  } finally {
+    await close(server);
+    await cleanup();
+    if (previousSendEnabled === undefined) delete process.env.WHATSAPP_SEND_ENABLED;
+    else process.env.WHATSAPP_SEND_ENABLED = previousSendEnabled;
+    if (previousAccessToken === undefined) delete process.env.META_ACCESS_TOKEN;
+    else process.env.META_ACCESS_TOKEN = previousAccessToken;
+    if (previousPhoneNumberId === undefined) delete process.env.WHATSAPP_PHONE_NUMBER_ID;
+    else process.env.WHATSAPP_PHONE_NUMBER_ID = previousPhoneNumberId;
+  }
+});
+
 test("POST /webhook/site continua respondendo 202", async () => {
   const { server, base, cleanup } = await createTestServer();
   try {
