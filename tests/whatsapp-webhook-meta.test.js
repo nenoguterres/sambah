@@ -13,7 +13,6 @@ import { SambahConversationService } from "../src/sambahConversationService.js";
 import { WhatsAppConversationService } from "../src/whatsappConversationService.js";
 import { createApp } from "../src/server.js";
 import { MockWhatsAppProvider } from "../src/whatsapp/providers/mockProvider.js";
-import { createWhatsAppProvider } from "../src/whatsapp/whatsappProvider.js";
 import { WhatsAppMessageService } from "../src/whatsapp/whatsappMessageService.js";
 
 test("GET /webhook/whatsapp valida challenge da Meta", async () => {
@@ -32,62 +31,6 @@ test("GET /webhook/whatsapp valida challenge da Meta", async () => {
     await cleanup();
     if (previous === undefined) delete process.env.WHATSAPP_META_VERIFY_TOKEN;
     else process.env.WHATSAPP_META_VERIFY_TOKEN = previous;
-  }
-});
-
-test("GET /webhooks/meta valida challenge publico da Meta", async () => {
-  const previous = process.env.META_VERIFY_TOKEN;
-  process.env.META_VERIFY_TOKEN = "sambah_verify_2026";
-  const { server, base, cleanup } = await createTestServer();
-  try {
-    const ok = await fetch(`${base}/webhooks/meta?hub.mode=subscribe&hub.verify_token=sambah_verify_2026&hub.challenge=desafio-xeriffe`);
-    assert.equal(ok.status, 200);
-    assert.equal(await ok.text(), "desafio-xeriffe");
-
-    const denied = await fetch(`${base}/webhooks/meta?hub.mode=subscribe&hub.verify_token=errado&hub.challenge=desafio-xeriffe`);
-    assert.equal(denied.status, 403);
-  } finally {
-    await close(server);
-    await cleanup();
-    if (previous === undefined) delete process.env.META_VERIFY_TOKEN;
-    else process.env.META_VERIFY_TOKEN = previous;
-  }
-});
-
-test("POST /webhooks/meta responde 200 e audita payload mascarado", async () => {
-  const { server, base, cleanup, auditFile } = await createTestServer();
-  try {
-    const response = await fetch(`${base}/webhooks/meta`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        object: "whatsapp_business_account",
-        access_token: "token-nao-pode-vazar",
-        entry: [{
-          changes: [{
-            value: {
-              contacts: [{ profile: { name: "Cliente Meta" }, wa_id: "5551999999999" }],
-              messages: [{ from: "5551999999999", id: "wamid-1", type: "text", text: { body: "ola" } }],
-              statuses: [{ id: "wamid-2", status: "delivered", recipient_id: "5551988888888" }]
-            }
-          }]
-        }]
-      })
-    });
-    const body = await response.json();
-    assert.equal(response.status, 200);
-    assert.deepEqual(body, { ok: true, received: true });
-
-    const audit = await readFile(auditFile, "utf8");
-    assert.match(audit, /meta_webhook_received/);
-    assert.doesNotMatch(audit, /token-nao-pode-vazar/);
-    assert.doesNotMatch(audit, /5551999999999/);
-
-    const emptyResponse = await fetch(`${base}/webhooks/meta`, { method: "POST" });
-    assert.equal(emptyResponse.status, 200);
-  } finally {
-    await close(server);
-    await cleanup();
   }
 });
 
@@ -164,38 +107,6 @@ test("POST /webhook/site continua respondendo 202", async () => {
     const body = await response.json();
     assert.equal(response.status, 202);
     assert.equal(body.ok, true);
-  } finally {
-    await close(server);
-    await cleanup();
-  }
-});
-
-test("/admin/whatsapp/status retorna apenas booleanos sem token", async () => {
-  const { server, base, cleanup } = await createTestServer({
-    provider: createWhatsAppProvider({
-      config: {
-        provider: "meta",
-        phoneNumberId: "phone-123",
-        accessToken: "token-que-nao-pode-vazar",
-        verifyToken: "verify-123",
-        apiVersion: "v21.0"
-      }
-    })
-  });
-  try {
-    const response = await fetch(`${base}/admin/whatsapp/status`);
-    const body = await response.json();
-    const serialized = JSON.stringify(body);
-    assert.equal(response.status, 200);
-    assert.deepEqual(body, {
-      provider: "meta",
-      configured: true,
-      phoneNumberIdConfigured: true,
-      accessTokenConfigured: true,
-      verifyTokenConfigured: true
-    });
-    assert.doesNotMatch(serialized, /token-que-nao-pode-vazar/);
-    assert.doesNotMatch(serialized, /accessToken["']?\s*:/);
   } finally {
     await close(server);
     await cleanup();

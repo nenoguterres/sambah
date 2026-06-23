@@ -12,6 +12,8 @@ import { OrderDraftService } from "./orderDraftService.js";
 import { OrderTrackingService } from "./orderTrackingService.js";
 import { SambahConversationService } from "./sambahConversationService.js";
 import { WhatsAppConversationService } from "./whatsappConversationService.js";
+import { createWhatsAppProvider } from "./whatsapp/whatsappProvider.js";
+import { WhatsAppMessageService } from "./whatsapp/whatsappMessageService.js";
 import { getPublicConfig, getRuntimeConfig, isAllowedCorsOrigin } from "./config.js";
 
 const publicDir = fileURLToPath(new URL("../public/", import.meta.url));
@@ -25,6 +27,12 @@ const whatsappConversations = new WhatsAppConversationService({ filePath: dataFi
 const drafts = new OrderDraftService({ draftsFile: dataFile("order-drafts.json"), rulesFile: dataFile("sambah-menu-rules.json") });
 const events = new EventScheduleService({ leadsFile: dataFile("event-leads.json"), servicesFile: dataFile("insano-services.json") });
 const tracking = new OrderTrackingService({ filePath: dataFile("order-tracking.json") });
+const whatsappProvider = createWhatsAppProvider({ config: runtimeConfig.whatsappBusiness });
+const whatsappMessages = new WhatsAppMessageService({
+  provider: whatsappProvider,
+  sessionsFile: dataFile("whatsapp-sessions.json"),
+  messagesFile: dataFile("whatsapp-messages.json")
+});
 const crm = new CrmService({
   files: {
     clientes: dataFile("clientes.json"),
@@ -58,7 +66,8 @@ export function createApp({
   draftService = drafts,
   eventService = events,
   trackingService = tracking,
-  crmService = crm
+  crmService = crm,
+  whatsappMessageService = whatsappMessages
 } = {}) {
   return createServer(async (req, res) => {
     try {
@@ -706,7 +715,7 @@ export function createApp({
       }
 
       if (req.method === "POST" && ["/webhook/whatsapp", "/webhook/site"].includes(url.pathname)) {
-        return handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService);
+        return handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappMessageService);
       }
 
       return sendJson(res, 404, { error: "not_found" });
@@ -740,7 +749,7 @@ function isMetaWhatsAppPayload(body = {}) {
   return Array.isArray(body.entry) && Boolean(body.entry[0]?.changes?.[0]?.value?.messages?.[0]);
 }
 
-async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService) {
+async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappMessageService) {
   let body = {};
   try {
     body = await readJson(req, { requireBody: true });
@@ -771,16 +780,41 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
         runtimeConfig: getRuntimeConfig(),
         crmService
       });
+      const autoResult = await whatsappMessageService.handleIncoming(body, {
+        conversationService,
+        menuService,
+        draftService,
+        eventService,
+        mesaService,
+        auditService
+      });
       if (isMetaWhatsAppPayload(body)) {
         return sendJson(res, 200, {
           ok: true,
           conversa: conversationResult.conversa,
           intent: conversationResult.intent,
           respostaSugerida: conversationResult.respostaSugerida,
-          enviado: false,
-          automaticoAtivo: conversationResult.sendEnabled
+          enviado: autoResult.sent,
+          automaticoAtivo: conversationResult.sendEnabled,
+          provider: autoResult.provider,
+          normalized: autoResult.normalized,
+          autoIntent: autoResult.intent,
+          responseText: autoResult.responseText,
+          draft: autoResult.draft,
+          mesa: autoResult.mesa,
+          route: autoResult.route
         });
       }
+      return sendJson(res, 202, {
+        ok: true,
+        intent: autoResult.intent,
+        route: autoResult.route,
+        responseText: autoResult.responseText,
+        draft: autoResult.draft,
+        mesa: autoResult.mesa,
+        whatsapp: autoResult.whatsapp,
+        sent: autoResult.sent
+      });
     }
 
     const crmResult = await safeCrmRecord(crmService, {
