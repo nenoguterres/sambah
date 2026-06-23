@@ -1653,7 +1653,8 @@ async function recordDirectWhatsAppAutoReply(whatsappMessageService, payload = {
         ok: sendResult.ok,
         sent: sendResult.sent,
         status: sendResult.status,
-        httpStatus: sendResult.httpStatus
+        httpStatus: sendResult.httpStatus,
+        response: sendResult.response
       }
     });
   } catch (error) {

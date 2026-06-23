@@ -167,6 +167,8 @@ test("POST /webhook/whatsapp processa payload real da Meta e envia resposta simp
     assert.equal(history[0].direction, "out");
     assert.equal(history[0].text, "Buenas! Eu sou o SamBah. Recebi tua mensagem e já vou te levar direto ao ponto.");
     assert.equal(history[0].status, "sent");
+    assert.equal(history[0].httpStatus, 200);
+    assert.equal(history[0].response.messages[0].id, "wamid-auto-reply");
     assert.equal(history[1].direction, "in");
     assert.equal(history[1].text, "Oi SamBah");
   } finally {

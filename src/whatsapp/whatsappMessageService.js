@@ -264,6 +264,8 @@ export class WhatsAppMessageService {
       messageId: normalized.messageId,
       text: text || normalized.message,
       status: sendResult?.status || "received",
+      httpStatus: sendResult?.httpStatus || null,
+      response: sendResult?.response || null,
       createdAt: this.now().toISOString()
     });
     await this.writeMessages(messages.slice(0, 200));
