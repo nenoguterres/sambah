@@ -1,0 +1,94 @@
+[
+  {
+    "id": "instagram-reels",
+    "name": "Instagram Reels",
+    "type": "instagram",
+    "enabled": true,
+    "mode": "real",
+    "formatsSupported": [
+      "vertical_video",
+      "short_caption"
+    ],
+    "requiresApproval": true,
+    "dailyLimit": 8,
+    "distributedToday": 1,
+    "lastDistributedAt": "2026-06-20T14:27:12.671Z"
+  },
+  {
+    "id": "instagram-feed",
+    "name": "Instagram Feed",
+    "type": "instagram",
+    "enabled": true,
+    "mode": "real",
+    "formatsSupported": [
+      "image",
+      "carousel",
+      "caption"
+    ],
+    "requiresApproval": true,
+    "dailyLimit": 6,
+    "distributedToday": 1,
+    "lastDistributedAt": "2026-06-20T14:27:12.671Z"
+  },
+  {
+    "id": "tiktok",
+    "name": "TikTok",
+    "type": "tiktok",
+    "enabled": true,
+    "mode": "simulated",
+    "formatsSupported": [
+      "vertical_video",
+      "short_caption"
+    ],
+    "requiresApproval": true,
+    "dailyLimit": 5,
+    "distributedToday": 0,
+    "lastDistributedAt": ""
+  },
+  {
+    "id": "facebook-reels",
+    "name": "Facebook Reels",
+    "type": "facebook",
+    "enabled": true,
+    "mode": "simulated",
+    "formatsSupported": [
+      "vertical_video",
+      "short_caption"
+    ],
+    "requiresApproval": true,
+    "dailyLimit": 6,
+    "distributedToday": 0,
+    "lastDistributedAt": ""
+  },
+  {
+    "id": "whatsapp-status",
+    "name": "WhatsApp Status",
+    "type": "whatsapp",
+    "enabled": true,
+    "mode": "simulated",
+    "formatsSupported": [
+      "status_text",
+      "image",
+      "short_video"
+    ],
+    "requiresApproval": true,
+    "dailyLimit": 12,
+    "distributedToday": 0,
+    "lastDistributedAt": ""
+  },
+  {
+    "id": "youtube-shorts",
+    "name": "YouTube Shorts",
+    "type": "youtube",
+    "enabled": true,
+    "mode": "simulated",
+    "formatsSupported": [
+      "vertical_video",
+      "short_caption"
+    ],
+    "requiresApproval": true,
+    "dailyLimit": 4,
+    "distributedToday": 0,
+    "lastDistributedAt": ""
+  }
+]

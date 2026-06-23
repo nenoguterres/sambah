@@ -46,6 +46,14 @@ const draftCountEl = document.querySelector("#draftCount");
 const draftOrdersListEl = document.querySelector("#draftOrdersList");
 const draftTestTextEl = document.querySelector("#draftTestText");
 const draftTestBtn = document.querySelector("#draftTestBtn");
+const whatsappProviderPillEl = document.querySelector("#whatsappProviderPill");
+const whatsappProviderEl = document.querySelector("#whatsappProvider");
+const whatsappConfiguredEl = document.querySelector("#whatsappConfigured");
+const whatsappPhoneConfiguredEl = document.querySelector("#whatsappPhoneConfigured");
+const whatsappPendingSessionsEl = document.querySelector("#whatsappPendingSessions");
+const whatsappReceivedListEl = document.querySelector("#whatsappReceivedList");
+const whatsappSentListEl = document.querySelector("#whatsappSentList");
+const whatsappSessionsListEl = document.querySelector("#whatsappSessionsList");
 const eventsLeadCountEl = document.querySelector("#eventsLeadCount");
 const eventsNewEl = document.querySelector("#eventsNew");
 const eventsNeedsInfoEl = document.querySelector("#eventsNeedsInfo");
@@ -172,6 +180,27 @@ async function loadDrafts() {
   const drafts = await response.json();
   draftCountEl.textContent = `${drafts.total || 0} itens`;
   draftOrdersListEl.innerHTML = renderDrafts(drafts.items || []);
+}
+
+async function loadWhatsApp() {
+  const [statusResponse, sessionsResponse, messagesResponse] = await Promise.all([
+    fetch("/admin/whatsapp/status"),
+    fetch("/admin/whatsapp/sessions"),
+    fetch("/admin/whatsapp/messages?limit=8")
+  ]);
+  const status = await statusResponse.json();
+  const sessions = await sessionsResponse.json();
+  const messages = await messagesResponse.json();
+  const pending = (sessions.items || []).filter((item) => item.status === "awaiting_confirmation");
+  whatsappProviderPillEl.textContent = status.provider || "mock";
+  whatsappProviderEl.textContent = status.provider || "mock";
+  whatsappConfiguredEl.textContent = status.configured ? "Configurado" : "Pendente";
+  whatsappConfiguredEl.className = status.configured ? "state-ok" : "state-attention";
+  whatsappPhoneConfiguredEl.textContent = status.phoneNumberIdConfigured ? "sim" : "nao";
+  whatsappPendingSessionsEl.textContent = pending.length;
+  whatsappReceivedListEl.innerHTML = renderWhatsappMessages(messages.received || [], "Nenhuma mensagem recebida.");
+  whatsappSentListEl.innerHTML = renderWhatsappMessages(messages.sent || [], "Nenhuma resposta enviada.");
+  whatsappSessionsListEl.innerHTML = renderWhatsappSessions(pending);
 }
 
 async function loadEvents() {
@@ -314,6 +343,33 @@ function renderDrafts(items = []) {
         <button class="ghost-button confirm-draft-btn" type="button" data-draft-id="${escapeHtml(draft.id)}" ${draft.status === "draft" ? "" : "disabled"}>Confirmar e enviar</button>
         <button class="ghost-button cancel-draft-btn" type="button" data-draft-id="${escapeHtml(draft.id)}" ${draft.status === "canceled" ? "disabled" : ""}>Cancelar</button>
       </div>
+    </article>
+  `).join("");
+}
+
+function renderWhatsappMessages(items = [], emptyText) {
+  if (!items.length) return `<p class="empty">${emptyText}</p>`;
+  return items.map((item) => `
+    <article class="whatsapp-item">
+      <div>
+        <strong>${escapeHtml(item.customerName || item.phone || "Cliente WhatsApp")}</strong>
+        <span>${escapeHtml(item.text || "")}</span>
+      </div>
+      <small>${escapeHtml(item.provider || "mock")} / ${escapeHtml(item.status || "")}</small>
+      <time>${formatDate(item.createdAt)}</time>
+    </article>
+  `).join("");
+}
+
+function renderWhatsappSessions(items = []) {
+  if (!items.length) return `<p class="empty">Nenhuma sessao pendente.</p>`;
+  return items.map((item) => `
+    <article class="whatsapp-item">
+      <div>
+        <strong>${escapeHtml(item.phone || "Cliente WhatsApp")}</strong>
+        <span>${escapeHtml(item.lastIntent || "")} / ${escapeHtml(item.status || "")}</span>
+      </div>
+      <button class="ghost-button clear-whatsapp-session-btn" type="button" data-session-draft="${escapeHtml(item.draftId || "")}">Limpar</button>
     </article>
   `).join("");
 }
@@ -513,7 +569,7 @@ function escapeHtml(value) {
 }
 
 async function refreshDashboard() {
-  await Promise.all([loadAudit(), loadMesa(), loadTracking(), loadMenu(), loadEvents(), loadReviewOrders(), loadDrafts()]);
+  await Promise.all([loadAudit(), loadMesa(), loadTracking(), loadMenu(), loadEvents(), loadReviewOrders(), loadDrafts(), loadWhatsApp()]);
 }
 
 async function retryPendingOrders() {
@@ -636,6 +692,22 @@ draftOrdersListEl.addEventListener("click", async (event) => {
       body: JSON.stringify({ id: button.dataset.draftId })
     });
     await Promise.all([loadDrafts(), loadMesa(), loadAudit()]);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+whatsappSessionsListEl.addEventListener("click", async (event) => {
+  const button = event.target.closest(".clear-whatsapp-session-btn");
+  if (!button) return;
+  button.disabled = true;
+  try {
+    await fetch("/admin/whatsapp/sessions/clear", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ draftId: button.dataset.sessionDraft })
+    });
+    await loadWhatsApp();
   } finally {
     button.disabled = false;
   }

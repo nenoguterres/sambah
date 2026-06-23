@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Login SamBah</title>
+    <meta name="theme-color" content="#0c1015">
+    <link rel="icon" href="/admin/assets/favicon.png" type="image/png">
+    <link rel="stylesheet" href="/login.css">
+  </head>
+  <body>
+    <main class="login-shell">
+      <section class="login-panel" aria-label="Login interno SamBah">
+        <img src="/admin/assets/brand/logo-sambah-oficial.png" alt="samBah!" class="login-logo">
+        <p class="eyebrow">Acesso interno</p>
+        <h1>Entrar no SamBah</h1>
+        <p>Autenticacao local para administracao e SamBah Voice Pay. Credenciais de desenvolvimento devem ser trocadas antes de producao.</p>
+        <form id="loginForm" class="login-form">
+          <label>Usuario<input name="username" autocomplete="username" required></label>
+          <label>Senha<input name="password" type="password" autocomplete="current-password" required></label>
+          <button type="submit">Entrar</button>
+        </form>
+        <div id="loginMessage" class="login-message" role="status" aria-live="polite"></div>
+      </section>
+    </main>
+    <script src="/login.js"></script>
+  </body>
+</html>

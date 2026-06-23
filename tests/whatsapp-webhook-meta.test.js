@@ -90,6 +90,81 @@ test("POST /webhook/whatsapp preserva mock e normaliza payload Meta", async () =
   }
 });
 
+test("POST /webhook/whatsapp processa payload real da Meta e envia resposta simples", async () => {
+  const previousSendEnabled = process.env.WHATSAPP_SEND_ENABLED;
+  const previousAccessToken = process.env.META_ACCESS_TOKEN;
+  const previousPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  process.env.WHATSAPP_SEND_ENABLED = "true";
+  process.env.META_ACCESS_TOKEN = "meta-token-teste";
+  process.env.WHATSAPP_PHONE_NUMBER_ID = "1234567890";
+
+  const graphCalls = [];
+  const logs = [];
+  const previousConsoleInfo = console.info;
+  console.info = (...args) => logs.push(args);
+  const { server, base, cleanup } = await createTestServer({
+    whatsappSendFetch: async (url, options) => {
+      graphCalls.push({ url, options });
+      return new Response(JSON.stringify({
+        messaging_product: "whatsapp",
+        contacts: [{ input: "5551999999999", wa_id: "5551999999999" }],
+        messages: [{ id: "wamid-auto-reply" }]
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+  });
+  try {
+    const response = await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(metaPayload({
+        from: "5551999999999",
+        id: "wamid-real-meta-text",
+        type: "text",
+        text: { body: "Oi SamBah" }
+      }, { phoneNumberId: "1234567890" }))
+    });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.normalized.from, "5551999999999");
+    assert.equal(body.normalized.message, "Oi SamBah");
+    assert.equal(body.directAutoReply.sent, true);
+    assert.equal(body.directAutoReply.httpStatus, 200);
+    assert.equal(graphCalls.length, 1);
+    assert.equal(graphCalls[0].url, "https://graph.facebook.com/v25.0/1234567890/messages");
+    assert.equal(graphCalls[0].options.method, "POST");
+    assert.equal(graphCalls[0].options.headers.authorization, "Bearer meta-token-teste");
+    assert.deepEqual(JSON.parse(graphCalls[0].options.body), {
+      messaging_product: "whatsapp",
+      to: "5551999999999",
+      type: "text",
+      text: { body: "Buenas! Eu sou o SamBah. Recebi tua mensagem e já vou te levar direto ao ponto." }
+    });
+    const receivedLog = logs.find(([event]) => event === "whatsapp.webhook.post.received");
+    assert.ok(receivedLog);
+    assert.equal(receivedLog[1].bodyEntryLength, 1);
+    assert.equal(receivedLog[1].changesLength, 1);
+    assert.equal(receivedLog[1].field, "messages");
+    assert.equal(receivedLog[1].phoneNumberIdReceived, "1234567890");
+    assert.equal(receivedLog[1].messagesLength, 1);
+    assert.equal(receivedLog[1].textBody, "Oi SamBah");
+    assert.equal(receivedLog[1].from, "5551999999999");
+  } finally {
+    console.info = previousConsoleInfo;
+    await close(server);
+    await cleanup();
+    if (previousSendEnabled === undefined) delete process.env.WHATSAPP_SEND_ENABLED;
+    else process.env.WHATSAPP_SEND_ENABLED = previousSendEnabled;
+    if (previousAccessToken === undefined) delete process.env.META_ACCESS_TOKEN;
+    else process.env.META_ACCESS_TOKEN = previousAccessToken;
+    if (previousPhoneNumberId === undefined) delete process.env.WHATSAPP_PHONE_NUMBER_ID;
+    else process.env.WHATSAPP_PHONE_NUMBER_ID = previousPhoneNumberId;
+  }
+});
+
 test("POST /webhook/site continua respondendo 202", async () => {
   const { server, base, cleanup } = await createTestServer();
   try {
@@ -113,7 +188,7 @@ test("POST /webhook/site continua respondendo 202", async () => {
   }
 });
 
-async function createTestServer({ provider = new MockWhatsAppProvider({ logger: { info: () => {} } }) } = {}) {
+async function createTestServer({ provider = new MockWhatsAppProvider({ logger: { info: () => {} } }), whatsappSendFetch = globalThis.fetch } = {}) {
   const dir = await mkdtemp(join(tmpdir(), "sambha-wa-meta-"));
   await writeFile(join(dir, "menu.json"), JSON.stringify({ items: menuItems(), updatedAt: "2026-06-15T00:00:00.000Z" }), "utf8");
   await writeFile(join(dir, "rules.json"), JSON.stringify(menuRules()), "utf8");
@@ -146,7 +221,8 @@ async function createTestServer({ provider = new MockWhatsAppProvider({ logger: 
     crmService,
     conversationService: new SambahConversationService({ scriptsFile: join(dir, "scripts.json") }),
     whatsappConversationService,
-    whatsappMessageService
+    whatsappMessageService,
+    whatsappSendFetch
   });
   await new Promise((resolve) => server.listen(0, resolve));
   return {
@@ -157,12 +233,18 @@ async function createTestServer({ provider = new MockWhatsAppProvider({ logger: 
   };
 }
 
-function metaPayload(message) {
+function metaPayload(message, { phoneNumberId = "1234567890", field = "messages" } = {}) {
   return {
     object: "whatsapp_business_account",
     entry: [{
       changes: [{
+        field,
         value: {
+          messaging_product: "whatsapp",
+          metadata: {
+            display_phone_number: "5551980413745",
+            phone_number_id: phoneNumberId
+          },
           contacts: [{ profile: { name: "Cliente Meta" }, wa_id: message.from }],
           messages: [message]
         }

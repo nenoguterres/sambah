@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SamBah LGPD e Logs Criticos</title>
+    <link rel="icon" href="/admin/assets/favicon.png" type="image/png">
+    <link rel="stylesheet" href="/sambah-ecosystem.css">
+      <link rel="stylesheet" href="/admin/assets/sambah-shell.css">
+  </head>
+  <body>
+    <main class="eco-shell">
+      <header class="eco-topbar">
+        <a class="eco-brand" href="/sambah-central">
+          <img src="/admin/assets/brand/logo-sambah-oficial.png" alt="samBah!">
+          <span>LGPD e Logs Criticos</span>
+        </a>
+        <nav class="eco-nav">
+          <a href="/sambah-central">Central</a>
+          <a href="/sambah-observability">Cockpit</a>
+          <a href="/sambah-security">Seguranca</a>
+          <a href="/admin/auditoria">Auditoria</a>
+        </nav>
+      </header>
+
+      <section class="eco-hero">
+        <div>
+          <p class="eyebrow">Governanca simulada</p>
+          <h1>SamBah LGPD e Logs Criticos</h1>
+          <p>Logs classificados, exportacao mascarada, politicas de retencao e solicitacoes de privacidade sem apagamento real nesta fase.</p>
+          <div id="lgpdNotice" class="eco-notice">Carregando governanca...</div>
+        </div>
+        <div class="eco-actions">
+          <button id="refreshLgpd" class="eco-secondary" type="button">Atualizar</button>
+          <button id="createPrivacyRequest" class="eco-button" type="button">Nova solicitacao LGPD</button>
+          <button id="exportAudit" class="eco-secondary" type="button">Exportar auditoria mascarada</button>
+        </div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Resumo</h2>
+          <span id="lgpdUpdated" class="eco-pill">Sincronizando</span>
+        </div>
+        <div id="lgpdKpis" class="eco-kpis"></div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Logs criticos</h2>
+          <span class="eco-pill">mascarados</span>
+        </div>
+        <div id="criticalLogs" class="eco-list"></div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Solicitacoes LGPD</h2>
+          <span class="eco-pill">simulado</span>
+        </div>
+        <div id="privacyRequests" class="eco-list"></div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Retencao</h2>
+          <span class="eco-pill">politicas</span>
+        </div>
+        <div id="retentionPolicies" class="eco-list"></div>
+      </section>
+    </main>
+    <script src="/sambah-lgpd.js"></script>
+      <script src="/admin/assets/sambah-shell.js"></script>
+    <script>
+      renderSambahShell("admin");
+    </script>
+</body>
+</html>

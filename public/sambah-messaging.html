@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SamBah Mensageria</title>
+    <link rel="icon" href="/admin/assets/favicon.png" type="image/png">
+    <link rel="stylesheet" href="/sambah-ecosystem.css">
+      <link rel="stylesheet" href="/admin/assets/sambah-shell.css">
+  </head>
+  <body>
+    <main class="eco-shell">
+      <header class="eco-topbar">
+        <a class="eco-brand" href="/sambah-central">
+          <img src="/admin/assets/brand/logo-sambah-oficial.png" alt="samBah!">
+          <span>Mensageria</span>
+        </a>
+        <nav class="eco-nav">
+          <a href="/sambah-central">Central</a>
+          <a href="/sambah-events">Event Bus</a>
+          <a href="/sambah-observability">Cockpit</a>
+          <a href="/sambah-database">Database</a>
+          <a href="/sambah-lgpd">LGPD</a>
+        </nav>
+      </header>
+
+      <section class="eco-hero">
+        <div>
+          <p class="eyebrow">Messaging Layer</p>
+          <h1>SamBah Mensageria</h1>
+          <p>Contratos e adapters mockados para Redis Streams, RabbitMQ e Kafka futuro, preservando o Event Bus interno como padrao.</p>
+          <div id="messagingNotice" class="eco-notice">Carregando mensageria...</div>
+        </div>
+        <div class="eco-actions">
+          <button id="refreshMessaging" class="eco-secondary" type="button">Atualizar</button>
+          <button id="publishTest" class="eco-button" type="button">Publicar mensagem teste</button>
+          <button id="simulateRedis" class="eco-secondary" type="button">Simular Redis</button>
+          <button id="simulateRabbitmq" class="eco-secondary" type="button">Simular RabbitMQ</button>
+          <button id="simulateFailure" class="eco-secondary" type="button">Simular falha broker</button>
+        </div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Status</h2>
+          <span id="brokerMode" class="eco-pill">Sincronizando</span>
+        </div>
+        <div id="messagingKpis" class="eco-kpis"></div>
+        <div id="brokerList" class="eco-list"></div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Replay por correlationId</h2>
+          <span class="eco-pill">simulado</span>
+        </div>
+        <div class="eco-inline">
+          <input id="replayCorrelationId" class="eco-input" placeholder="corr_..." aria-label="CorrelationId para replay">
+          <button id="replayButton" class="eco-secondary" type="button">Executar replay</button>
+        </div>
+        <div id="replayResult" class="eco-list" style="margin-top:12px"></div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Contratos</h2>
+          <span id="contractsCount" class="eco-pill">0</span>
+        </div>
+        <div id="contractList" class="eco-list"></div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Rotas e topicos</h2>
+          <span id="topicsCount" class="eco-pill">0</span>
+        </div>
+        <div id="routeList" class="eco-list"></div>
+      </section>
+    </main>
+    <script src="/sambah-messaging.js"></script>
+      <script src="/admin/assets/sambah-shell.js"></script>
+    <script>
+      renderSambahShell("admin");
+    </script>
+</body>
+</html>

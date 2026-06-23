@@ -327,13 +327,17 @@ function showResult(body, message, context = {}) {
   } else if (result) {
     result.innerHTML = html;
   }
+  bindConfirmationActions();
 }
 
 function renderConfirmationCard({ body, id, data, mode, items, isTable }) {
+  const statusUrl = body.statusUrl || (id ? `/pedido/${encodeURIComponent(id)}/status` : "");
   return `
     <section class="portal-confirmation" role="status">
       <h2>${escapeHtml(body.confirmation?.title || "✅ Pedido recebido pelo SamBah")}</h2>
-      <p>${escapeHtml(body.confirmation?.text || "Seu atendimento foi iniciado. Organizamos seu pedido e já deixamos tudo pronto para nossa equipe continuar.")}</p>
+      <p>${escapeHtml(body.confirmation?.text || "Recebemos teu pedido e ele já foi registrado no atendimento do Insano. Agora nossa equipe precisa confirmar para dar sequência.")}</p>
+      <p><strong>Status: aguardando confirmação da equipe</strong></p>
+      <p>Para agilizar, clique no botão abaixo e continue pelo WhatsApp com a mensagem já organizada.</p>
       <div class="confirmation-summary">
         ${id ? `<div><span>Número do pedido</span><strong>${escapeHtml(id)}</strong></div>` : ""}
         ${data.nome ? `<div><span>Nome</span><strong>${escapeHtml(data.nome)}</strong></div>` : ""}
@@ -346,12 +350,22 @@ function renderConfirmationCard({ body, id, data, mode, items, isTable }) {
         ${data.observacao ? `<div><span>Observação</span><strong>${escapeHtml(data.observacao)}</strong></div>` : ""}
         <div><span>Status</span><strong>aguardando confirmação da equipe</strong></div>
       </div>
+      <div class="next-steps">
+        <h3>O que acontece agora?</h3>
+        <ol>
+          <li>O SamBah registrou teu pedido.</li>
+          <li>A equipe recebe os dados organizados.</li>
+          <li>A confirmação será feita pelo WhatsApp.</li>
+          <li>Se estiver no local, o pedido segue para conferência interna e produção.</li>
+        </ol>
+      </div>
       <div class="confirm-actions">
-        ${body.whatsappUrl ? `<a class="whatsapp-action-button" href="${escapeHtml(body.whatsappUrl)}" data-whatsapp-url>Continuar atendimento no WhatsApp</a>` : ""}
-        ${body.statusUrl ? `<a class="status-action-button" href="${escapeHtml(body.statusUrl)}">Acompanhar pedido</a>` : ""}
+        ${body.whatsappUrl ? `<a class="whatsapp-action-button" href="${escapeHtml(body.whatsappUrl)}" data-whatsapp-url>Continuar atendimento no WhatsApp</a>` : `<div class="inline-status warning">WhatsApp indisponível no momento. Fale com a equipe pelo número 5551980413745.</div>`}
+        ${statusUrl ? `<button class="status-action-button" type="button" data-status-url="${escapeHtml(statusUrl)}">Acompanhar pedido</button>` : ""}
         <a class="back-button" href="/">Voltar ao início</a>
       </div>
-      <small>O WhatsApp abre com a mensagem pronta. Envio e resposta automática dependem da API oficial do WhatsApp Business.</small>
+      <div class="inline-status" data-status-result aria-live="polite"></div>
+      <small>No momento, a confirmação é feita pela equipe pelo WhatsApp.</small>
     </section>
   `;
 }
@@ -359,7 +373,7 @@ function renderConfirmationCard({ body, id, data, mode, items, isTable }) {
 function renderFallbackCard(message, whatsappUrl) {
   return `
     <section class="portal-confirmation portal-confirmation-warning" role="alert">
-      <h2>⚠️ Não conseguimos registrar agora</h2>
+      <h2>âš ï¸ Não conseguimos registrar agora</h2>
       <p>Mas seu pedido foi organizado pelo SamBah. Vamos abrir o WhatsApp para nossa equipe continuar seu atendimento.</p>
       <div class="confirmation-summary">
         <div><span>Status</span><strong>aguardando atendimento pelo WhatsApp</strong></div>
@@ -370,6 +384,53 @@ function renderFallbackCard(message, whatsappUrl) {
       <small>${escapeHtml(message || "Mensagem preparada pelo SamBah.")}</small>
     </section>
   `;
+}
+
+function bindConfirmationActions() {
+  document.querySelectorAll("[data-whatsapp-url]").forEach((link) => {
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      const url = link.getAttribute("href");
+      const opened = url && window.open(url, "_blank", "noopener,noreferrer");
+      const status = document.querySelector("[data-status-result]");
+      if (!opened && status) {
+        status.innerHTML = `Não conseguimos abrir o WhatsApp automaticamente. <a href="${escapeHtml(url || "#")}" target="_blank" rel="noopener noreferrer">Clique aqui para continuar pelo WhatsApp.</a>`;
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-status-url]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const statusBox = document.querySelector("[data-status-result]");
+      if (!statusBox) return;
+      const url = button.getAttribute("data-status-url");
+      button.disabled = true;
+      statusBox.textContent = "Consultando teu pedido...";
+      try {
+        const response = await window.fetch(url, { headers: { accept: "application/json" } });
+        const body = await response.json();
+        statusBox.textContent = statusMessageFromResponse(body, response.ok);
+      } catch (error) {
+        statusBox.textContent = "Não conseguimos consultar agora. Teu pedido foi recebido; tente novamente em alguns segundos ou continue pelo WhatsApp.";
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
+}
+
+function statusMessageFromResponse(body, responseOk) {
+  if (!responseOk || body?.ok === false || !body?.pedido) {
+    return "Teu pedido foi recebido, mas ainda estamos sincronizando a fila. Tente novamente em alguns segundos ou continue pelo WhatsApp.";
+  }
+  const status = String(body.pedido.status || "").toLowerCase();
+  if (body.pedido.statusHumano) return body.pedido.statusHumano;
+  if (status === "novo") return "Teu pedido está registrado e aguardando confirmação da equipe.";
+  if (status === "aceito") return "Teu pedido foi aceito pela equipe.";
+  if (status === "bloqueado_estoque") return "Teu pedido está aguardando liberação operacional interna.";
+  if (["em_producao", "em_preparo", "importado", "recebido"].includes(status)) return "Teu pedido foi encaminhado para produção.";
+  if (status === "entregue") return "Pedido finalizado. Obrigado!";
+  return "Teu pedido está registrado e aguardando atualização da equipe.";
 }
 
 function replaceFormWithResult(formElement, html) {
@@ -473,6 +534,7 @@ function escapeHtml(value = "") {
 function escapeAttr(value = "") {
   return escapeHtml(value).replaceAll("\n", "&#10;");
 }
+
 
 
 

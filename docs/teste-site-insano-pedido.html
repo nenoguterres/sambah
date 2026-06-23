@@ -1,0 +1,363 @@
+﻿<!doctype html>
+<html lang="pt-BR">
+<head>
+  <!--
+    Arquivo somente para teste.
+    Simula o Wix consumindo o SamBah.
+    Nao envia WhatsApp automaticamente.
+    Depende de INSANO_WHATSAPP_NUMBER no Render para gerar whatsappUrl.
+    Pode ser aberto direto no navegador.
+  -->
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Teste Pedido Insano + SamBah</title>
+  <style>
+    :root {
+      --bg: #070707;
+      --panel: #141414;
+      --panel-2: #1f1f1f;
+      --line: #ff6a00;
+      --red: #d71920;
+      --gold: #ffb21a;
+      --text: #ffffff;
+      --muted: #cfc7bd;
+      --danger: #ff5a5a;
+      --ok: #67e480;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 24px;
+    }
+
+    main {
+      width: min(920px, 100%);
+      margin: 0 auto;
+    }
+
+    header {
+      border-bottom: 2px solid var(--line);
+      padding: 0 0 18px;
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(30px, 6vw, 56px);
+      line-height: 1;
+      color: var(--text);
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--gold);
+      font-weight: 700;
+    }
+
+    .card {
+      background: linear-gradient(180deg, var(--panel), var(--panel-2));
+      border: 1px solid rgba(255, 106, 0, .55);
+      border-radius: 12px;
+      padding: 18px;
+      margin-bottom: 18px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    label {
+      display: grid;
+      gap: 7px;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid #3a3a3a;
+      border-radius: 10px;
+      background: #080808;
+      color: var(--text);
+      padding: 13px 12px;
+      font: inherit;
+      min-height: 46px;
+    }
+
+    textarea {
+      min-height: 92px;
+      resize: vertical;
+    }
+
+    button, .whatsapp-link {
+      border: 0;
+      border-radius: 10px;
+      background: var(--line);
+      color: #111;
+      font-weight: 900;
+      padding: 14px 18px;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+    }
+
+    button:hover, .whatsapp-link:hover {
+      filter: brightness(1.08);
+    }
+
+    button.secondary {
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--text);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .status {
+      padding: 12px;
+      border-radius: 10px;
+      background: #0c0c0c;
+      border: 1px solid #303030;
+      color: var(--muted);
+      margin-top: 12px;
+    }
+
+    .status.ok { border-color: var(--ok); color: var(--ok); }
+    .status.error { border-color: var(--danger); color: var(--danger); }
+
+    pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #070707;
+      border: 1px solid #333;
+      border-radius: 10px;
+      padding: 14px;
+      color: var(--text);
+      max-height: 360px;
+      overflow: auto;
+    }
+
+    .hidden { display: none; }
+
+    @media (max-width: 720px) {
+      body { padding: 16px; }
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Teste Pedido Insano + SamBah</h1>
+      <p class="subtitle">Simulação do fluxo Wix → SamBah → WhatsApp</p>
+    </header>
+
+    <section class="card">
+      <div class="actions">
+        <button type="button" id="reloadMenu" class="secondary">Buscar cardápio da API</button>
+      </div>
+      <div id="menuStatus" class="status">Carregando cardápio...</div>
+    </section>
+
+    <form id="orderForm" class="card">
+      <div class="grid">
+        <label>
+          Nome
+          <input id="nome" autocomplete="name" required>
+        </label>
+        <label>
+          Telefone
+          <input id="telefone" autocomplete="tel" required>
+        </label>
+        <label>
+          Produto
+          <select id="produto" required>
+            <option value="">Carregando...</option>
+          </select>
+        </label>
+        <label>
+          Quantidade
+          <input id="quantidade" type="number" min="1" value="1" required>
+        </label>
+        <label>
+          Entrega/retirada
+          <select id="formaEntrega">
+            <option value="retirada">Retirada</option>
+            <option value="delivery">Delivery</option>
+            <option value="mesa">Estou no local</option>
+            <option value="evento">Evento / grande pedido</option>
+          </select>
+        </label>
+        <label>
+          Pagamento
+          <select id="formaPagamento">
+            <option value="pix">Pix</option>
+            <option value="cartao">Cartão</option>
+            <option value="dinheiro">Dinheiro</option>
+            <option value="combinar">Combinar</option>
+          </select>
+        </label>
+      </div>
+
+      <label style="margin-top:14px;">
+        Endereço
+        <input id="endereco" placeholder="Bairro, rua ou referência">
+      </label>
+
+      <label style="margin-top:14px;">
+        Observação do item
+        <input id="observacaoItem" placeholder="Ex.: sem cebola">
+      </label>
+
+      <label style="margin-top:14px;">
+        Observações gerais
+        <textarea id="observacoes" placeholder="Detalhes do pedido"></textarea>
+      </label>
+
+      <div class="actions">
+        <button type="submit">Enviar pedido</button>
+      </div>
+    </form>
+
+    <section class="card">
+      <h2>Resultado</h2>
+      <div id="resultStatus" class="status">Nenhum pedido enviado ainda.</div>
+      <p><strong>Pedido ID:</strong> <span id="pedidoId">-</span></p>
+      <p><strong>Status:</strong> <span id="pedidoStatus">-</span></p>
+      <pre id="whatsappMessage">whatsappMessage aparece aqui.</pre>
+      <div id="whatsappArea" class="actions hidden">
+        <a id="whatsappLink" class="whatsapp-link" href="#" target="_blank" rel="noopener noreferrer">Abrir WhatsApp</a>
+      </div>
+      <div id="whatsappWarning" class="status hidden">Configure INSANO_WHATSAPP_NUMBER no Render para liberar o link do WhatsApp.</div>
+    </section>
+  </main>
+
+  <script>
+    const API_BASE = "https://sambah.onrender.com";
+    // Alternativa local:
+    // const API_BASE = "http://localhost:3000";
+
+    let produtos = [];
+
+    const $ = (id) => document.getElementById(id);
+
+    async function carregarCardapio() {
+      $("menuStatus").className = "status";
+      $("menuStatus").textContent = "Buscando cardápio...";
+      $("produto").innerHTML = '<option value="">Carregando...</option>';
+
+      try {
+        const response = await fetch(`${API_BASE}/api/site/cardapio`);
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || "Não foi possível carregar o cardápio.");
+
+        produtos = (data.produtos || []).filter((produto) => produto.ativo);
+        $("produto").innerHTML = '<option value="">Escolha um produto</option>' + produtos.map((produto) => (
+          `<option value="${produto.id}">${produto.nome} - ${produto.categoria}</option>`
+        )).join("");
+
+        $("menuStatus").className = "status ok";
+        $("menuStatus").textContent = `${produtos.length} produtos ativos carregados de ${data.marca}.`;
+      } catch (error) {
+        $("menuStatus").className = "status error";
+        $("menuStatus").textContent = error.message;
+        $("produto").innerHTML = '<option value="">Erro ao carregar</option>';
+      }
+    }
+
+    function validarPedido(nome, telefone, produto, quantidade) {
+      if (!nome) return "Informe o nome.";
+      if (!telefone) return "Informe o telefone.";
+      if (!produto) return "Escolha um produto.";
+      if (!Number.isFinite(quantidade) || quantidade < 1) return "Quantidade mínima: 1.";
+      return "";
+    }
+
+    async function enviarPedido(event) {
+      event.preventDefault();
+
+      const produto = produtos.find((item) => item.id === $("produto").value);
+      const quantidade = Number($("quantidade").value);
+      const nome = $("nome").value.trim();
+      const telefone = $("telefone").value.trim();
+      const erro = validarPedido(nome, telefone, produto, quantidade);
+
+      if (erro) {
+        $("resultStatus").className = "status error";
+        $("resultStatus").textContent = erro;
+        return;
+      }
+
+      const payload = {
+        nome,
+        telefone,
+        origem: "teste-html-insano",
+        tipo: "pedido",
+        itens: [{
+          nome: produto.nome,
+          quantidade,
+          preco: produto.preco,
+          observacao: $("observacaoItem").value.trim()
+        }],
+        formaEntrega: $("formaEntrega").value,
+        endereco: $("endereco").value.trim(),
+        formaPagamento: $("formaPagamento").value,
+        observacoes: $("observacoes").value.trim(),
+        totalEstimado: produto.preco ? produto.preco * quantidade : null
+      };
+
+      $("resultStatus").className = "status";
+      $("resultStatus").textContent = "Enviando pedido...";
+      $("whatsappArea").classList.add("hidden");
+      $("whatsappWarning").classList.add("hidden");
+
+      try {
+        const response = await fetch(`${API_BASE}/api/site/pedido`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || "Não foi possível enviar o pedido.");
+
+        $("resultStatus").className = "status ok";
+        $("resultStatus").textContent = "Pedido enviado com sucesso.";
+        $("pedidoId").textContent = data.pedidoId || "-";
+        $("pedidoStatus").textContent = data.status || "-";
+        $("whatsappMessage").textContent = data.whatsappMessage || "";
+
+        if (data.whatsappUrl) {
+          $("whatsappLink").href = data.whatsappUrl;
+          $("whatsappArea").classList.remove("hidden");
+        } else {
+          $("whatsappWarning").classList.remove("hidden");
+        }
+      } catch (error) {
+        $("resultStatus").className = "status error";
+        $("resultStatus").textContent = error.message;
+      }
+    }
+
+    $("reloadMenu").addEventListener("click", carregarCardapio);
+    $("orderForm").addEventListener("submit", enviarPedido);
+    carregarCardapio();
+  </script>
+</body>
+</html>

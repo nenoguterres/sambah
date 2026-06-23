@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Auditoria SamBah</title>
+    <meta name="application-name" content="samBah!">
+    <meta name="theme-color" content="#0c1015">
+    <link rel="icon" href="/admin/assets/favicon.png" type="image/png">
+    <link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/admin-auditoria.css">
+      <link rel="stylesheet" href="/admin/assets/sambah-shell.css">
+  </head>
+  <body>
+    <main class="audit-shell">
+      <header class="audit-topbar">
+        <a class="brand" href="/admin" aria-label="Voltar para o admin">
+          <img src="/admin/assets/brand/logo-sambah-oficial.png" alt="samBah!">
+          <span>Auditoria SamBah</span>
+        </a>
+        <nav class="top-links" aria-label="Atalhos administrativos">
+          <span data-auth-user>Usuario</span>
+          <span data-auth-role>Perfil</span>
+          <a href="/admin">Admin</a>
+          <a href="/admin/usuarios">Usu&aacute;rios</a>
+          <a href="/sambah-voice-pay">SamBah Pay</a>
+          <button data-auth-logout type="button">Sair</button>
+        </nav>
+      </header>
+
+      <section class="intro-panel">
+        <p class="eyebrow">Seguran&ccedil;a interna</p>
+        <h1>Auditoria SamBah</h1>
+        <p>Eventos p&uacute;blicos de auditoria do SamBah Pay e do admin interno, com dados sens&iacute;veis removidos antes de chegar ao painel.</p>
+        <div class="status-row">
+          <span id="auditStatus" class="status-pill">Carregando auditoria</span>
+          <button id="refreshAuditEvents" class="primary-button" type="button">Atualizar</button>
+        </div>
+      </section>
+
+      <section class="audit-panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Eventos recentes</p>
+            <h2>&Uacute;ltimos 100 registros</h2>
+          </div>
+          <span id="auditCount" class="status-pill muted">0 eventos</span>
+        </div>
+        <div class="table-wrap">
+          <table class="audit-table">
+            <thead>
+              <tr>
+                <th>Data/Hora</th>
+                <th>Evento</th>
+                <th>Usu&aacute;rio</th>
+                <th>Perfil</th>
+                <th>Origem</th>
+                <th>A&ccedil;&atilde;o</th>
+                <th>Status</th>
+                <th>Rota</th>
+                <th>M&eacute;todo</th>
+                <th>Motivo</th>
+                <th>Alvo</th>
+              </tr>
+            </thead>
+            <tbody id="auditEventsBody">
+              <tr><td colspan="11">Carregando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+    <script src="/auth-ui.js"></script>
+    <script src="/admin-auditoria.js"></script>
+      <script src="/admin/assets/sambah-shell.js"></script>
+    <script>
+      renderSambahShell("admin");
+    </script>
+</body>
+</html>

@@ -1,0 +1,372 @@
+:root {
+  color-scheme: dark;
+  --bg: #080807;
+  --panel: #141713;
+  --panel-2: #1b201b;
+  --line: #2c392e;
+  --text: #f5fff4;
+  --muted: #a9b8a8;
+  --accent: #29d366;
+  --accent-2: #b8f7ce;
+  --orange: #ff9f2f;
+  --ink: #07100a;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button, input, textarea, select { font: inherit; }
+a { color: inherit; }
+
+.crm-shell {
+  width: min(1440px, 100%);
+  margin: 0 auto;
+  padding: 20px;
+}
+
+body.sambah-crm-shell-page.sambah-shell-mounted .crm-shell {
+  width: min(1440px, calc(100% - var(--sambah-shell-width, 264px) - 40px));
+  margin-left: calc(var(--sambah-shell-width, 264px) + 20px);
+  margin-right: 20px;
+}
+
+body.sambah-crm-shell-page.sambah-shell-mounted.sambah-shell-collapsed .crm-shell {
+  width: min(1440px, calc(100% - var(--sambah-shell-collapsed-width, 168px) - 40px));
+  margin-left: calc(var(--sambah-shell-collapsed-width, 168px) + 20px);
+}
+
+.crm-top,
+.crm-hero,
+.metric-card,
+.crm-panel,
+.record-card,
+.crm-tabs,
+.crm-tools {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 8px;
+}
+
+.crm-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.crm-brand,
+.crm-top-actions,
+.hero-actions,
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.crm-brand {
+  color: inherit;
+  text-decoration: none;
+  font-weight: 900;
+}
+
+.crm-brand img {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+}
+
+.crm-hero {
+  margin-top: 16px;
+  padding: 24px;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.crm-hero h1 {
+  margin: 0 0 8px;
+  font-size: clamp(36px, 5vw, 64px);
+  line-height: 1;
+}
+
+.crm-hero p,
+.section-title span,
+.form-message,
+.meta,
+label,
+.fields span {
+  color: var(--muted);
+}
+
+.status-pill,
+.link-button,
+.stage-chip {
+  border: 1px solid var(--line);
+  background: #0d100d;
+  color: var(--accent-2);
+  border-radius: 999px;
+  padding: 9px 12px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.metric-grid {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(128px, 1fr));
+  gap: 12px;
+}
+
+.metric-card {
+  padding: 15px;
+  min-height: 96px;
+}
+
+.metric-card span {
+  color: var(--muted);
+  display: block;
+  margin-bottom: 10px;
+}
+
+.metric-card strong {
+  display: block;
+  font-size: clamp(24px, 3vw, 36px);
+  line-height: 1;
+  overflow-wrap: anywhere;
+}
+
+.crm-tabs {
+  margin-top: 16px;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 10px;
+}
+
+.crm-tabs button,
+.ghost-button,
+.primary-button,
+.card-actions a,
+.card-actions button {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.crm-tabs button,
+.ghost-button,
+.card-actions a,
+.card-actions button {
+  background: #0d100d;
+  color: var(--text);
+  padding: 9px 12px;
+  text-decoration: none;
+}
+
+.crm-tabs button.is-active,
+.ghost-button:hover,
+.card-actions a:hover,
+.card-actions button:hover:not(:disabled) {
+  border-color: rgba(41, 211, 102, .5);
+  background: rgba(41, 211, 102, .12);
+  color: var(--accent-2);
+}
+
+.primary-button {
+  background: var(--accent);
+  border: 0;
+  color: var(--ink);
+  font-weight: 900;
+  padding: 12px 14px;
+}
+
+.crm-layout {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.crm-panel,
+.crm-tools {
+  padding: 16px;
+}
+
+.quick-panel {
+  position: sticky;
+  top: 86px;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.section-title h2,
+.record-card h3 {
+  margin: 0;
+}
+
+form,
+.crm-panels,
+.record-list,
+.fields {
+  display: grid;
+  gap: 12px;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+
+label.wide {
+  grid-column: 1 / -1;
+}
+
+input,
+textarea,
+select {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: #0d100d;
+  color: var(--text);
+  border-radius: 8px;
+  padding: 11px;
+  outline: none;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--accent);
+}
+
+.crm-tools {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 260px);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.record-card {
+  background: var(--panel-2);
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.record-card header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.record-card.temp-quente {
+  border-color: rgba(255, 159, 47, .62);
+}
+
+.record-card.temp-morno {
+  border-color: rgba(41, 211, 102, .42);
+}
+
+.fields {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.fields div {
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, .06);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, .14);
+  padding: 10px;
+}
+
+.fields span {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 5px;
+}
+
+.fields strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.empty-state {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 18px;
+  color: var(--muted);
+  text-align: center;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
+@media (max-width: 1180px) {
+  .metric-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 860px) {
+  .crm-layout { grid-template-columns: 1fr; }
+  .quick-panel { position: static; }
+}
+
+@media (max-width: 760px) {
+  body.sambah-crm-shell-page.sambah-shell-mounted .crm-shell,
+  body.sambah-crm-shell-page.sambah-shell-mounted.sambah-shell-collapsed .crm-shell {
+    width: calc(100% - var(--sambah-shell-collapsed-width, 168px) - 16px);
+    margin-left: calc(var(--sambah-shell-collapsed-width, 168px) + 8px);
+    margin-right: 8px;
+    padding: 12px;
+  }
+
+  .crm-top,
+  .crm-hero,
+  .section-title,
+  .record-card header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .metric-grid,
+  .crm-tools,
+  .fields {
+    grid-template-columns: 1fr;
+  }
+}

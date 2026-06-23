@@ -1,0 +1,50 @@
+[
+  {
+    "id": "signal-mesa-xeriffe-2026-06-18-001",
+    "sourceModule": "Mesa Xeriffe",
+    "title": "Produto com giro acelerado",
+    "description": "Mesa detectou aumento de pedidos no horario de almoco e enviou oportunidade para o Perola.",
+    "type": "sales_opportunity",
+    "productName": "Kachurrasco",
+    "quantity": 24,
+    "salesCount": 6,
+    "priority": "high",
+    "createdAt": "2026-06-18T09:00:00.000Z"
+  },
+  {
+    "id": "signal-sambah-2026-06-18-001",
+    "sourceModule": "SamBah 2.0",
+    "title": "Campanha operacional pronta",
+    "description": "SamBah consolidou contexto de operacao local e marcou campanha para criacao de material.",
+    "type": "campaign_signal",
+    "productName": "Combo Insano",
+    "quantity": 12,
+    "salesCount": 8,
+    "priority": "medium",
+    "createdAt": "2026-06-18T09:07:00.000Z"
+  },
+  {
+    "id": "signal-sambah-pay-2026-06-18-001",
+    "sourceModule": "SamBah Pay",
+    "title": "Oportunidade de conversao no checkout",
+    "description": "SamBah Pay simulou interesse de pagamento recorrente e sugeriu material para fechamento rapido.",
+    "type": "payment_conversion",
+    "productName": "Credito SamBah Pay",
+    "quantity": 6,
+    "salesCount": 4,
+    "priority": "medium",
+    "createdAt": "2026-06-18T09:12:00.000Z"
+  },
+  {
+    "id": "signal-perola-2026-06-18-001",
+    "sourceModule": "Perola",
+    "title": "Material gerado para validacao",
+    "description": "Perola organizou os sinais do ecossistema e preparou uma sugestao de publicacao local.",
+    "type": "content_ready",
+    "productName": "Perola Studio",
+    "quantity": 9,
+    "salesCount": 0,
+    "priority": "high",
+    "createdAt": "2026-06-18T09:18:00.000Z"
+  }
+]

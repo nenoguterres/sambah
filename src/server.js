@@ -6,18 +6,30 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { AuditService } from "./auditService.js";
 import { CrmService } from "./crmService.js";
 import { EventScheduleService } from "./eventScheduleService.js";
+import { InsanoWorkhubController } from "./insanoWorkhubController.js";
+import { InsanoWorkhubService } from "./insanoWorkhubService.js";
 import { buildMesaOrder, MesaIntegrationService } from "./mesaIntegrationService.js";
 import { MenuSyncService } from "./menuSyncService.js";
 import { OrderDraftService } from "./orderDraftService.js";
 import { OrderTrackingService } from "./orderTrackingService.js";
+import { PerolaService } from "./perolaService.js";
+import { createPerolaRoutes } from "./perolaRoutes.js";
+import { PayPerolaBridgeService } from "./payPerolaBridgeService.js";
+import { SambahPerolaBridgeService } from "./sambahPerolaBridgeService.js";
 import { SambahConversationService } from "./sambahConversationService.js";
 import { WhatsAppConversationService } from "./whatsappConversationService.js";
+import { getPublicConfig, getRuntimeConfig, isAllowedCorsOrigin } from "./config.js";
+import { createSambahPayModule } from "./sambahPay/index.js";
+import { PayPerolaBridgeController } from "./sambahPay/controllers/payPerolaBridgeController.js";
+import { SambahAuthService } from "./auth/authService.js";
 import { createWhatsAppProvider } from "./whatsapp/whatsappProvider.js";
 import { WhatsAppMessageService } from "./whatsapp/whatsappMessageService.js";
-import { getPublicConfig, getRuntimeConfig, isAllowedCorsOrigin } from "./config.js";
+import { isMetaWhatsAppPayload } from "./whatsapp/whatsappWebhookParser.js";
+import { InstagramPublisher } from "./services/instagramPublisher.js";
 
 const publicDir = fileURLToPath(new URL("../public/", import.meta.url));
 const runtimeConfig = getRuntimeConfig();
+const WHATSAPP_AUTO_REPLY_TEXT = "Buenas! Eu sou o SamBah. Recebi tua mensagem e já vou te levar direto ao ponto.";
 const dataFile = (name) => join(runtimeConfig.dataDir, name);
 const audit = new AuditService({ filePath: dataFile("audit-logs.json") });
 const mesa = new MesaIntegrationService({ queueFile: dataFile("mesa-queue.json") });
@@ -27,6 +39,20 @@ const whatsappConversations = new WhatsAppConversationService({ filePath: dataFi
 const drafts = new OrderDraftService({ draftsFile: dataFile("order-drafts.json"), rulesFile: dataFile("sambah-menu-rules.json") });
 const events = new EventScheduleService({ leadsFile: dataFile("event-leads.json"), servicesFile: dataFile("insano-services.json") });
 const tracking = new OrderTrackingService({ filePath: dataFile("order-tracking.json") });
+const insanoWorkhub = new InsanoWorkhubService();
+const insanoWorkhubController = new InsanoWorkhubController({ workhubService: insanoWorkhub });
+const instagramPublisher = new InstagramPublisher(runtimeConfig.perolaInstagram);
+const perola = new PerolaService({ workhubService: insanoWorkhub, publisher: instagramPublisher });
+const perolaRoutes = createPerolaRoutes({ service: perola });
+const sambahPay = createSambahPayModule({ dataDir: runtimeConfig.dataDir, auditService: audit });
+const payPerolaBridge = new PayPerolaBridgeService({
+  dataDir: runtimeConfig.dataDir,
+  eventBus: sambahPay.services.eventBusService,
+  workhubService: insanoWorkhub
+});
+const payPerolaBridgeController = new PayPerolaBridgeController({ payPerolaBridgeService: payPerolaBridge });
+const sambahPerolaBridge = new SambahPerolaBridgeService({ dataDir: runtimeConfig.dataDir, workhubService: insanoWorkhub });
+const auth = new SambahAuthService({ usersFile: dataFile("auth-users.json") });
 const whatsappProvider = createWhatsAppProvider({ config: runtimeConfig.whatsappBusiness });
 const whatsappMessages = new WhatsAppMessageService({
   provider: whatsappProvider,
@@ -66,12 +92,22 @@ export function createApp({
   draftService = drafts,
   eventService = events,
   trackingService = tracking,
+  perolaRouteModule = perolaRoutes,
+  workhubController = insanoWorkhubController,
+  payPerolaController = payPerolaBridgeController,
   crmService = crm,
-  whatsappMessageService = whatsappMessages
+  sambahPayModule = sambahPay,
+  authService = auth,
+  whatsappMessageService = whatsappMessages,
+  whatsappSendFetch = globalThis.fetch,
+  authMode = globalThis.process?.env?.SAMBAH_AUTH_MODE || "session"
 } = {}) {
   return createServer(async (req, res) => {
     try {
       const url = new URL(req.url, "http://localhost");
+      const activeAuthMode = authMode === "mock" ? "mock" : "session";
+      req.sambahAuthMode = activeAuthMode;
+      req.sambahUser = activeAuthMode === "session" ? authService.currentUser(req) : null;
 
       const requestCorsHeaders = corsHeaders(req.headers.origin);
       for (const [header, value] of Object.entries(requestCorsHeaders)) {
@@ -83,24 +119,306 @@ export function createApp({
         return res.end();
       }
 
+      if (req.method === "GET" && url.pathname === "/login") {
+        return serveStatic(res, "login.html");
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/auth/login") {
+        const body = await readJson(req, { requireBody: true });
+        const result = await authService.login(body);
+        if (!result.ok) {
+          await safeAuditRecord(auditService, {
+            type: "sambah_login_failed",
+            status: "warning",
+            source: "auth",
+            message: "Login interno recusado",
+            context: { username: safeAuditUsername(body.username), action: "login", path: url.pathname, method: req.method, reason: result.error }
+          });
+          return sendJson(res, result.statusCode || 401, { ok: false, error: result.error, message: result.message });
+        }
+        await safeAuditRecord(auditService, {
+          type: "sambah_login_success",
+          status: "info",
+          source: "auth",
+          message: "Login interno realizado",
+          context: { username: result.user.username, role: result.user.role, action: "login", path: url.pathname, method: req.method }
+        });
+        res.setHeader("Set-Cookie", result.cookie);
+        return sendJson(res, 200, { ok: true, user: result.user, redirectTo: "/admin" });
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/auth/logout") {
+        const user = req.sambahUser;
+        const result = authService.logout(req);
+        if (user) {
+          await safeAuditRecord(auditService, {
+            type: "sambah_logout",
+            status: "info",
+            source: "auth",
+            message: "Logout interno realizado",
+            context: { username: user.username, role: user.role, action: "logout", path: url.pathname, method: req.method }
+          });
+        }
+        res.setHeader("Set-Cookie", result.cookie);
+        return sendJson(res, 200, { ok: true, redirectTo: "/login" });
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/auth/me") {
+        if (activeAuthMode === "mock") return sendJson(res, 200, { ok: true, mode: "mock", user: null });
+        if (!req.sambahUser) return sendJson(res, 401, { ok: false, error: "auth_required" });
+        return sendJson(res, 200, { ok: true, mode: "session", user: req.sambahUser });
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/auth/users") {
+        if (activeAuthMode === "session" && !req.sambahUser) return sendJson(res, 401, { ok: false, error: "auth_required" });
+        const users = await authService.listUsers();
+        return sendJson(res, 200, {
+          ok: true,
+          mode: activeAuthMode,
+          total: users.length,
+          users
+        });
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/auth/users") {
+        const adminCheck = requireAdminUser(req, activeAuthMode);
+        if (!adminCheck.ok) return sendJson(res, adminCheck.statusCode, { ok: false, error: adminCheck.error });
+        const result = await authService.createUser(await readJson(req, { requireBody: true }));
+        if (!result.ok) return sendJson(res, result.statusCode || 400, result);
+        await safeAuditRecord(auditService, {
+          type: "sambah_user_created",
+          status: "info",
+          source: "auth",
+          message: "Usuario interno criado",
+          context: {
+            username: req.sambahUser?.username || "mock",
+            role: req.sambahUser?.role || "ADMIN",
+            action: "create_user",
+            path: url.pathname,
+            method: req.method,
+            targetUsername: result.user.username,
+            targetRole: result.user.role
+          }
+        });
+        return sendJson(res, 201, result);
+      }
+
+      const authUserMatch = url.pathname.match(/^\/api\/auth\/users\/([^/]+)$/);
+      if (req.method === "PATCH" && authUserMatch) {
+        const adminCheck = requireAdminUser(req, activeAuthMode);
+        if (!adminCheck.ok) return sendJson(res, adminCheck.statusCode, { ok: false, error: adminCheck.error });
+        const username = decodeURIComponent(authUserMatch[1]);
+        const result = await authService.updateUser(username, await readJson(req, { requireBody: true }));
+        if (!result.ok) return sendJson(res, result.statusCode || 400, result);
+        await safeAuditRecord(auditService, {
+          type: "sambah_user_updated",
+          status: "info",
+          source: "auth",
+          message: "Usuario interno atualizado",
+          context: {
+            username: req.sambahUser?.username || "mock",
+            role: req.sambahUser?.role || "ADMIN",
+            action: "update_user",
+            path: url.pathname,
+            method: req.method,
+            targetUsername: result.user.username,
+            targetRole: result.user.role
+          }
+        });
+        return sendJson(res, 200, result);
+      }
+
+      const authUserPasswordMatch = url.pathname.match(/^\/api\/auth\/users\/([^/]+)\/password$/);
+      if (req.method === "POST" && authUserPasswordMatch) {
+        const adminCheck = requireAdminUser(req, activeAuthMode);
+        if (!adminCheck.ok) return sendJson(res, adminCheck.statusCode, { ok: false, error: adminCheck.error });
+        const username = decodeURIComponent(authUserPasswordMatch[1]);
+        const result = await authService.changePassword(username, await readJson(req, { requireBody: true }));
+        if (!result.ok) return sendJson(res, result.statusCode || 400, result);
+        await safeAuditRecord(auditService, {
+          type: "sambah_user_password_changed",
+          status: "warning",
+          source: "auth",
+          message: "Senha de usuario interno alterada",
+          context: {
+            username: req.sambahUser?.username || "mock",
+            role: req.sambahUser?.role || "ADMIN",
+            action: "change_user_credential",
+            path: url.pathname,
+            method: req.method,
+            targetUsername: result.user.username,
+            targetRole: result.user.role
+          }
+        });
+        return sendJson(res, 200, result);
+      }
+
+      const authUserStatusMatch = url.pathname.match(/^\/api\/auth\/users\/([^/]+)\/status$/);
+      if (req.method === "POST" && authUserStatusMatch) {
+        const adminCheck = requireAdminUser(req, activeAuthMode);
+        if (!adminCheck.ok) return sendJson(res, adminCheck.statusCode, { ok: false, error: adminCheck.error });
+        const username = decodeURIComponent(authUserStatusMatch[1]);
+        const body = await readJson(req, { requireBody: true });
+        const result = await authService.setUserActive(username, body.active);
+        if (!result.ok) return sendJson(res, result.statusCode || 400, result);
+        await safeAuditRecord(auditService, {
+          type: "sambah_user_status_changed",
+          status: "warning",
+          source: "auth",
+          message: "Status de usuario interno alterado",
+          context: {
+            username: req.sambahUser?.username || "mock",
+            role: req.sambahUser?.role || "ADMIN",
+            action: result.user.active ? "activate_user" : "deactivate_user",
+            path: url.pathname,
+            method: req.method,
+            reason: result.user.active ? "usuario ativado" : "usuario desativado",
+            targetUsername: result.user.username,
+            targetRole: result.user.role
+          }
+        });
+        return sendJson(res, 200, result);
+      }
+
+      if (url.pathname.startsWith("/api/perola")) {
+        const handled = await perolaRouteModule.handle(req, res, url);
+        if (handled) return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/insano-workhub/tasks") {
+        return sendJson(res, 201, { ok: true, task: await workhubController.createTask(await readJson(req, { requireBody: true })) });
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/insano-workhub/tasks") {
+        return sendJson(res, 200, await workhubController.listTasks({
+          sourceModule: url.searchParams.get("sourceModule") || url.searchParams.get("source"),
+          targetModule: url.searchParams.get("targetModule"),
+          status: url.searchParams.get("status"),
+          limit: url.searchParams.get("limit")
+        }));
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/insano-workhub/summary") {
+        return sendJson(res, 200, await workhubController.summary());
+      }
+
+      const workhubTaskMatch = url.pathname.match(/^\/api\/insano-workhub\/tasks\/([^/]+)$/);
+      if (req.method === "PATCH" && workhubTaskMatch) {
+        const task = await workhubController.updateTask(
+          decodeURIComponent(workhubTaskMatch[1]),
+          await readJson(req, { requireBody: true })
+        );
+        return sendJson(res, 200, { ok: true, task });
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/sambah-perola/signals") {
+        return sendJson(res, 201, { ok: true, signal: await sambahPerolaBridge.registrarSinalSambah(await readJson(req, { requireBody: true })) });
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/sambah-perola/signals") {
+        const items = await sambahPerolaBridge.listarSinais();
+        return sendJson(res, 200, { ok: true, total: items.length, items });
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/sambah-perola/suggestions") {
+        return sendJson(res, 201, { ok: true, suggestion: await sambahPerolaBridge.registrarSugestaoPerola(await readJson(req, { requireBody: true })) });
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/sambah-perola/suggestions") {
+        const items = await sambahPerolaBridge.listarSugestoes();
+        return sendJson(res, 200, { ok: true, total: items.length, items });
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/pay-perola/signals") {
+        const body = await readJson(req, { requireBody: true });
+        return sendJson(res, 201, await payPerolaController.registrarSinal(body));
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/pay-perola/signals") {
+        return sendJson(res, 200, await payPerolaController.listarSinais());
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/pay-perola/suggestions") {
+        const body = await readJson(req, { requireBody: true });
+        return sendJson(res, 201, await payPerolaController.registrarSugestao(body));
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/pay-perola/suggestions") {
+        return sendJson(res, 200, await payPerolaController.listarSugestoes());
+      }
+
+      if (
+        url.pathname.startsWith("/api/sambah-pay")
+        || url.pathname.startsWith("/api/sambah-voice")
+        || url.pathname.startsWith("/api/sambah-events")
+        || url.pathname.startsWith("/api/sambah-observability")
+        || url.pathname.startsWith("/api/sambah-security")
+        || url.pathname.startsWith("/api/sambah-lgpd")
+        || url.pathname.startsWith("/api/sambah-crm")
+        || url.pathname.startsWith("/api/sambah-memory")
+        || url.pathname.startsWith("/api/sambah-whatsapp")
+        || url.pathname.startsWith("/api/sambah-handoff")
+        || url.pathname.startsWith("/api/sambah-channel")
+        || url.pathname.startsWith("/api/sambah-meta")
+        || url.pathname.startsWith("/api/sambah-meta-whatsapp")
+        || url.pathname.startsWith("/api/sambah-database")
+        || url.pathname.startsWith("/api/sambah-messaging")
+      ) {
+        const handled = await sambahPayModule.handle(req, res, url);
+        if (handled) return;
+      }
+
       if (req.method === "GET" && url.pathname === "/health") {
-        return sendJson(res, 200, { ok: true, service: "sambha-automacao-whats" });
+        return sendJson(res, 200, { ok: true, service: "sambah", provider: runtimeConfig.whatsappBusiness.provider });
       }
 
       if (req.method === "GET" && url.pathname === "/api/admin/storage-status") {
         return sendJson(res, 200, await buildStorageStatus(crmService));
       }
 
+      if (req.method === "GET" && url.pathname === "/api/admin/auditoria") {
+        if (activeAuthMode === "session" && !req.sambahUser) return sendJson(res, 401, { ok: false, error: "auth_required" });
+        const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 100, 1), 100);
+        const logs = await auditService.listLogs({ limit });
+        const items = logs.items
+          .slice()
+          .sort((left, right) => Date.parse(right.createdAt || "") - Date.parse(left.createdAt || ""))
+          .map(publicAuditEvent);
+        return sendJson(res, 200, {
+          ok: true,
+          total: logs.total,
+          limit,
+          items
+        });
+      }
+
       if (req.method === "GET" && url.pathname === "/api/config") {
         return sendJson(res, 200, getPublicConfig());
       }
 
-      if (req.method === "GET" && ["/", "/pedir", "/eventos", "/empresas", "/xeriffe", "/whatsapp"].includes(url.pathname)) {
+      if (req.method === "GET" && url.pathname === "/") {
+        return serveStatic(res, "portal.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/portal-xeriffe.html") {
+        return serveStatic(res, "portal-xeriffe.html");
+      }
+
+      if (req.method === "GET" && ["/pedir", "/eventos", "/empresas", "/xeriffe", "/whatsapp"].includes(url.pathname)) {
         return serveStatic(res, "portal.html");
       }
 
       if (req.method === "GET" && url.pathname === "/sambah") {
         return serveStatic(res, "site.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/insano-workhub") {
+        if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
+        return serveStatic(res, "insano-workhub.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/perola") {
+        return serveStatic(res, "perola.html");
       }
 
       if (req.method === "GET" && url.pathname === "/oportunidades") {
@@ -112,7 +430,96 @@ export function createApp({
       }
 
       if (req.method === "GET" && url.pathname === "/admin") {
+        if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
         return serveStatic(res, "admin.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/admin/permissoes") {
+        if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
+        return serveStatic(res, "admin-permissoes.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/admin/usuarios") {
+        if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
+        return serveStatic(res, "admin-usuarios.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/admin/auditoria") {
+        if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
+        return serveStatic(res, "admin-auditoria.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/sambah-voice-pay") {
+        if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
+        return serveStatic(res, "voice-pay.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/sambah-central") {
+        if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
+        return serveStatic(res, "sambah-central.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/sambah-pay") {
+        if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
+        return serveStatic(res, "sambah-pay.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/sambah-autoserve") {
+        if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
+        return serveStatic(res, "sambah-autoserve.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/sambah-devices") {
+        if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
+        return serveStatic(res, "sambah-devices.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/sambah-locker") {
+        if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
+        return serveStatic(res, "sambah-locker.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/sambah-weight") {
+        if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
+        return serveStatic(res, "sambah-weight.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/sambah-events") {
+        if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
+        return serveStatic(res, "sambah-events.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/sambah-observability") {
+        if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
+        return serveStatic(res, "sambah-observability.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/sambah-security") {
+        if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
+        return serveStatic(res, "sambah-security.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/sambah-lgpd") {
+        if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
+        return serveStatic(res, "sambah-lgpd.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/sambah-crm") {
+        return serveStatic(res, "sambah-crm.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/sambah-handoff") {
+        return serveStatic(res, "sambah-handoff.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/sambah-database") {
+        if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
+        return serveStatic(res, "sambah-database.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/sambah-messaging") {
+        if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
+        return serveStatic(res, "sambah-messaging.html");
       }
 
       if (req.method === "GET" && ["/crm", "/clientes", "/leads", "/atendimentos", "/eventos", "/precomandas"].includes(url.pathname)) {
@@ -137,7 +544,19 @@ export function createApp({
         return serveStatic(res, "conteudo.html");
       }
 
-      if (req.method === "GET" && ["/site.css", "/site.js", "/crm.css", "/crm.js", "/conteudo.css", "/platform.css", "/platform.js", "/oportunidades.css", "/oportunidades.js", "/conversas.css", "/conversas.js", "/portal.css", "/portal.js"].includes(url.pathname)) {
+      if (req.method === "GET" && url.pathname === "/sambah-pay.css") {
+        return serveStatic(res, "sambah-pay.css");
+      }
+
+      if (req.method === "GET" && url.pathname === "/insano-workhub.css") {
+        return serveStatic(res, "insano-workhub.css");
+      }
+
+      if (req.method === "GET" && url.pathname === "/insano-workhub.js") {
+        return serveStatic(res, "insano-workhub.js");
+      }
+
+      if (req.method === "GET" && ["/site.css", "/site.js", "/crm.css", "/crm.js", "/conteudo.css", "/platform.css", "/platform.js", "/oportunidades.css", "/oportunidades.js", "/conversas.css", "/conversas.js", "/portal.css", "/portal.js", "/perola.css", "/perola.js", "/voice-pay.css", "/voice-pay.js", "/sambah-ecosystem.css", "/sambah-central.js", "/sambah-pay.js", "/sambah-autoserve.js", "/sambah-devices.js", "/sambah-locker.js", "/sambah-weight.js", "/sambah-events.js", "/sambah-observability.js", "/sambah-security.js", "/sambah-lgpd.js", "/sambah-database.js", "/sambah-messaging.js", "/sambah-shell.css", "/sambah-shell.js", "/admin-permissoes.css", "/admin-permissoes.js", "/admin-usuarios.css", "/admin-usuarios.js", "/admin-auditoria.css", "/admin-auditoria.js", "/login.css", "/login.js", "/auth-ui.js"].includes(url.pathname)) {
         return serveStatic(res, url.pathname.slice(1));
       }
 
@@ -174,6 +593,23 @@ export function createApp({
         return sendJson(res, 200, await mesaService.queueSnapshot({
           limit: url.searchParams.get("limit")
         }));
+      }
+
+      if (req.method === "GET" && url.pathname === "/admin/whatsapp/status") {
+        return sendJson(res, 200, whatsappMessageService.status());
+      }
+
+      if (req.method === "GET" && url.pathname === "/admin/whatsapp/sessions") {
+        return sendJson(res, 200, await whatsappMessageService.sessions());
+      }
+
+      if (req.method === "GET" && url.pathname === "/admin/whatsapp/messages") {
+        return sendJson(res, 200, await whatsappMessageService.history({ limit: url.searchParams.get("limit") || 10 }));
+      }
+
+      if (req.method === "POST" && url.pathname === "/admin/whatsapp/sessions/clear") {
+        const body = await readJson(req, { requireBody: true });
+        return sendJson(res, 200, await whatsappMessageService.clearSession(body.phone || body.telefone || body.from || "", { draftId: body.draftId || "" }));
       }
 
       if (req.method === "GET" && url.pathname === "/admin/orders/tracking") {
@@ -467,7 +903,13 @@ export function createApp({
 
       const pedidoStatusMatch = url.pathname.match(/^\/pedido\/([^/]+)\/status$/);
       if (req.method === "GET" && pedidoStatusMatch) {
-        const result = await renderPedidoStatusPage(crmService, decodeURIComponent(pedidoStatusMatch[1]));
+        const pedidoId = decodeURIComponent(pedidoStatusMatch[1]);
+        const wantsJson = String(req.headers.accept || "").includes("application/json") || url.searchParams.get("format") === "json";
+        if (wantsJson) {
+          const result = await getPedidoStatusPayload(crmService, pedidoId);
+          return sendJson(res, result.ok ? 200 : 404, result);
+        }
+        const result = await renderPedidoStatusPage(crmService, pedidoId);
         return sendHtml(res, result.statusCode, result.html);
       }
 
@@ -714,8 +1156,16 @@ export function createApp({
         return verifyWhatsAppWebhook(req, res, url);
       }
 
+      if (req.method === "GET" && url.pathname === "/webhooks/meta") {
+        return verifyWhatsAppWebhook(req, res, url);
+      }
+
       if (req.method === "POST" && ["/webhook/whatsapp", "/webhook/site"].includes(url.pathname)) {
-        return handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappMessageService);
+        return handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappMessageService, whatsappSendFetch);
+      }
+
+      if (req.method === "POST" && url.pathname === "/webhooks/meta") {
+        return handleMetaWebhook(req, res, auditService);
       }
 
       return sendJson(res, 404, { error: "not_found" });
@@ -745,14 +1195,77 @@ function verifyWhatsAppWebhook(req, res, url) {
   return sendJson(res, 403, { ok: false, error: "Token de verificacao invalido" });
 }
 
-function isMetaWhatsAppPayload(body = {}) {
-  return Array.isArray(body.entry) && Boolean(body.entry[0]?.changes?.[0]?.value?.messages?.[0]);
+async function handleMetaWebhook(req, res, auditService) {
+  let body = {};
+  try {
+    body = await readJson(req);
+  } catch (error) {
+    await safeAuditRecord(auditService, {
+      type: "meta_webhook_invalid_payload",
+      status: "warning",
+      source: "meta_whatsapp",
+      message: "Webhook Meta recebido com JSON invalido",
+      context: { code: error.code || "invalid_json", path: "/webhooks/meta", method: req.method }
+    });
+    return sendJson(res, 200, { ok: true, received: false });
+  }
+
+  const summary = summarizeMetaWebhookPayload(body);
+  await safeAuditRecord(auditService, {
+    type: "meta_webhook_received",
+    status: "info",
+    source: "meta_whatsapp",
+    message: "Webhook Meta WhatsApp recebido",
+    context: {
+      path: "/webhooks/meta",
+      method: req.method,
+      ...summary,
+      payload: body
+    }
+  });
+  return sendJson(res, 200, { ok: true, received: true });
 }
 
-async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappMessageService) {
+function summarizeMetaWebhookPayload(payload = {}) {
+  const entries = Array.isArray(payload.entry) ? payload.entry : [];
+  let messages = 0;
+  let statuses = 0;
+  let changes = 0;
+  for (const entry of entries) {
+    const entryChanges = Array.isArray(entry?.changes) ? entry.changes : [];
+    changes += entryChanges.length;
+    for (const change of entryChanges) {
+      const value = change?.value || {};
+      messages += Array.isArray(value.messages) ? value.messages.length : 0;
+      statuses += Array.isArray(value.statuses) ? value.statuses.length : 0;
+    }
+  }
+  return {
+    object: payload.object || "",
+    entries: entries.length,
+    changes,
+    messages,
+    statuses
+  };
+}
+
+async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappMessageService, whatsappSendFetch = globalThis.fetch) {
   let body = {};
   try {
     body = await readJson(req, { requireBody: true });
+    const isWhatsappWebhook = req.url?.includes("/webhook/whatsapp");
+    const metaSummary = summarizeWhatsAppPostPayload(body);
+    if (isWhatsappWebhook) {
+      console.info("whatsapp.webhook.post.received", metaSummary);
+      await safeAuditRecord(auditService, {
+        type: "whatsapp_webhook_post_received",
+        status: "info",
+        source: "meta_whatsapp",
+        message: "whatsapp.webhook.post.received",
+        context: metaSummary,
+        dedupeKey: metaSummary.messageId ? `wa-post:${metaSummary.messageId}` : undefined
+      });
+    }
     await safeAuditRecord(auditService, {
       type: "webhook_received",
       status: "info",
@@ -786,6 +1299,11 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
         draftService,
         eventService,
         mesaService,
+          auditService
+        });
+      const directAutoReply = await sendWhatsAppCloudAutoReply(body, {
+        runtimeConfig: getRuntimeConfig(),
+        fetchImpl: whatsappSendFetch,
         auditService
       });
       if (isMetaWhatsAppPayload(body)) {
@@ -800,6 +1318,7 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
           normalized: autoResult.normalized,
           autoIntent: autoResult.intent,
           responseText: autoResult.responseText,
+          directAutoReply,
           draft: autoResult.draft,
           mesa: autoResult.mesa,
           route: autoResult.route
@@ -1016,6 +1535,113 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
     });
     return sendJson(res, 500, { error: "processing_error" });
   }
+}
+
+function summarizeWhatsAppPostPayload(payload = {}) {
+  const entries = Array.isArray(payload.entry) ? payload.entry : [];
+  const firstChange = entries.flatMap((entry) => Array.isArray(entry?.changes) ? entry.changes : [])[0] || {};
+  const value = firstChange.value || {};
+  const firstMessage = Array.isArray(value.messages) ? value.messages[0] || {} : {};
+  return {
+    bodyEntryLength: entries.length,
+    changesLength: entries.reduce((total, entry) => total + (Array.isArray(entry?.changes) ? entry.changes.length : 0), 0),
+    field: firstChange.field || "",
+    phoneNumberIdReceived: value.metadata?.phone_number_id || "",
+    messagesLength: Array.isArray(value.messages) ? value.messages.length : 0,
+    textBody: firstMessage.text?.body || "",
+    from: firstMessage.from || value.contacts?.[0]?.wa_id || payload.from || "",
+    messageId: firstMessage.id || payload.eventId || payload.messageId || ""
+  };
+}
+
+async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRuntimeConfig(), fetchImpl = globalThis.fetch, auditService = null } = {}) {
+  const summary = summarizeWhatsAppPostPayload(payload);
+  const config = runtimeConfig.whatsappBusiness || {};
+  if (config.sendEnabled !== true) {
+    return { ok: true, sent: false, status: "disabled" };
+  }
+  if (summary.field !== "messages" || !summary.from || !summary.textBody) {
+    return { ok: true, sent: false, status: "ignored_non_text_message" };
+  }
+  if (!config.accessToken || !config.phoneNumberId) {
+    return { ok: false, sent: false, status: "missing_meta_config" };
+  }
+
+  const endpoint = `https://graph.facebook.com/v25.0/${encodeURIComponent(config.phoneNumberId)}/messages`;
+  const requestBody = {
+    messaging_product: "whatsapp",
+    to: summary.from,
+    type: "text",
+    text: { body: WHATSAPP_AUTO_REPLY_TEXT }
+  };
+  try {
+    const response = await fetchImpl(endpoint, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${config.accessToken}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(requestBody)
+    });
+    const responseBody = await readResponseBody(response);
+    const result = {
+      ok: response.ok,
+      sent: response.ok,
+      status: response.ok ? "sent" : "meta_error",
+      httpStatus: response.status,
+      response: sanitizeMetaResponse(responseBody, config.accessToken)
+    };
+    await safeAuditRecord(auditService, {
+      type: "whatsapp_cloud_auto_reply",
+      status: response.ok ? "success" : "warning",
+      source: "meta_whatsapp",
+      message: response.ok ? "Resposta automatica WhatsApp enviada" : "Falha no envio automatico WhatsApp",
+      context: { to: summary.from, httpStatus: response.status, messageId: summary.messageId },
+      dedupeKey: summary.messageId ? `wa-auto-reply:${summary.messageId}` : undefined
+    });
+    return result;
+  } catch (error) {
+    await safeAuditRecord(auditService, {
+      type: "whatsapp_cloud_auto_reply",
+      status: "error",
+      source: "meta_whatsapp",
+      message: "Erro ao enviar resposta automatica WhatsApp",
+      context: { to: summary.from, messageId: summary.messageId, error: sanitizeMetaText(error.message, config.accessToken) },
+      dedupeKey: summary.messageId ? `wa-auto-reply:${summary.messageId}` : undefined
+    });
+    return { ok: false, sent: false, status: "request_failed", error: sanitizeMetaText(error.message, config.accessToken) };
+  }
+}
+
+async function readResponseBody(response) {
+  try {
+    const text = await response.text();
+    if (!text) return null;
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { raw: text };
+    }
+  } catch {
+    return null;
+  }
+}
+
+function sanitizeMetaResponse(value, accessToken = "") {
+  if (Array.isArray(value)) return value.map((item) => sanitizeMetaResponse(item, accessToken));
+  if (!value || typeof value !== "object") return sanitizeMetaText(value, accessToken);
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+    key,
+    /token|authorization|secret|password|credential/i.test(key) ? "[masked]" : sanitizeMetaResponse(item, accessToken)
+  ]));
+}
+
+function sanitizeMetaText(value, accessToken = "") {
+  if (typeof value !== "string") return value;
+  let text = accessToken ? value.split(accessToken).join("[masked]") : value;
+  return text
+    .replace(/(access_token=)[^&\s]+/gi, "$1[masked]")
+    .replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]+/g, "$1[masked]");
 }
 
 async function handlePreOrderWebhook(body, { auditService, mesaService, trackingService, crmService }) {
@@ -2031,6 +2657,55 @@ async function serveStatic(res, fileName) {
 function sendHtml(res, statusCode, html) {
   res.writeHead(statusCode, { "content-type": "text/html; charset=utf-8" });
   res.end(html);
+}
+
+function redirectToLogin(res, from = "/admin") {
+  res.writeHead(302, { location: `/login?next=${encodeURIComponent(from)}` });
+  res.end();
+}
+
+function publicAuditEvent(event = {}) {
+  const context = event.context && typeof event.context === "object" ? event.context : {};
+  const route = context.path || context.route || context.url || context.endpoint || null;
+  const action = context.action || context.permission || context.eventType || null;
+  return {
+    timestamp: sanitizeAuditText(event.createdAt || event.timestamp || ""),
+    event: sanitizeAuditText(event.type || "system_event"),
+    username: sanitizeAuditText(context.username || context.actor || context.user || ""),
+    role: sanitizeAuditText(context.role || ""),
+    source: sanitizeAuditText(context.source || event.source || ""),
+    action: sanitizeAuditText(action || ""),
+    status: sanitizeAuditText(event.status || ""),
+    route: sanitizeAuditText(route || ""),
+    method: sanitizeAuditText(context.method || ""),
+    reason: sanitizeAuditText(context.reason || event.message || event.error?.message || ""),
+    targetUsername: sanitizeAuditText(context.targetUsername || ""),
+    targetRole: sanitizeAuditText(context.targetRole || "")
+  };
+}
+
+function sanitizeAuditText(value = "") {
+  return String(value || "")
+    .replace(/password/gi, "credential")
+    .replace(/senha/gi, "credencial")
+    .replace(/hash/gi, "digest")
+    .replace(/salt/gi, "nonce")
+    .replace(/cookie/gi, "session")
+    .replace(/token/gi, "credential")
+    .replace(/secret/gi, "private")
+    .replace(/segredo/gi, "privado")
+    .slice(0, 240);
+}
+
+function safeAuditUsername(username = "") {
+  return String(username || "").trim().toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, 80);
+}
+
+function requireAdminUser(req, activeAuthMode) {
+  if (activeAuthMode === "mock") return { ok: true };
+  if (!req.sambahUser) return { ok: false, statusCode: 401, error: "auth_required" };
+  if (req.sambahUser.role !== "ADMIN") return { ok: false, statusCode: 403, error: "admin_required" };
+  return { ok: true };
 }
 
 function sendJson(res, statusCode, payload) {

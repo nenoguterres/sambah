@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Perola Studio | SamBah 2.0</title>
+    <link rel="icon" href="/admin/assets/favicon.png" type="image/png">
+    <link rel="stylesheet" href="/admin/assets/sambah-shell.css">
+    <link rel="stylesheet" href="/perola.css?v=perola-ecosystem-nav-10">
+  </head>
+  <body class="sambah-perola-shell">
+    <button id="perolaMenuToggle" class="perola-menu-toggle" type="button" aria-controls="perolaSidebar" aria-expanded="false">
+      <span class="pearl-mini" aria-hidden="true"></span>
+      <span>Perola Studio</span>
+    </button>
+    <div id="perolaMenuHint" class="perola-menu-hint" role="status">Clique em Perola Studio para abrir as opcoes.</div>
+    <div class="perola-shell">
+      <aside class="perola-sidebar" id="perolaSidebar" aria-label="Navegacao Perola Studio" aria-hidden="true">
+        <a class="brand" href="/admin">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span>
+            <strong>SamBah 2.0</strong>
+            <small>Ecossistema Insano</small>
+          </span>
+        </a>
+
+        <div class="studio-badge">
+          <span class="pearl-mini" aria-hidden="true"></span>
+          <strong>Perola Studio</strong>
+        </div>
+
+        <nav class="side-nav ecosystem-nav" aria-label="Modulos do Ecossistema Insano">
+          <details class="nav-module" data-nav-module="ecosystem">
+            <summary>Ecossistema Insano</summary>
+            <div class="nav-submenu">
+              <a href="/sambah-central">Visao Geral</a><a href="/insano-workhub">Central de Trabalhos</a><a href="#auditList">Atividades Recentes</a><a href="#perolaKpis">Indicadores</a>
+            </div>
+          </details>
+          <details class="nav-module" data-nav-module="radar">
+            <summary>Radar Insano</summary>
+            <div class="nav-submenu">
+              <a href="#radarInsano">Radar Geral</a><a href="#giroBlock">Oportunidades</a><a href="#perolaAlertPanel">Alertas</a><a href="#postEngineAdvancedInsights">Insights</a>
+            </div>
+          </details>
+          <details class="nav-module" data-nav-module="mesa">
+            <summary>Mesa Xeriffe</summary>
+            <div class="nav-submenu">
+              <a href="#giroBlock">Painel</a><a href="#giroSummary">Operacao</a><a href="#salesList">Producao</a><a href="#auditList">Historico</a>
+            </div>
+          </details>
+          <details class="nav-module" data-nav-module="sambah">
+            <summary>SamBah</summary>
+            <div class="nav-submenu">
+              <a href="/admin">Dashboard</a><a href="/sambah-crm#leadsList">Leads</a><a href="/sambah-crm">CRM</a><a href="/sambah-handoff">Handoff</a><a href="/admin/auditoria">Relatorios</a>
+            </div>
+          </details>
+          <details class="nav-module" data-nav-module="pay">
+            <summary>SamBah Pay</summary>
+            <div class="nav-submenu">
+              <a href="/sambah-pay">Dashboard</a><a href="/sambah-pay#paymentsList">Pagamentos</a><a href="/sambah-pay#opsList">Pedidos</a><a href="/sambah-pay#auditList">Relatorios</a>
+            </div>
+          </details>
+          <details class="nav-module" data-nav-module="perola">
+            <summary>Perola</summary>
+            <div class="nav-submenu">
+              <a href="#radarInsano">Dashboard</a><a href="#campaignsList">Campanhas</a><a href="#postComposer">Conteudo</a><a href="#postEngineCalendar">Calendario</a><a href="#postEngineAdvancedInsights">Insights</a><a href="#postsList">Instagram</a>
+            </div>
+          </details>
+          <details class="nav-module" data-nav-module="settings">
+            <summary>Configuracoes</summary>
+            <div class="nav-submenu">
+              <a href="/admin/usuarios">Usuarios</a><a href="/admin/permissoes">Permissoes</a><a href="#perolaOperationalStatus">Integracoes</a><a href="/admin/auditoria">Auditoria</a>
+            </div>
+          </details>
+          <div class="legacy-side-nav" hidden>
+          <p>Campanhas</p>
+          <a href="#campaignsList" data-perola-tab-link="campaigns">Painel de campanhas</a>
+          <a href="#campaignComposer" data-perola-tab-link="campaigns">Criar campanha</a>
+          <a href="#campaignsList" data-perola-tab-link="campaigns">Campanhas salvas</a>
+          <a href="#postComposer" data-perola-tab-link="overview">Arquivo / midia</a>
+          <a href="#perolaChannelsPanel" data-perola-tab-link="campaigns">Canais de campanha</a>
+          <a href="#campaignFunnelPanel" data-perola-tab-link="campaigns">Funil de campanha</a>
+          <a href="#campaignHistoryPanel" data-perola-tab-link="campaigns">Historico</a>
+          <p>Outros itens</p>
+          <a class="active" href="#radarInsano" data-perola-tab-link="overview">Radar Insano</a>
+          <a href="#postEngineBlock" data-perola-tab-link="overview">Materiais Prontos</a>
+          <a href="#postEngineBlock" data-perola-tab-link="overview">Biblioteca de Voz</a>
+          <a href="#giroBlock" data-perola-tab-link="overview">Funis</a>
+          <a href="#payPerolaBridge">Pay ↔ Pérola</a>
+          <p>Ecossistema</p>
+          <a href="#giroBlock" data-perola-tab-link="overview">Mesa Xeriffe</a>
+          <a href="#postComposer" data-perola-tab-link="overview">SamBah 2.0</a>
+          <a href="#payPerolaBridge" data-perola-tab-link="overview">SamBah Pay</a>
+          <a href="#postEngineBlock" data-perola-tab-link="overview">Perola Studio</a>
+          <a href="#perolaStatusPanel" data-perola-tab-link="overview">Configuracoes</a>
+          </div>
+        </nav>
+
+        <div class="sidebar-status">
+          <span></span>
+          <div>
+            <strong>Perola ativo</strong>
+            <small>Monitorando o ecossistema</small>
+          </div>
+          <span class="pearl-mini" aria-hidden="true"></span>
+        </div>
+      </aside>
+
+      <main class="perola-main">
+        <header class="topbar">
+          <div class="topbar-status">
+            <span></span>
+            <strong>Perola Ativo</strong>
+          </div>
+          <label class="role-control" for="perolaRole">
+            <span>Perfil ativo</span>
+            <select id="perolaRole" aria-label="Perfil ativo do Perola">
+              <option value="ADMIN">Administrador</option>
+              <option value="OPERADOR">Operador</option>
+              <option value="ATENDENTE">Atendente</option>
+              <option value="CAIXA">Caixa</option>
+              <option value="AUDITOR">Auditor</option>
+            </select>
+          </label>
+        </header>
+
+        <section class="hero" id="radarInsano">
+          <div class="hero-copy">
+            <div class="hero-title-row">
+              <span class="pearl-orbit" aria-hidden="true"><span></span></span>
+              <div>
+                <p class="eyebrow">Perola Studio</p>
+                <h1>Radar Insano</h1>
+                <p>Tu cria o impulso. A familia opera.</p>
+              </div>
+            </div>
+          </div>
+          <aside class="radar-card" aria-label="Sinais detectados hoje">
+            <div>
+              <span>Sinais detectados hoje</span>
+              <strong id="radarSignalCount">0</strong>
+              <small id="radarSignalDelta">+0% vs ontem</small>
+            </div>
+            <span class="radar-visual" aria-hidden="true"></span>
+          </aside>
+        </section>
+
+        <section class="ecosystem-intro" aria-labelledby="ecosystemTitle">
+          <p class="eyebrow" id="ecosystemTitle">Ecossistema Integrado</p>
+          <p>Informacoes fluem entre modulos. Oportunidades se multiplicam.</p>
+        </section>
+
+        <section class="operation-status-strip" aria-label="Status operacional do Perola">
+          <div class="operation-status-head">
+            <p class="eyebrow">Status operacional</p>
+            <strong>Trava de modo</strong>
+          </div>
+          <div class="operation-status-grid" id="perolaOperationalStatus"></div>
+        </section>
+
+        <section class="ecosystem-cards" aria-label="Cards centrais do ecossistema">
+          <a class="ecosystem-card mesa-card" href="#giroBlock" data-perola-tab-link="overview" aria-label="Abrir dados da Mesa Xeriffe no Perola">
+            <span class="module-icon cart-icon" aria-hidden="true"></span>
+            <h2>Mesa Xeriffe</h2>
+            <p>Modulo Mesa</p>
+            <strong id="mesaCardMetric">0</strong>
+            <span id="mesaCardLabel">promocoes ativas</span>
+            <small id="mesaCardTime">Ultimo envio agora</small>
+          </a>
+          <a class="ecosystem-card sambah-card" href="#postComposer" data-perola-tab-link="overview" aria-label="Abrir publicacoes do SamBah 2.0 no Perola">
+            <span class="module-icon people-icon" aria-hidden="true"></span>
+            <h2>SamBah 2.0</h2>
+            <p>Modulo SamBah</p>
+            <strong id="sambahCardMetric">0</strong>
+            <span id="sambahCardLabel">sinais enviados</span>
+            <small id="sambahCardTime">Ultimo envio agora</small>
+          </a>
+          <a class="ecosystem-card pay-card" href="#payPerolaBridge" data-perola-tab-link="overview" aria-label="Abrir integracao SamBah Pay com Perola">
+            <span class="module-icon pay-icon" aria-hidden="true"></span>
+            <h2>SamBah Pay</h2>
+            <p>Modulo Pay</p>
+            <strong id="payCardMetric">0</strong>
+            <span id="payCardLabel">oportunidades de venda</span>
+            <small id="payCardTime">Ultimo envio agora</small>
+          </a>
+          <a class="ecosystem-card studio-card" href="#postEngineBlock" data-perola-tab-link="overview" aria-label="Abrir materiais prontos do Perola Studio">
+            <span class="pearl-orbit small" aria-hidden="true"><span></span></span>
+            <h2>Perola Studio</h2>
+            <p>Motor de Marketing</p>
+            <strong id="studioCardMetric">0</strong>
+            <span id="studioCardLabel">materiais gerados</span>
+            <small id="studioCardTime">Ultimo envio agora</small>
+          </a>
+        </section>
+
+        <section class="pearl-message">
+          <span class="pearl-mini large" aria-hidden="true"></span>
+          <div>
+            <h2>Perola recebe, organiza e transforma.</h2>
+            <p>Da Mesa ao Cliente. Tudo conectado. Tudo potencializado.</p>
+          </div>
+        </section>
+
+        <section class="operation-block bridge-block" id="payPerolaBridge" aria-labelledby="payPerolaTitle">
+          <div class="block-head bridge-heading">
+            <div>
+              <p class="eyebrow">Integração comercial</p>
+              <h2 id="payPerolaTitle">Pay ↔ Pérola</h2>
+            </div>
+            <span class="status active">Sincronizado</span>
+          </div>
+          <div class="bridge-grid">
+            <article class="panel bridge-panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Entrada</p>
+                  <h2>Últimos sinais recebidos do Pay</h2>
+                </div>
+              </div>
+              <div class="list compact" id="payPerolaSignals"></div>
+            </article>
+            <article class="panel bridge-panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Saída</p>
+                  <h2>Últimas sugestões enviadas ao Pay</h2>
+                </div>
+              </div>
+              <div class="list compact" id="payPerolaSuggestions"></div>
+            </article>
+          </div>
+        </section>
+
+        <nav class="module-tabs" role="tablist" aria-label="Areas do Perola">
+          <button type="button" role="tab" aria-selected="true" aria-controls="perolaOverview" data-perola-tab="overview">Radar</button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="perolaCampaigns" data-perola-tab="campaigns">Campanhas</button>
+        </nav>
+
+        <div id="perolaOverview" data-perola-panel="overview">
+          <section class="operation-block">
+            <div class="block-head">
+              <p class="eyebrow">Indicadores</p>
+              <h2>KPIs principais</h2>
+            </div>
+            <section class="kpis dashboard-kpis" id="perolaKpis"></section>
+          </section>
+
+          <section class="operation-block dashboard-insights">
+            <article class="panel campaign-ranking-widget">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Campanhas</p>
+                  <h2>Top 5 Campanhas</h2>
+                </div>
+              </div>
+              <div id="campaignRanking"></div>
+            </article>
+            <article class="panel lead-radar-widget">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Leads</p>
+                  <h2>Radar de Leads</h2>
+                </div>
+              </div>
+              <div id="leadRadar"></div>
+            </article>
+          </section>
+
+          <section class="operation-block" id="postEngineBlock">
+            <article class="panel post-engine-panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Perola IA</p>
+                  <h2>Motor de Posts Inteligente</h2>
+                </div>
+                <button id="refreshPostEngine" type="button">Atualizar ideias</button>
+              </div>
+              <div class="post-engine-message" id="postEngineMessage" role="status"></div>
+              <section class="claude-assistant-panel" aria-label="Assistente Claude do Perola">
+                <div class="panel-subhead">
+                  <p class="eyebrow">Claude auxiliar</p>
+                  <h3>VariaÃ§Ãµes comerciais do Insano</h3>
+                </div>
+                <div class="claude-assistant-form">
+                  <label>Ideia da campanha
+                    <input id="claudeCampaignIdea" type="text" placeholder="Ex.: evento de empresa, festa, condominio">
+                  </label>
+                  <button id="generateClaudeVariations" type="button">Gerar variaÃ§Ãµes</button>
+                </div>
+                <div class="list compact claude-variations" id="claudeVariations"></div>
+              </section>
+              <section class="kpis post-engine-kpis" id="postEngineInsights"></section>
+              <div class="list post-ideas-list" id="postEngineIdeas"></div>
+              <div class="post-engine-drafts">
+                <div class="panel-subhead">
+                  <p class="eyebrow">Rascunhos internos</p>
+                  <h3>Drafts do Motor de Posts</h3>
+                </div>
+                <div class="list compact" id="postEngineDrafts"></div>
+              </div>
+              <div class="post-engine-platform-grid">
+                <section>
+                  <div class="panel-subhead">
+                  <p class="eyebrow">Agenda local</p>
+                  <h3>Calendário de publicação</h3>
+                  </div>
+                  <div class="list compact" id="postEngineCalendar"></div>
+                </section>
+                <section>
+                  <div class="panel-subhead">
+                    <p class="eyebrow">Leitura avancada</p>
+                    <h3>Insights</h3>
+                  </div>
+                  <div class="list compact" id="postEngineAdvancedInsights"></div>
+                </section>
+              </div>
+            </article>
+          </section>
+
+          <section class="operation-block">
+            <section class="alert-panel" id="perolaAlertPanel"></section>
+          </section>
+
+          <section class="grid main-grid">
+            <article class="panel" id="postComposer">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Publicacoes</p>
+                  <h2>Cadastro e agenda</h2>
+                </div>
+                <button id="reloadPerola" type="button">Atualizar</button>
+              </div>
+              <form id="postForm" class="form-grid">
+                <label>Titulo<input name="title" required placeholder="Post do fim de semana"></label>
+                <label>Campanha<input name="campaign" placeholder="almoco, happy hour, evento"></label>
+                <label class="wide">URL publica da midia<input name="mediaUrl" type="url" placeholder="https://.../foto.jpg"></label>
+                <label>Tipo de midia<select name="mediaType"><option value="IMAGE">Imagem</option><option value="REELS">Reel / video</option></select></label>
+                <fieldset class="wide check-grid">
+                  <legend>Redes</legend>
+                  <label><input type="checkbox" name="networks" value="instagram" checked> Instagram</label>
+                  <label><input type="checkbox" name="networks" value="facebook"> Facebook</label>
+                  <label><input type="checkbox" name="networks" value="tiktok"> TikTok</label>
+                  <label><input type="checkbox" name="networks" value="whatsapp-status"> WhatsApp Status</label>
+                </fieldset>
+                <label>Horario agendado<input name="scheduledAt" type="datetime-local"></label>
+                <label>Modo de publicacao<select name="publishMode"><option value="manual">Manual</option><option value="assistido">Assistido</option><option value="automatico">Automatico</option></select></label>
+                <label>Prazo humano em minutos<input name="humanDeadlineMinutes" type="number" min="1" max="1440" value="15"></label>
+                <label>Status<select name="status"><option value="draft">Rascunho</option><option value="review">Revisao</option><option value="scheduled">Agendada</option><option value="waiting_human">Aguardando humano</option></select></label>
+                <fieldset class="wide check-grid">
+                  <legend>Controles</legend>
+                  <label><input type="checkbox" name="approved" value="true"> Aprovado</label>
+                  <label><input type="checkbox" name="autoPublishIfExpired" value="true"> AutoPublicar se expirar</label>
+                </fieldset>
+                <label class="wide">Legenda<textarea name="caption" required placeholder="Legenda, chamada ou roteiro da publicacao"></textarea></label>
+                <button class="primary" type="submit">Salvar publicacao</button>
+              </form>
+              <div class="post-action-message" id="postActionMessage" role="status"></div>
+              <div class="list" id="postsList"></div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Auditoria</p>
+                  <h2>Eventos recentes</h2>
+                </div>
+              </div>
+              <div class="list compact" id="auditList"></div>
+            </article>
+          </section>
+
+          <section class="grid support-grid" id="giroBlock">
+            <article class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Perola Giro</p>
+                  <h2>Relatorio Mesa</h2>
+                </div>
+                <div class="button-row">
+                  <button id="runGiro" type="button">Gerar promocoes</button>
+                  <button id="runIntelligentGiro" type="button">Giro Inteligente</button>
+                </div>
+              </div>
+              <div class="giro-summary" id="giroSummary"></div>
+              <div class="list compact" id="giroList"></div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Perola Giro</p>
+                  <h2>Regras de Giro</h2>
+                </div>
+              </div>
+              <div class="list compact" id="rulesList"></div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Resultado</p>
+                  <h2>Vendas diarias</h2>
+                </div>
+              </div>
+              <form id="salesForm" class="form-grid">
+                <label>Data<input name="date" type="date" required></label>
+                <label>Canal<input name="channel" placeholder="manual"></label>
+                <label>Pedidos<input name="orders" type="number" min="0" step="1" value="0"></label>
+                <label>Receita<input name="revenue" type="number" min="0" step="0.01" value="0"></label>
+                <label class="wide">Notas<input name="notes" placeholder="Observacao interna"></label>
+                <button class="primary" type="submit">Salvar dia</button>
+              </form>
+              <div class="list compact" id="salesList"></div>
+            </article>
+          </section>
+
+          <section class="operation-block">
+            <div class="block-head">
+              <p class="eyebrow">Saude</p>
+              <h2>Diagnostico</h2>
+            </div>
+            <section class="kpis status-kpis" id="perolaStatusPanel"></section>
+          </section>
+        </div>
+
+        <section id="perolaCampaigns" class="operation-block" data-perola-panel="campaigns" hidden>
+          <div class="block-head">
+            <p class="eyebrow">Campanhas</p>
+            <h2>Campanhas</h2>
+          </div>
+          <article class="panel campaigns-panel" id="campaignComposer">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Campanha</p>
+                <h2>Criar campanha</h2>
+                <small class="panel-helper">Preencha o essencial primeiro. Depois use os cards abaixo para draft, aprovar e distribuir.</small>
+              </div>
+              <span class="status active" id="campaignCount">0 campanhas</span>
+            </div>
+            <form id="campaignForm" class="form-grid campaign-form">
+              <label>ID<input name="id" placeholder="gerado automaticamente"></label>
+              <label>Titulo<input name="title" required placeholder="Festival de inverno"></label>
+              <label class="wide">Descricao<textarea name="description" placeholder="Contexto e proposta da campanha"></textarea></label>
+              <label class="wide">Objetivo<input name="objective" placeholder="Aumentar vendas no jantar"></label>
+              <label>Status<select name="status"><option value="draft">Rascunho</option><option value="active">Ativa</option><option value="paused">Pausada</option><option value="completed">Concluida</option><option value="archived">Arquivada</option></select></label>
+              <label>Prioridade<select name="priority"><option value="low">Baixa</option><option value="medium" selected>Media</option><option value="high">Alta</option><option value="urgent">Urgente</option></select></label>
+              <label>Data inicial<input name="startDate" type="date"></label>
+              <label>Data final<input name="endDate" type="date"></label>
+              <fieldset class="wide campaign-media-helper">
+                <legend>Arquivo / midia da campanha</legend>
+                <label class="wide">URL HTTPS publica da midia<input name="mediaUrl" type="url" placeholder="https://.../foto-ou-video"></label>
+                <label>Tipo de midia<select name="mediaType"><option value="IMAGE">Imagem</option><option value="REELS">Reel / video</option></select></label>
+                <label class="wide">Legenda da campanha<textarea name="caption" placeholder="Legenda que o Perola vai levar para a publicacao vinculada"></textarea></label>
+              </fieldset>
+              <div class="wide campaign-form-actions">
+                <button class="primary" type="submit" id="saveCampaign">Salvar campanha</button>
+                <button type="button" id="cancelCampaignEdit" hidden>Cancelar edicao</button>
+                <span id="campaignMessage" role="status"></span>
+              </div>
+            </form>
+            <div class="campaign-catalog-tools" id="campaignCatalogTools">
+              <label for="campaignSearch">Buscar campanha</label>
+              <input id="campaignSearch" type="search" placeholder="Titulo, objetivo, status ou ID" autocomplete="off">
+            </div>
+            <div class="list campaigns-list" id="campaignsList"></div>
+            <nav class="collection-pagination" id="campaignPagination" aria-label="Paginas de campanhas"></nav>
+          </article>
+        </section>
+
+        <footer class="perola-footer">Perola Studio - Motor de Marketing do Ecossistema Insano</footer>
+      </main>
+    </div>
+
+    <script src="/admin/assets/sambah-shell.js"></script>
+    <script>
+      renderSambahShell("perola");
+    </script>
+    <script src="/perola.js?v=perola-ecosystem-nav-10"></script>
+  </body>
+</html>

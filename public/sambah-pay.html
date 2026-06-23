@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SamBah Pay</title>
+    <link rel="icon" href="/admin/assets/favicon.png" type="image/png">
+    <link rel="stylesheet" href="/sambah-ecosystem.css">
+    <link rel="stylesheet" href="/sambah-pay.css">
+      <link rel="stylesheet" href="/admin/assets/sambah-shell.css">
+  </head>
+  <body>
+    <main class="eco-shell">
+      <header class="eco-topbar">
+        <a class="eco-brand" href="/sambah-central"><img src="/admin/assets/brand/logo-sambah-oficial.png" alt="samBah!"><span>SamBah Pay</span></a>
+        <nav class="eco-nav"><a href="/sambah-central">Central</a><a href="/sambah-voice-pay">Voice Pay</a><a href="/sambah-pay">Pay</a><a href="/sambah-autoserve">AutoServe</a><a href="/sambah-devices">Devices</a><a href="/admin">Admin</a></nav>
+        <label class="eco-role">Perfil<select id="ecoRole"><option>ADMIN</option><option>CAIXA</option><option>OPERADOR</option><option>ATENDENTE</option><option>AUDITOR</option></select></label>
+      </header>
+
+      <section class="eco-hero">
+        <div><p class="eyebrow">Pagamentos simulados</p><h1>SamBah Pay</h1><p>Pagamentos, wallets, devices, AutoServe, alertas e auditoria recente em um painel básico.</p><div id="payNotice" class="eco-notice">Carregando...</div></div>
+        <div><button id="bootstrapDemo" class="eco-button" type="button">Preparar demo operacional</button></div>
+      </section>
+
+      <section class="eco-section"><div class="eco-head"><h2>Indicadores</h2><a class="eco-secondary" href="/sambah-voice-pay">Abrir Voice Pay</a></div><div id="kpis" class="eco-kpis"></div></section>
+
+      <section class="eco-section" aria-labelledby="payPerolaHeading">
+        <div class="eco-head"><div><p class="eyebrow">Integração comercial</p><h2 id="payPerolaHeading">Pérola</h2></div><span class="eco-status">Bridge local</span></div>
+        <div class="eco-bridge-head"><span>Sugestão recebida</span><span>Status</span><span>Data</span></div>
+        <div id="perolaSuggestionsList" class="eco-bridge-list"></div>
+      </section>
+
+      <section class="eco-section"><div class="eco-head"><h2>Pagamentos simulados</h2></div><div id="paymentsList" class="eco-list"></div></section>
+      <section id="wallet" class="eco-section"><div class="eco-head"><h2>Wallets</h2></div><div id="walletsList" class="eco-list"></div></section>
+      <section class="eco-section"><div class="eco-head"><h2>Devices, AutoServe e alertas</h2></div><div id="opsList" class="eco-list"></div></section>
+      <section class="eco-section"><div class="eco-head"><h2>Auditoria recente</h2></div><div id="auditList" class="eco-list"></div></section>
+    </main>
+    <script src="/sambah-pay.js"></script>
+      <script src="/admin/assets/sambah-shell.js"></script>
+    <script>
+      renderSambahShell("pay");
+    </script>
+</body>
+</html>

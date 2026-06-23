@@ -1,0 +1,34 @@
+[
+  {
+    "id": "distribution-campaign-signal-mesa-xeriffe-2026-06-18-001-20260619053922027",
+    "campaignId": "campaign-signal-mesa-xeriffe-2026-06-18-001",
+    "sentToModules": [
+      "mesa_xeriffe",
+      "sambah_2",
+      "sambah_pay",
+      "perola"
+    ],
+    "sentToChannels": [
+      "instagram-reels"
+    ],
+    "channels": [
+      {
+        "id": "instagram-reels",
+        "name": "Instagram Reels",
+        "type": "instagram",
+        "mode": "simulated",
+        "formatsSupported": [
+          "vertical_video",
+          "short_caption"
+        ]
+      }
+    ],
+    "createdAt": "2026-06-19T05:39:22.027Z",
+    "mesaInteractionId": "mesa-interaction-campaign-signal-mesa-xeriffe-2026-06-18-001-20260619053922027",
+    "mesaReceiver": {
+      "target": "Mesa Xeriffe",
+      "receiver": "receivePerolaCommercialAction",
+      "status": "ready_for_mesa_receiver"
+    }
+  }
+]

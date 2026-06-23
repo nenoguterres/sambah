@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SamBah Handoff</title>
+    <link rel="icon" href="/admin/assets/favicon.png" type="image/png">
+    <link rel="stylesheet" href="/assets/sambah-handoff.css">
+      <link rel="stylesheet" href="/admin/assets/sambah-shell.css">
+  </head>
+  <body>
+    <main class="handoff-shell">
+      <header class="handoff-top">
+        <a class="handoff-brand" href="/sambah-central">
+          <img src="/admin/assets/brand/logo-sambah-oficial.png" alt="samBah!">
+          <span>SamBah Handoff</span>
+        </a>
+        <button id="refreshHandoffs" class="ghost-button" type="button">Atualizar</button>
+      </header>
+
+      <section class="handoff-hero">
+        <div>
+          <h1>SamBah Handoff</h1>
+          <p>Atendimentos que precisam de humano.</p>
+        </div>
+        <span id="handoffCount" class="status-pill">Carregando</span>
+      </section>
+
+      <nav class="filters" aria-label="Filtros de handoff">
+        <button class="filter active" data-status="" type="button">Todos</button>
+        <button class="filter" data-status="pendente" type="button">Pendente</button>
+        <button class="filter" data-status="em_atendimento" type="button">Em atendimento</button>
+        <button class="filter" data-status="resolvido" type="button">Resolvido</button>
+      </nav>
+
+      <section id="handoffList" class="handoff-list"></section>
+    </main>
+    <script src="/assets/sambah-handoff.js"></script>
+      <script src="/admin/assets/sambah-shell.js"></script>
+    <script>
+      renderSambahShell("atendimento");
+    </script>
+</body>
+</html>

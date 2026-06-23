@@ -9,8 +9,9 @@
     <link rel="icon" href="/admin/assets/favicon.png" type="image/png">
     <link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/admin/assets/styles.css">
+    <link rel="stylesheet" href="/admin/assets/sambah-shell.css">
   </head>
-  <body>
+  <body class="sambah-admin-shell">
     <main class="command-shell">
       <header class="topbar">
         <div class="brand-lockup">
@@ -21,9 +22,12 @@
           </div>
         </div>
         <div class="topbar-actions">
+          <span class="version-chip" data-auth-user>Usuario</span>
+          <span class="status-chip" data-auth-role>Perfil</span>
           <span class="version-chip">v1.0.0</span>
           <span class="status-chip" id="topSystemStatus">Sincronizando</span>
           <button class="primary-button" id="refreshAudit" type="button">Atualizar</button>
+          <button class="ghost-button" data-auth-logout type="button">Sair</button>
         </div>
       </header>
 
@@ -38,13 +42,21 @@
             <span>Fila segura</span>
             <span>Integração Mesa</span>
           </div>
-        </div>
-        <div class="hero-mascot mascot-pending" aria-label="CapBah oficial pendente">
-          <div class="capbah-lock">
-            <span>CapBah</span>
-            <strong>Asset oficial pendente</strong>
-            <small>Aguardando PNG aprovado. Nenhum mascote alternativo será usado.</small>
+          <div class="hero-signals admin-shortcuts" aria-label="Atalhos administrativos">
+            <a class="link-button" href="/sambah-central">SamBah Central</a>
+            <a class="link-button" href="/sambah-voice-pay">SamBah Voice Pay</a>
+            <a class="link-button" href="/sambah-pay">SamBah Pay</a>
+            <a class="link-button" href="/sambah-autoserve">AutoServe</a>
+            <a class="link-button" href="/sambah-devices">Devices</a>
+            <a class="link-button" href="/sambah-locker">Locker Frio</a>
+            <a class="link-button" href="/sambah-weight">Weight Control</a>
+            <a class="link-button" href="/admin/permissoes">Permiss&otilde;es SamBah</a>
+            <a class="link-button" href="/admin/usuarios">Usu&aacute;rios SamBah</a>
+            <a class="link-button" href="/admin/auditoria">Auditoria SamBah</a>
           </div>
+        </div>
+        <div class="hero-mascot" aria-label="CapBah, mascote oficial do SamBah">
+          <img src="/admin/assets/brand/capbah-oficial.png" alt="CapBah, mascote oficial do SamBah">
         </div>
       </section>
 
@@ -305,6 +317,48 @@
         <div class="draft-list" id="draftOrdersList"></div>
       </section>
 
+      <section class="whatsapp-panel" aria-label="WhatsApp">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">WhatsApp</p>
+            <h2>Provider, respostas e sess&otilde;es pendentes</h2>
+          </div>
+          <span class="pill muted" id="whatsappProviderPill">mock</span>
+        </div>
+        <div class="mesa-overview">
+          <article class="mesa-metric">
+            <span>Provider</span>
+            <strong id="whatsappProvider">mock</strong>
+          </article>
+          <article class="mesa-metric">
+            <span>Status</span>
+            <strong id="whatsappConfigured">Local</strong>
+          </article>
+          <article class="mesa-metric">
+            <span>Phone ID</span>
+            <strong id="whatsappPhoneConfigured">n&atilde;o</strong>
+          </article>
+          <article class="mesa-metric">
+            <span>Sess&otilde;es pendentes</span>
+            <strong id="whatsappPendingSessions">0</strong>
+          </article>
+        </div>
+        <div class="whatsapp-grid">
+          <article>
+            <h3>&Uacute;ltimas mensagens recebidas</h3>
+            <div class="whatsapp-list" id="whatsappReceivedList"></div>
+          </article>
+          <article>
+            <h3>&Uacute;ltimas respostas enviadas</h3>
+            <div class="whatsapp-list" id="whatsappSentList"></div>
+          </article>
+          <article>
+            <h3>Sess&otilde;es aguardando confirma&ccedil;&atilde;o</h3>
+            <div class="whatsapp-list" id="whatsappSessionsList"></div>
+          </article>
+        </div>
+      </section>
+
       <section class="dashboard">
         <article class="panel audit-panel">
           <div class="panel-head">
@@ -379,6 +433,11 @@
         </div>
       </section>
     </main>
+    <script src="/admin/assets/sambah-shell.js"></script>
+    <script>
+      renderSambahShell("crm");
+    </script>
     <script src="/admin/assets/admin.js"></script>
+    <script src="/auth-ui.js"></script>
   </body>
 </html>

@@ -41,6 +41,20 @@ a {
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.26);
 }
 
+body.sambah-oportunidades-shell.sambah-shell-mounted .opp-header {
+  left: var(--sambah-shell-width, 264px);
+  width: calc(100% - var(--sambah-shell-width, 264px));
+}
+
+body.sambah-oportunidades-shell.sambah-shell-mounted.sambah-shell-collapsed .opp-header {
+  left: var(--sambah-shell-collapsed-width, 72px);
+  width: calc(100% - var(--sambah-shell-collapsed-width, 72px));
+}
+
+body.sambah-oportunidades-shell.sambah-shell-mounted .opp-header nav {
+  display: none;
+}
+
 .brand {
   display: inline-flex;
   align-items: center;
@@ -91,6 +105,32 @@ nav a.is-active,
   width: min(1320px, calc(100% - 32px));
   margin: 0 auto;
   padding: 18px 0 36px;
+}
+
+body.sambah-oportunidades-shell.sambah-shell-mounted .opp-shell {
+  width: min(1280px, calc(100% - var(--sambah-shell-width, 264px) - 48px));
+  margin-left: calc(var(--sambah-shell-width, 264px) + 24px);
+  margin-right: 24px;
+}
+
+body.sambah-oportunidades-shell.sambah-shell-mounted.sambah-shell-collapsed .opp-shell {
+  width: min(1280px, calc(100% - var(--sambah-shell-collapsed-width, 72px) - 48px));
+  margin-left: calc(var(--sambah-shell-collapsed-width, 72px) + 24px);
+}
+
+@media (max-width: 760px) {
+  body.sambah-oportunidades-shell.sambah-shell-mounted .opp-header,
+  body.sambah-oportunidades-shell.sambah-shell-mounted.sambah-shell-collapsed .opp-header {
+    left: var(--sambah-shell-collapsed-width, 72px);
+    width: calc(100% - var(--sambah-shell-collapsed-width, 72px));
+  }
+
+  body.sambah-oportunidades-shell.sambah-shell-mounted .opp-shell,
+  body.sambah-oportunidades-shell.sambah-shell-mounted.sambah-shell-collapsed .opp-shell {
+    width: calc(100% - var(--sambah-shell-collapsed-width, 72px) - 16px);
+    margin-left: calc(var(--sambah-shell-collapsed-width, 72px) + 8px);
+    margin-right: 8px;
+  }
 }
 
 .opp-hero {

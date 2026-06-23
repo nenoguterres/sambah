@@ -6,8 +6,9 @@
     <title>SamBah Oportunidades</title>
     <link rel="icon" href="assets/favicon.png" type="image/png">
     <link rel="stylesheet" href="oportunidades.css">
+    <link rel="stylesheet" href="/admin/assets/sambah-shell.css">
   </head>
-  <body>
+  <body class="sambah-oportunidades-shell">
     <header class="opp-header">
       <a class="brand" href="/">
         <img src="assets/brand/logo-sambah-oficial.png" alt="SamBah">
@@ -36,6 +37,10 @@
       <section id="columns" class="opp-columns" aria-live="polite"></section>
     </main>
 
+    <script src="/admin/assets/sambah-shell.js"></script>
+    <script>
+      renderSambahShell("crm");
+    </script>
     <script src="oportunidades.js"></script>
   </body>
 </html>

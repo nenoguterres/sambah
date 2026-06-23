@@ -1,0 +1,264 @@
+:root {
+  --sambah-shell-bg: #070907;
+  --sambah-shell-panel: #111612;
+  --sambah-shell-border: #243125;
+  --sambah-shell-text: #f6fff7;
+  --sambah-shell-muted: #9ead9d;
+  --sambah-shell-green: #29d366;
+  --sambah-shell-green-soft: rgba(41, 211, 102, 0.14);
+  --sambah-shell-orange: #ff9f2f;
+  --sambah-shell-width: 264px;
+  --sambah-shell-collapsed-width: 168px;
+}
+
+.sambah-shell,
+.sambah-shell * {
+  box-sizing: border-box;
+}
+
+.sambah-shell {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 80;
+  width: var(--sambah-shell-width);
+  min-height: 100vh;
+  padding: 14px 12px;
+  color: var(--sambah-shell-text);
+  background: var(--sambah-shell-bg);
+  border-right: 1px solid var(--sambah-shell-border);
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+  transition: width 160ms ease;
+}
+
+.sambah-shell.is-collapsed {
+  width: var(--sambah-shell-collapsed-width);
+}
+
+.sambah-shell-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 48px;
+  padding: 4px 2px 12px;
+  border-bottom: 1px solid var(--sambah-shell-border);
+}
+
+.sambah-shell-brand {
+  min-width: 0;
+}
+
+.sambah-shell-brand strong,
+.sambah-shell-brand span {
+  display: block;
+  white-space: nowrap;
+}
+
+.sambah-shell-brand strong {
+  color: var(--sambah-shell-text);
+  font-size: 17px;
+  line-height: 1.15;
+}
+
+.sambah-shell-brand span {
+  color: var(--sambah-shell-muted);
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.sambah-shell-collapse,
+.sambah-shell-module-toggle {
+  border: 1px solid transparent;
+  color: var(--sambah-shell-text);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.sambah-shell-collapse {
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  border-color: var(--sambah-shell-border);
+  border-radius: 8px;
+  color: var(--sambah-shell-green);
+}
+
+.sambah-shell-collapse:hover,
+.sambah-shell-module-toggle:hover {
+  background: var(--sambah-shell-green-soft);
+  border-color: rgba(41, 211, 102, 0.38);
+}
+
+.sambah-shell-nav {
+  display: grid;
+  gap: 7px;
+  margin-top: 14px;
+}
+
+.sambah-shell-module {
+  border-radius: 8px;
+}
+
+.sambah-shell-module-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 11px;
+  border-radius: 8px;
+  text-align: left;
+}
+
+.sambah-shell-module-toggle span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sambah-shell-caret {
+  color: var(--sambah-shell-muted);
+  font-size: 13px;
+  transition: transform 160ms ease;
+}
+
+.sambah-shell-module-toggle[aria-expanded="true"] .sambah-shell-caret {
+  transform: rotate(90deg);
+  color: var(--sambah-shell-green);
+}
+
+.sambah-shell-module.is-active > .sambah-shell-module-toggle {
+  color: var(--sambah-shell-green);
+  background: var(--sambah-shell-green-soft);
+  border-color: rgba(41, 211, 102, 0.42);
+}
+
+.sambah-shell-module[data-tone="insano"].is-active > .sambah-shell-module-toggle {
+  box-shadow: inset 3px 0 0 var(--sambah-shell-orange);
+}
+
+.sambah-shell-submenu {
+  display: grid;
+  gap: 4px;
+  padding: 6px 0 8px 12px;
+}
+
+.sambah-shell-subcommand {
+  display: block;
+  width: 100%;
+  min-height: 30px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--sambah-shell-muted);
+  background: transparent;
+  text-decoration: none;
+  text-align: left;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.sambah-shell-subcommand:hover:not(:disabled) {
+  color: var(--sambah-shell-text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.sambah-shell-subcommand[data-action] {
+  color: var(--sambah-shell-green);
+}
+
+.sambah-shell-subcommand[data-status]::after {
+  content: attr(data-status);
+  display: block;
+  margin-top: 2px;
+  color: var(--sambah-shell-orange);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.sambah-shell-subcommand.is-disabled,
+.sambah-shell-subcommand:disabled {
+  color: rgba(246, 255, 247, 0.38);
+  cursor: not-allowed;
+}
+
+.sambah-shell-footer {
+  position: absolute;
+  right: 12px;
+  bottom: 14px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--sambah-shell-border);
+  border-radius: 8px;
+  color: var(--sambah-shell-muted);
+  background: var(--sambah-shell-panel);
+  font-size: 12px;
+}
+
+.sambah-shell-footer strong {
+  color: var(--sambah-shell-green);
+  font-size: 12px;
+}
+
+.sambah-shell.is-collapsed .sambah-shell-brand,
+.sambah-shell.is-collapsed .sambah-shell-submenu,
+.sambah-shell.is-collapsed .sambah-shell-footer {
+  display: none;
+}
+
+.sambah-shell.is-collapsed .sambah-shell-header {
+  justify-content: center;
+}
+
+.sambah-shell.is-collapsed .sambah-shell-module-toggle {
+  justify-content: space-between;
+  padding: 0 10px;
+}
+
+.sambah-shell.is-collapsed .sambah-shell-module-toggle span:first-child {
+  max-width: 116px;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.sambah-shell.is-collapsed .sambah-shell-module-toggle span:first-child {
+  color: var(--sambah-shell-text);
+}
+
+.sambah-shell.is-collapsed .sambah-shell-module.is-active .sambah-shell-module-toggle span:first-child {
+  color: var(--sambah-shell-green);
+}
+
+@media (max-width: 760px) {
+  .sambah-shell {
+    width: min(var(--sambah-shell-width), 86vw);
+    box-shadow: 18px 0 40px rgba(0, 0, 0, 0.28);
+  }
+
+  .sambah-shell.is-collapsed {
+    width: var(--sambah-shell-collapsed-width);
+  }
+}
+
+body.sambah-shell-mounted:not(.sambah-admin-shell):not(.sambah-oportunidades-shell):not(.sambah-perola-shell):not(.sambah-pay-shell):not(.sambah-admin-users-shell):not(.sambah-admin-permissions-shell):not(.sambah-crm-shell-page) {
+  padding-left: var(--sambah-shell-width);
+}
+
+body.sambah-shell-mounted.sambah-shell-collapsed:not(.sambah-admin-shell):not(.sambah-oportunidades-shell):not(.sambah-perola-shell):not(.sambah-pay-shell):not(.sambah-admin-users-shell):not(.sambah-admin-permissions-shell):not(.sambah-crm-shell-page) {
+  padding-left: var(--sambah-shell-collapsed-width);
+}
+
+@media (max-width: 760px) {
+  body.sambah-shell-mounted:not(.sambah-admin-shell):not(.sambah-oportunidades-shell):not(.sambah-perola-shell):not(.sambah-pay-shell):not(.sambah-admin-users-shell):not(.sambah-admin-permissions-shell):not(.sambah-crm-shell-page),
+  body.sambah-shell-mounted.sambah-shell-collapsed:not(.sambah-admin-shell):not(.sambah-oportunidades-shell):not(.sambah-perola-shell):not(.sambah-pay-shell):not(.sambah-admin-users-shell):not(.sambah-admin-permissions-shell):not(.sambah-crm-shell-page) {
+    padding-left: var(--sambah-shell-collapsed-width);
+  }
+}

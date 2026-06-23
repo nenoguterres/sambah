@@ -1,0 +1,68 @@
+[
+  {
+    "id": "campaign-signal-mesa-xeriffe-2026-06-18-001",
+    "sourceSignalId": "signal-mesa-xeriffe-2026-06-18-001",
+    "title": "Produto com giro acelerado",
+    "description": "Mesa detectou aumento de pedidos no horario de almoco e enviou oportunidade para o Perola.",
+    "productName": "Kachurrasco",
+    "funnelStage": "qualificar",
+    "objective": "Usar o sinal signal-mesa-xeriffe-2026-06-18-001 para qualificar interesse em Kachurrasco.",
+    "readyMaterial": {
+      "postText": "Tu quer algo bom pra hoje? Kachurrasco ta no radar do Perola. Usar o sinal signal-mesa-xeriffe-2026-06-18-001 para qualificar interesse em Kachurrasco. Teu pedido pode sair no ponto, sem enrolacao. Me chama no Whats e eu te conto se Kachurrasco combina contigo.",
+      "whatsappText": "Opa, temos Kachurrasco pra ti hoje. Se curtir, chama no Whats que a gente te ajuda a fechar o pedido.",
+      "statusText": "Kachurrasco passando no teu radar. Chama no Whats e garante o teu.",
+      "cta": "Me chama no Whats e eu te conto se Kachurrasco combina contigo.",
+      "visualBriefing": "Visual premium e direto para Kachurrasco: fundo escuro, detalhe perola, produto em destaque, texto curto com chamada no tu e botao \"chama no Whats\"."
+    },
+    "status": "distributed",
+    "priority": "high",
+    "startDate": "",
+    "endDate": "",
+    "approvedAt": "2026-06-19T05:39:21.975Z",
+    "approvedBy": "human_operator",
+    "rejectedAt": "",
+    "rejectedReason": "",
+    "distributedAt": "2026-06-19T05:39:22.027Z",
+    "distributedChannelIds": [
+      "instagram-reels"
+    ],
+    "createdAt": "2026-06-19T05:39:21.849Z",
+    "updatedAt": "2026-06-19T05:39:22.027Z"
+  },
+  {
+    "id": "rank-3",
+    "title": "Campanha ranking tres",
+    "description": "",
+    "objective": "Validacao visual de ranking",
+    "status": "draft",
+    "priority": "medium",
+    "startDate": "",
+    "endDate": "",
+    "createdAt": "2026-06-18T01:19:30.559Z",
+    "updatedAt": "2026-06-18T01:19:30.559Z"
+  },
+  {
+    "id": "rank-2",
+    "title": "Campanha ranking dois",
+    "description": "",
+    "objective": "Validacao visual de ranking",
+    "status": "draft",
+    "priority": "medium",
+    "startDate": "",
+    "endDate": "",
+    "createdAt": "2026-06-18T01:19:30.544Z",
+    "updatedAt": "2026-06-18T01:19:30.544Z"
+  },
+  {
+    "id": "rank-1",
+    "title": "Campanha ranking um",
+    "description": "",
+    "objective": "Validacao visual de ranking",
+    "status": "draft",
+    "priority": "medium",
+    "startDate": "",
+    "endDate": "",
+    "createdAt": "2026-06-18T01:19:30.504Z",
+    "updatedAt": "2026-06-18T01:19:30.504Z"
+  }
+]

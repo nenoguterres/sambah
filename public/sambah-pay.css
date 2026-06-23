@@ -1,0 +1,51 @@
+.eco-bridge-head,
+.eco-bridge-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px 180px;
+  gap: 14px;
+  align-items: center;
+}
+
+.eco-bridge-head {
+  padding: 0 12px 9px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.eco-bridge-list {
+  display: grid;
+}
+
+.eco-bridge-row {
+  padding: 13px 12px;
+  border-top: 1px solid var(--line);
+}
+
+.eco-bridge-row strong {
+  overflow-wrap: anywhere;
+}
+
+.eco-bridge-row time {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.eco-bridge-row .eco-status {
+  justify-self: start;
+}
+
+@media (max-width: 620px) {
+  .eco-bridge-head {
+    display: none;
+  }
+
+  .eco-bridge-row {
+    grid-template-columns: 1fr auto;
+  }
+
+  .eco-bridge-row time {
+    grid-column: 1 / -1;
+  }
+}
