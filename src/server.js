@@ -607,16 +607,6 @@ export function createApp({
         return sendJson(res, 200, await whatsappMessageService.history({ limit: url.searchParams.get("limit") || 10 }));
       }
 
-      if (req.method === "POST" && url.pathname === "/admin/whatsapp/register-number") {
-        const body = await readJson(req, { requireBody: true });
-        const result = await registerWhatsAppCloudNumber({
-          phoneNumberId: body.phoneNumberId,
-          pin: body.pin,
-          runtimeConfig: getRuntimeConfig()
-        });
-        return sendJson(res, result.ok ? 200 : 400, result);
-      }
-
       if (req.method === "POST" && url.pathname === "/admin/whatsapp/sessions/clear") {
         const body = await readJson(req, { requireBody: true });
         return sendJson(res, 200, await whatsappMessageService.clearSession(body.phone || body.telefone || body.from || "", { draftId: body.draftId || "" }));
@@ -1707,31 +1697,6 @@ function metaBrazilianAllowedListRetryNumber(phone = "", responseBody = {}) {
   if (!digits.startsWith("55") || digits.length !== 12) return "";
   if (responseBody?.error?.code !== 131030) return "";
   return `${digits.slice(0, 4)}9${digits.slice(4)}`;
-}
-
-async function registerWhatsAppCloudNumber({ phoneNumberId = "", pin = "", runtimeConfig = getRuntimeConfig(), fetchImpl = globalThis.fetch } = {}) {
-  const config = runtimeConfig.whatsappBusiness || {};
-  const id = String(phoneNumberId || "").replace(/\D/g, "");
-  const cleanPin = String(pin || "").replace(/\D/g, "");
-  if (!config.accessToken) return { ok: false, status: "missing_meta_token" };
-  if (id !== "3410074799062817") return { ok: false, status: "unexpected_phone_number_id" };
-  if (!/^\d{6}$/.test(cleanPin)) return { ok: false, status: "invalid_pin" };
-  const endpoint = `https://graph.facebook.com/v25.0/${encodeURIComponent(id)}/register`;
-  const response = await fetchImpl(endpoint, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${config.accessToken}`,
-      "content-type": "application/json"
-    },
-    body: JSON.stringify({ messaging_product: "whatsapp", pin: cleanPin })
-  });
-  const responseBody = await readResponseBody(response);
-  return {
-    ok: response.ok,
-    status: response.ok ? "registered" : "meta_error",
-    httpStatus: response.status,
-    response: sanitizeMetaResponse(responseBody, config.accessToken)
-  };
 }
 
 async function recordDirectWhatsAppAutoReply(whatsappMessageService, payload = {}, sendResult = {}) {
