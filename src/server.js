@@ -599,16 +599,6 @@ export function createApp({
         return sendJson(res, 200, whatsappMessageService.status());
       }
 
-      if (req.method === "POST" && url.pathname === "/admin/whatsapp/register-cloud") {
-        const body = await readJson(req, { requireBody: true });
-        const result = await registerWhatsAppCloudNumber({
-          pin: body.pin,
-          phoneNumberId: body.phoneNumberId,
-          runtimeConfig: getRuntimeConfig()
-        });
-        return sendJson(res, result.ok ? 200 : result.httpStatus || 400, result);
-      }
-
       if (req.method === "GET" && url.pathname === "/admin/whatsapp/sessions") {
         return sendJson(res, 200, await whatsappMessageService.sessions());
       }
@@ -1683,37 +1673,6 @@ async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRun
     });
     return { ok: false, sent: false, status: "request_failed", error: sanitizeMetaText(error.message, config.accessToken) };
   }
-}
-
-async function registerWhatsAppCloudNumber({ pin = "", phoneNumberId = "", runtimeConfig = getRuntimeConfig(), fetchImpl = globalThis.fetch } = {}) {
-  const config = runtimeConfig.whatsappBusiness || {};
-  const resolvedPhoneNumberId = String(phoneNumberId || config.phoneNumberId || "").trim();
-  const resolvedPin = String(pin || "").trim();
-  if (!/^\d{6}$/.test(resolvedPin)) {
-    return { ok: false, error: "invalid_pin", message: "PIN deve conter 6 digitos." };
-  }
-  if (!config.accessToken || !resolvedPhoneNumberId) {
-    return { ok: false, error: "missing_meta_config" };
-  }
-
-  const response = await fetchImpl(`https://graph.facebook.com/v25.0/${encodeURIComponent(resolvedPhoneNumberId)}/register`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${config.accessToken}`,
-      "content-type": "application/json"
-    },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      pin: resolvedPin
-    })
-  });
-  const responseBody = await readResponseBody(response);
-  return {
-    ok: response.ok && responseBody?.success !== false,
-    httpStatus: response.status,
-    phoneNumberId: resolvedPhoneNumberId,
-    response: sanitizeMetaResponse(responseBody, config.accessToken)
-  };
 }
 
 async function sendMetaTextMessage(fetchImpl, endpoint, accessToken, requestBody) {
