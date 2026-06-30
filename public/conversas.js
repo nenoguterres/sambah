@@ -153,7 +153,12 @@ async function sendReply(id) {
     const data = await response.json();
     if (!data.ok) throw new Error(data.error || data.reason || "Falha ao enviar");
     textarea.value = "";
-    status.textContent = data.enviado ? "Resposta enviada pelo SamBah." : `Resposta registrada: ${data.reason || "sem envio real"}`;
+    if (data.enviado) {
+      status.textContent = "Resposta enviada pelo SamBah.";
+    } else {
+      const metaError = data.sendResult?.response?.error?.message || data.sendResult?.error || data.reason || "sem envio real";
+      status.textContent = `Nao enviado pela Meta: ${metaError}`;
+    }
     await loadConversas();
   } catch (error) {
     status.textContent = error.message || "Nao foi possivel enviar.";

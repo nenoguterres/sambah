@@ -1317,6 +1317,10 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
       });
       if (directAutoReply.sent || directAutoReply.status === "meta_error" || directAutoReply.status === "request_failed") {
         await recordDirectWhatsAppAutoReply(whatsappMessageService, body, directAutoReply);
+        await whatsappConversationService.recordOutgoing(conversationResult.conversa?.id || metaSummary.from, {
+          text: directAutoReply.text,
+          sendResult: directAutoReply
+        });
         return sendJson(res, 200, {
           ok: true,
           conversa: conversationResult.conversa,
@@ -1632,6 +1636,7 @@ async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRun
       ok: attempt.ok,
       sent: attempt.ok,
       status: attempt.ok ? "sent" : "meta_error",
+      text: autoReplyText,
       httpStatus: attempt.httpStatus,
       response: sanitizeMetaResponse(attempt.response, config.accessToken),
       ...(attempt.retried ? {
@@ -1675,7 +1680,7 @@ async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRun
       context: { to: summary.from, messageId: summary.messageId, phoneNumberId: sendPhoneNumberId, error: sanitizeMetaText(error.message, config.accessToken) },
       dedupeKey: summary.messageId ? `wa-auto-reply:${summary.messageId}` : undefined
     });
-    return { ok: false, sent: false, status: "request_failed", error: sanitizeMetaText(error.message, config.accessToken) };
+    return { ok: false, sent: false, status: "request_failed", text: autoReplyText, error: sanitizeMetaText(error.message, config.accessToken) };
   }
 }
 
@@ -1710,7 +1715,7 @@ async function recordDirectWhatsAppAutoReply(whatsappMessageService, payload = {
     await whatsappMessageService.appendMessage({
       direction: "out",
       normalized,
-      text: buildSambahAutoReply(normalized.message),
+      text: sendResult.text || buildSambahAutoReply(normalized.message),
       sendResult: {
         ok: sendResult.ok,
         sent: sendResult.sent,

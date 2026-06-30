@@ -104,7 +104,7 @@ test("POST /webhook/whatsapp processa payload real da Meta e envia resposta simp
   const logs = [];
   const previousConsoleInfo = console.info;
   console.info = (...args) => logs.push(args);
-  const { server, base, messagesFile, cleanup } = await createTestServer({
+  const { server, base, messagesFile, conversationsFile, cleanup } = await createTestServer({
     provider: {
       name: "meta-test-provider",
       status: () => ({ provider: "meta-test-provider", configured: true }),
@@ -172,6 +172,12 @@ test("POST /webhook/whatsapp processa payload real da Meta e envia resposta simp
     assert.equal(history[0].response.messages[0].id, "wamid-auto-reply");
     assert.equal(history[1].direction, "in");
     assert.equal(history[1].text, "Oi SamBah");
+    const conversations = JSON.parse(await readFile(conversationsFile, "utf8"));
+    assert.equal(conversations.conversas.length, 1);
+    assert.equal(conversations.conversas[0].mensagens.length, 2);
+    assert.equal(conversations.conversas[0].mensagens[0].direction, "in");
+    assert.equal(conversations.conversas[0].mensagens[1].direction, "out");
+    assert.equal(conversations.conversas[0].mensagens[1].text, buildSambahInitialMessage());
   } finally {
     console.info = previousConsoleInfo;
     await close(server);
@@ -451,7 +457,8 @@ async function createTestServer({ provider = new MockWhatsAppProvider({ logger: 
   const draftService = new OrderDraftService({ draftsFile: join(dir, "drafts.json"), rulesFile: join(dir, "rules.json") });
   const mesaService = new MesaIntegrationService({ queueFile: join(dir, "queue.json"), fetchImpl: async () => new Response("{}", { status: 202 }) });
   const eventService = new EventScheduleService({ leadsFile: join(dir, "event-leads.json"), servicesFile: join(dir, "services.json") });
-  const whatsappConversationService = new WhatsAppConversationService({ filePath: join(dir, "conversas.json") });
+  const conversationsFile = join(dir, "conversas.json");
+  const whatsappConversationService = new WhatsAppConversationService({ filePath: conversationsFile });
   const whatsappMessageService = new WhatsAppMessageService({
     provider,
     sessionsFile: join(dir, "sessions.json"),
@@ -484,6 +491,7 @@ async function createTestServer({ provider = new MockWhatsAppProvider({ logger: 
     base: `http://127.0.0.1:${server.address().port}`,
     auditFile: join(dir, "audit.json"),
     messagesFile: join(dir, "messages.json"),
+    conversationsFile,
     cleanup: () => rm(dir, { recursive: true, force: true })
   };
 }

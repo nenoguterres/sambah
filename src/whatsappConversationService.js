@@ -154,6 +154,37 @@ export class WhatsAppConversationService {
     return { ok: true, enviado: Boolean(sendResult?.sent), reason: sendStatus, sendResult, conversa: this.#withPriority(updated), message };
   }
 
+  async recordOutgoing(id, body = {}) {
+    const data = await this.#read();
+    const index = data.conversas.findIndex((item) => item.id === id || item.telefone === normalizePhone(id));
+    if (index === -1) return { ok: false, error: "Conversa nao encontrada" };
+    const now = this.now().toISOString();
+    const text = String(body.text || body.message || "").trim();
+    if (!text) return { ok: false, error: "Resposta vazia" };
+    const sendResult = body.sendResult || null;
+    const sendStatus = body.status || sendResult?.status || "registrada";
+    const message = {
+      id: `msg_${crypto.randomUUID()}`,
+      direction: "out",
+      type: "text",
+      text,
+      createdAt: now,
+      status: sendStatus,
+      httpStatus: sendResult?.httpStatus || null,
+      response: sendResult?.response || null
+    };
+    const updated = {
+      ...data.conversas[index],
+      status: sendResult?.sent ? "aguardando_cliente" : data.conversas[index].status,
+      ultimaInteracao: now,
+      updatedAt: now,
+      mensagens: [...(data.conversas[index].mensagens || []), message].slice(-60)
+    };
+    data.conversas[index] = updated;
+    await this.#write(data);
+    return { ok: true, enviado: Boolean(sendResult?.sent), reason: sendStatus, conversa: this.#withPriority(updated), message };
+  }
+
   async markHuman(id) {
     return this.#updateStatus(id, "humano");
   }
