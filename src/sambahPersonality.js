@@ -30,6 +30,7 @@ O que tu prefere agora?
 
 const CONTINUE_WITH_SAMBAH_MESSAGE = "Fechado, seguimos por aqui contigo. Me diz o que tu precisa agora que eu já vou te ajudando.";
 const WAITING_FOR_ATTENDANT_MESSAGE = "Combinado. Tua conversa ficou na fila da equipe. Assim que um atendente estiver disponível, ele assume por aqui.";
+const FALLBACK_MESSAGE = "Certo. Me conta um pouco mais do que tu precisa, ou responde com um número de 1 a 6 para eu te levar direto ao ponto.";
 
 const ORDER_MESSAGE = `Bah, perfeito. Vamos montar teu pedido.
 
@@ -125,6 +126,10 @@ export function buildSambahFinanceMessage() {
   return FINANCE_MESSAGE;
 }
 
+export function buildSambahFallbackMessage() {
+  return FALLBACK_MESSAGE;
+}
+
 export function detectSambahHumanSupportIntent(text = "") {
   const normalized = normalizeText(text);
   if (!normalized) return false;
@@ -148,7 +153,8 @@ export function buildSambahAutoReply(text = "") {
   if (isEventIntent(normalized) || normalized === "3") return buildSambahEventMessage();
   if (isGranjaIntent(normalized) || normalized === "4") return buildSambahGranjaMessage();
   if (isFinanceIntent(normalized) || normalized === "5") return buildSambahFinanceMessage();
-  return buildSambahInitialMessage();
+  if (isGreetingIntent(normalized)) return buildSambahInitialMessage();
+  return buildSambahFallbackMessage();
 }
 
 function isOrderIntent(normalized = "") {
@@ -169,6 +175,13 @@ function isGranjaIntent(normalized = "") {
 
 function isFinanceIntent(normalized = "") {
   return ["pagamento", "financeiro", "comprovante", "pix", "valor", "cobrar", "cobranca"].some((term) => normalized.includes(term));
+}
+
+function isGreetingIntent(normalized = "") {
+  if (["", "oi", "ola", "olá", "buenas", "bom dia", "boa tarde", "boa noite", "hello", "hy", "hi"].some((term) => normalized === normalizeText(term))) {
+    return true;
+  }
+  return /^(oi|ola|olá|buenas|bom dia|boa tarde|boa noite)\b/.test(normalized);
 }
 
 function normalizeText(text = "") {

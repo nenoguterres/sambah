@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildSambahAutoReply,
   buildSambahEventMessage,
+  buildSambahFallbackMessage,
   buildSambahFinanceMessage,
   buildSambahGranjaMessage,
   buildSambahHumanSupportMessage,
@@ -33,6 +34,7 @@ test("personalidade SamBah detecta pedido de atendimento humano", () => {
   assert.equal(detectSambahHumanSupportIntent("6"), true);
   assert.equal(buildSambahAutoReply("preciso de suporte"), buildSambahHumanSupportMessage());
   assert.equal(buildSambahAutoReply("oi"), buildSambahInitialMessage());
+  assert.equal(buildSambahAutoReply("Neno"), buildSambahFallbackMessage());
 });
 
 test("personalidade SamBah responde opcoes do menu sem repetir abertura", () => {

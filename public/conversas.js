@@ -114,7 +114,7 @@ function renderChat(conversa) {
     <p class="reply-status" id="replyStatus">${escapeHtml(conversa.respostaSugerida || "")}</p>
   `;
 
-  chatEl.querySelector("#messageList")?.scrollTo({ top: 999999 });
+  scrollMessagesToBottom();
   chatEl.querySelector("[data-action='human']")?.addEventListener("click", () => postAction(conversa.id, "humano"));
   chatEl.querySelector("[data-action='resolved']")?.addEventListener("click", () => postAction(conversa.id, "resolvido"));
   chatEl.querySelector("#useSuggestion")?.addEventListener("click", () => {
@@ -122,6 +122,17 @@ function renderChat(conversa) {
     chatEl.querySelector("#replyText").focus();
   });
   chatEl.querySelector("#sendReply")?.addEventListener("click", () => sendReply(conversa.id));
+}
+
+function scrollMessagesToBottom() {
+  const list = chatEl.querySelector("#messageList");
+  if (!list) return;
+  const scroll = () => {
+    list.scrollTop = list.scrollHeight;
+  };
+  scroll();
+  requestAnimationFrame(scroll);
+  setTimeout(scroll, 80);
 }
 
 function renderMessage(message) {

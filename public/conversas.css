@@ -18,6 +18,7 @@
 
 body {
   margin: 0;
+  height: 100vh;
   min-height: 100vh;
   overflow: hidden;
   background: var(--bg);
@@ -39,7 +40,14 @@ button {
   display: grid;
   grid-template-columns: minmax(320px, 390px) minmax(0, 1fr);
   height: 100vh;
+  min-height: 0;
   background: var(--bg);
+}
+
+body.has-sambah-shell .app {
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
 }
 
 .sidebar {
@@ -237,6 +245,7 @@ button {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   min-width: 0;
+  min-height: 0;
   background:
     linear-gradient(rgba(11, 20, 26, 0.92), rgba(11, 20, 26, 0.92)),
     radial-gradient(circle at 20% 20%, rgba(0, 168, 132, 0.12), transparent 28%),
@@ -274,7 +283,9 @@ button {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 18px clamp(14px, 3vw, 54px);
 }
 

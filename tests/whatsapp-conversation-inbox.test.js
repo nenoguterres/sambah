@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WhatsAppConversationService } from "../src/whatsappConversationService.js";
@@ -75,4 +75,13 @@ test("Central de Conversas registra resposta automatica ja enviada sem reenviar"
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("Central de Conversas page keeps the message list scrollable", async () => {
+  const css = await readFile(new URL("../public/conversas.css", import.meta.url), "utf8");
+  const js = await readFile(new URL("../public/conversas.js", import.meta.url), "utf8");
+  assert.match(css, /\.message-list\s*{[^}]*overflow-y:\s*auto/s);
+  assert.match(css, /\.chat\s*{[^}]*min-height:\s*0/s);
+  assert.match(js, /function scrollMessagesToBottom/);
+  assert.match(js, /scrollTop\s*=\s*list\.scrollHeight/);
 });
