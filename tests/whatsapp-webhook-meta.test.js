@@ -12,6 +12,7 @@ import { OrderDraftService } from "../src/orderDraftService.js";
 import { SambahConversationService } from "../src/sambahConversationService.js";
 import { WhatsAppConversationService } from "../src/whatsappConversationService.js";
 import { createApp } from "../src/server.js";
+import { buildSambahHumanSupportMessage, buildSambahInitialMessage } from "../src/sambahPersonality.js";
 import { MockWhatsAppProvider } from "../src/whatsapp/providers/mockProvider.js";
 import { WhatsAppMessageService } from "../src/whatsapp/whatsappMessageService.js";
 
@@ -151,7 +152,7 @@ test("POST /webhook/whatsapp processa payload real da Meta e envia resposta simp
       messaging_product: "whatsapp",
       to: "5551999999999",
       type: "text",
-      text: { body: "Buenas! Eu sou o SamBah, do ecossistema Insano Granja Aguas da Lagoa. Recebi tua mensagem e ja vou te levar direto ao ponto." }
+      text: { body: buildSambahInitialMessage() }
     });
     const receivedLog = logs.find(([event]) => event === "whatsapp.webhook.post.received");
     assert.ok(receivedLog);
@@ -165,7 +166,7 @@ test("POST /webhook/whatsapp processa payload real da Meta e envia resposta simp
     const history = JSON.parse(await readFile(messagesFile, "utf8"));
     assert.equal(history.length, 2);
     assert.equal(history[0].direction, "out");
-    assert.equal(history[0].text, "Buenas! Eu sou o SamBah, do ecossistema Insano Granja Aguas da Lagoa. Recebi tua mensagem e ja vou te levar direto ao ponto.");
+    assert.equal(history[0].text, buildSambahInitialMessage());
     assert.equal(history[0].status, "sent");
     assert.equal(history[0].httpStatus, 200);
     assert.equal(history[0].response.messages[0].id, "wamid-auto-reply");
@@ -173,6 +174,61 @@ test("POST /webhook/whatsapp processa payload real da Meta e envia resposta simp
     assert.equal(history[1].text, "Oi SamBah");
   } finally {
     console.info = previousConsoleInfo;
+    await close(server);
+    await cleanup();
+    if (previousSendEnabled === undefined) delete process.env.WHATSAPP_SEND_ENABLED;
+    else process.env.WHATSAPP_SEND_ENABLED = previousSendEnabled;
+    if (previousAccessToken === undefined) delete process.env.META_ACCESS_TOKEN;
+    else process.env.META_ACCESS_TOKEN = previousAccessToken;
+    if (previousPhoneNumberId === undefined) delete process.env.WHATSAPP_PHONE_NUMBER_ID;
+    else process.env.WHATSAPP_PHONE_NUMBER_ID = previousPhoneNumberId;
+  }
+});
+
+test("POST /webhook/whatsapp responde fluxo humano quando cliente pede atendente", async () => {
+  const previousSendEnabled = process.env.WHATSAPP_SEND_ENABLED;
+  const previousAccessToken = process.env.META_ACCESS_TOKEN;
+  const previousPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  process.env.WHATSAPP_SEND_ENABLED = "true";
+  process.env.META_ACCESS_TOKEN = "meta-token-teste";
+  process.env.WHATSAPP_PHONE_NUMBER_ID = "1234567890";
+
+  const graphCalls = [];
+  const { server, base, cleanup } = await createTestServer({
+    whatsappSendFetch: async (url, options) => {
+      graphCalls.push({ url, options });
+      return new Response(JSON.stringify({
+        messaging_product: "whatsapp",
+        contacts: [{ input: "5551999999999", wa_id: "5551999999999" }],
+        messages: [{ id: "wamid-human-reply" }]
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+  });
+  try {
+    const response = await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(metaPayload({
+        from: "5551999999999",
+        id: "wamid-human-request",
+        type: "text",
+        text: { body: "quero falar com atendente" }
+      }, { phoneNumberId: "1234567890" }))
+    });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.directAutoReply.sent, true);
+    assert.equal(graphCalls.length, 1);
+    assert.deepEqual(JSON.parse(graphCalls[0].options.body), {
+      messaging_product: "whatsapp",
+      to: "5551999999999",
+      type: "text",
+      text: { body: buildSambahHumanSupportMessage() }
+    });
+  } finally {
     await close(server);
     await cleanup();
     if (previousSendEnabled === undefined) delete process.env.WHATSAPP_SEND_ENABLED;

@@ -26,10 +26,10 @@ import { createWhatsAppProvider } from "./whatsapp/whatsappProvider.js";
 import { WhatsAppMessageService } from "./whatsapp/whatsappMessageService.js";
 import { isMetaWhatsAppPayload, parseWhatsAppWebhookPayload } from "./whatsapp/whatsappWebhookParser.js";
 import { InstagramPublisher } from "./services/instagramPublisher.js";
+import { buildSambahAutoReply } from "./sambahPersonality.js";
 
 const publicDir = fileURLToPath(new URL("../public/", import.meta.url));
 const runtimeConfig = getRuntimeConfig();
-const WHATSAPP_AUTO_REPLY_TEXT = "Buenas! Eu sou o SamBah, do ecossistema Insano Granja Aguas da Lagoa. Recebi tua mensagem e ja vou te levar direto ao ponto.";
 const dataFile = (name) => join(runtimeConfig.dataDir, name);
 const audit = new AuditService({ filePath: dataFile("audit-logs.json") });
 const mesa = new MesaIntegrationService({ queueFile: dataFile("mesa-queue.json") });
@@ -1599,10 +1599,11 @@ async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRun
   }
 
   const endpoint = `https://graph.facebook.com/v25.0/${encodeURIComponent(sendPhoneNumberId)}/messages`;
+  const autoReplyText = buildSambahAutoReply(summary.textBody);
   const baseRequestBody = {
     messaging_product: "whatsapp",
     type: "text",
-    text: { body: WHATSAPP_AUTO_REPLY_TEXT }
+    text: { body: autoReplyText }
   };
   try {
     const firstAttempt = await sendMetaTextMessage(fetchImpl, endpoint, config.accessToken, {
@@ -1706,7 +1707,7 @@ async function recordDirectWhatsAppAutoReply(whatsappMessageService, payload = {
     await whatsappMessageService.appendMessage({
       direction: "out",
       normalized,
-      text: WHATSAPP_AUTO_REPLY_TEXT,
+      text: buildSambahAutoReply(normalized.message),
       sendResult: {
         ok: sendResult.ok,
         sent: sendResult.sent,
