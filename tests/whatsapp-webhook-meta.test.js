@@ -151,7 +151,7 @@ test("POST /webhook/whatsapp processa payload real da Meta e envia resposta simp
       messaging_product: "whatsapp",
       to: "5551999999999",
       type: "text",
-      text: { body: "Buenas! Eu sou o SamBah. Recebi tua mensagem e já vou te levar direto ao ponto." }
+      text: { body: "Buenas! Eu sou o SamBah, do ecossistema Insano Granja Aguas da Lagoa. Recebi tua mensagem e ja vou te levar direto ao ponto." }
     });
     const receivedLog = logs.find(([event]) => event === "whatsapp.webhook.post.received");
     assert.ok(receivedLog);
@@ -165,7 +165,7 @@ test("POST /webhook/whatsapp processa payload real da Meta e envia resposta simp
     const history = JSON.parse(await readFile(messagesFile, "utf8"));
     assert.equal(history.length, 2);
     assert.equal(history[0].direction, "out");
-    assert.equal(history[0].text, "Buenas! Eu sou o SamBah. Recebi tua mensagem e já vou te levar direto ao ponto.");
+    assert.equal(history[0].text, "Buenas! Eu sou o SamBah, do ecossistema Insano Granja Aguas da Lagoa. Recebi tua mensagem e ja vou te levar direto ao ponto.");
     assert.equal(history[0].status, "sent");
     assert.equal(history[0].httpStatus, 200);
     assert.equal(history[0].response.messages[0].id, "wamid-auto-reply");

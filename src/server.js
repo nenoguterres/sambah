@@ -29,7 +29,7 @@ import { InstagramPublisher } from "./services/instagramPublisher.js";
 
 const publicDir = fileURLToPath(new URL("../public/", import.meta.url));
 const runtimeConfig = getRuntimeConfig();
-const WHATSAPP_AUTO_REPLY_TEXT = "Buenas! Eu sou o SamBah. Recebi tua mensagem e já vou te levar direto ao ponto.";
+const WHATSAPP_AUTO_REPLY_TEXT = "Buenas! Eu sou o SamBah, do ecossistema Insano Granja Aguas da Lagoa. Recebi tua mensagem e ja vou te levar direto ao ponto.";
 const dataFile = (name) => join(runtimeConfig.dataDir, name);
 const audit = new AuditService({ filePath: dataFile("audit-logs.json") });
 const mesa = new MesaIntegrationService({ queueFile: dataFile("mesa-queue.json") });
