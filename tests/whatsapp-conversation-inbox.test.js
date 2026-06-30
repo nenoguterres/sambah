@@ -80,8 +80,10 @@ test("Central de Conversas registra resposta automatica ja enviada sem reenviar"
 test("Central de Conversas page keeps the message list scrollable", async () => {
   const css = await readFile(new URL("../public/conversas.css", import.meta.url), "utf8");
   const js = await readFile(new URL("../public/conversas.js", import.meta.url), "utf8");
-  assert.match(css, /\.message-list\s*{[^}]*overflow-y:\s*auto/s);
-  assert.match(css, /\.chat\s*{[^}]*min-height:\s*0/s);
+  assert.match(css, /body\s*{[^}]*overflow-y:\s*auto/s);
+  assert.match(css, /body\.sambah-shell-mounted \.app\s*{[^}]*overflow:\s*visible/s);
+  assert.match(css, /\.message-list\s*{[^}]*overflow:\s*visible/s);
   assert.match(js, /function scrollMessagesToBottom/);
   assert.match(js, /scrollTop\s*=\s*list\.scrollHeight/);
+  assert.match(js, /window\.scrollTo/);
 });

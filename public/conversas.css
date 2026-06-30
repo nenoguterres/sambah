@@ -18,9 +18,9 @@
 
 body {
   margin: 0;
-  height: 100vh;
   min-height: 100vh;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   background: var(--bg);
   color: var(--text);
   font-family: Arial, Helvetica, sans-serif;
@@ -39,21 +39,22 @@ button {
 .app {
   display: grid;
   grid-template-columns: minmax(320px, 390px) minmax(0, 1fr);
-  height: 100vh;
-  min-height: 0;
+  min-height: 100vh;
   background: var(--bg);
 }
 
-body.has-sambah-shell .app {
-  height: 100vh;
-  max-height: 100vh;
-  overflow: hidden;
+body.sambah-shell-mounted .app {
+  min-height: 100vh;
+  overflow: visible;
 }
 
 .sidebar {
+  position: sticky;
+  top: 0;
   display: grid;
   grid-template-rows: auto auto auto minmax(0, 1fr);
   min-width: 0;
+  height: 100vh;
   border-right: 1px solid var(--line);
   background: var(--panel);
 }
@@ -243,9 +244,9 @@ body.has-sambah-shell .app {
 
 .chat {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto auto auto;
   min-width: 0;
-  min-height: 0;
+  min-height: 100vh;
   background:
     linear-gradient(rgba(11, 20, 26, 0.92), rgba(11, 20, 26, 0.92)),
     radial-gradient(circle at 20% 20%, rgba(0, 168, 132, 0.12), transparent 28%),
@@ -284,8 +285,7 @@ body.has-sambah-shell .app {
   flex-direction: column;
   gap: 8px;
   min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: visible;
   padding: 18px clamp(14px, 3vw, 54px);
 }
 
@@ -399,6 +399,8 @@ body.has-sambah-shell .app {
   }
 
   .sidebar {
+    position: static;
+    height: auto;
     max-height: 42vh;
     border-right: 0;
     border-bottom: 1px solid var(--line);

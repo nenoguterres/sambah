@@ -128,7 +128,11 @@ function scrollMessagesToBottom() {
   const list = chatEl.querySelector("#messageList");
   if (!list) return;
   const scroll = () => {
-    list.scrollTop = list.scrollHeight;
+    if (list.scrollHeight > list.clientHeight + 8) {
+      list.scrollTop = list.scrollHeight;
+      return;
+    }
+    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "auto" });
   };
   scroll();
   requestAnimationFrame(scroll);
