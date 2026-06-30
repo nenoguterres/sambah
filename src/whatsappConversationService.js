@@ -114,7 +114,7 @@ export class WhatsAppConversationService {
     };
   }
 
-  async addOutgoing(id, body = {}, { runtimeConfig = {} } = {}) {
+  async addOutgoing(id, body = {}, { runtimeConfig = {}, whatsappProvider = null } = {}) {
     const data = await this.#read();
     const index = data.conversas.findIndex((item) => item.id === id || item.telefone === normalizePhone(id));
     if (index === -1) return { ok: false, error: "Conversa nao encontrada" };
@@ -123,18 +123,35 @@ export class WhatsAppConversationService {
     if (!text) return { ok: false, error: "Resposta vazia" };
     const enabled = runtimeConfig.whatsappBusiness?.sendEnabled === true;
     const hasCredentials = Boolean(runtimeConfig.whatsappBusiness?.accessToken && runtimeConfig.whatsappBusiness?.phoneNumberId);
-    const sendStatus = enabled && hasCredentials ? "envio_real_nao_implementado" : "registrada_sem_envio";
-    const message = { id: `msg_${crypto.randomUUID()}`, direction: "out", type: "text", text, createdAt: now, status: sendStatus };
+    const canSend = enabled && hasCredentials && whatsappProvider && data.conversas[index].telefone;
+    const sendResult = canSend
+      ? await whatsappProvider.sendText({ to: data.conversas[index].telefone, text })
+      : null;
+    const sendStatus = sendResult
+      ? sendResult.status
+      : enabled && hasCredentials
+        ? "envio_real_indisponivel"
+        : "registrada_sem_envio";
+    const message = {
+      id: `msg_${crypto.randomUUID()}`,
+      direction: "out",
+      type: "text",
+      text,
+      createdAt: now,
+      status: sendStatus,
+      httpStatus: sendResult?.httpStatus || null,
+      response: sendResult?.response || null
+    };
     const updated = {
       ...data.conversas[index],
-      status: enabled && !hasCredentials ? "erro_configuracao" : "aguardando_cliente",
+      status: sendResult?.sent ? "aguardando_cliente" : enabled && !hasCredentials ? "erro_configuracao" : data.conversas[index].status,
       ultimaInteracao: now,
       updatedAt: now,
       mensagens: [...(data.conversas[index].mensagens || []), message].slice(-60)
     };
     data.conversas[index] = updated;
     await this.#write(data);
-    return { ok: true, enviado: false, reason: sendStatus, conversa: this.#withPriority(updated), message };
+    return { ok: true, enviado: Boolean(sendResult?.sent), reason: sendStatus, sendResult, conversa: this.#withPriority(updated), message };
   }
 
   async markHuman(id) {

@@ -637,7 +637,10 @@ export function createApp({
       const conversaResponderMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/responder$/);
       if (req.method === "POST" && conversaResponderMatch) {
         const body = await readJson(req, { requireBody: true });
-        const result = await whatsappConversationService.addOutgoing(decodeURIComponent(conversaResponderMatch[1]), body, { runtimeConfig: getRuntimeConfig() });
+        const result = await whatsappConversationService.addOutgoing(decodeURIComponent(conversaResponderMatch[1]), body, {
+          runtimeConfig: getRuntimeConfig(),
+          whatsappProvider
+        });
         return sendJson(res, result.ok ? 200 : 404, result);
       }
 
