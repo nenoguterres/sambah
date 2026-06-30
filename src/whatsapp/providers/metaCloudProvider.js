@@ -27,31 +27,35 @@ export class MetaCloudWhatsAppProvider {
       };
     }
 
-    const version = this.config.apiVersion || "v21.0";
+    const version = this.config.apiVersion || "v25.0";
     const endpoint = `https://graph.facebook.com/${version}/${encodeURIComponent(this.config.phoneNumberId)}/messages`;
     try {
-      const response = await this.fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "authorization": `Bearer ${this.config.accessToken}`,
-          "content-type": "application/json"
-        },
-        body: JSON.stringify({
-          messaging_product: "whatsapp",
-          recipient_type: "individual",
-          to,
-          type: "text",
-          text: { preview_url: false, body: text }
-        })
-      });
-      const body = await readBody(response);
+      const firstAttempt = await sendMetaText(this.fetch, endpoint, this.config.accessToken, { to, text });
+      let attempt = firstAttempt;
+      const retryTo = metaBrazilianAllowedListRetryNumber(to, firstAttempt.body);
+      if (!firstAttempt.response.ok && retryTo) {
+        const retryAttempt = await sendMetaText(this.fetch, endpoint, this.config.accessToken, { to: retryTo, text });
+        attempt = {
+          ...retryAttempt,
+          retried: true,
+          originalTo: to,
+          retryTo,
+          firstResponse: sanitizeMetaPayload(firstAttempt.body, this.config.accessToken)
+        };
+      }
       return {
-        ok: response.ok,
+        ok: attempt.response.ok,
         provider: this.name,
-        sent: response.ok,
-        status: response.ok ? "sent" : "meta_error",
-        httpStatus: response.status,
-        response: sanitizeMetaPayload(body, this.config.accessToken)
+        sent: attempt.response.ok,
+        status: attempt.response.ok ? "sent" : "meta_error",
+        httpStatus: attempt.response.status,
+        response: sanitizeMetaPayload(attempt.body, this.config.accessToken),
+        ...(attempt.retried ? {
+          retried: true,
+          originalTo: attempt.originalTo,
+          retryTo: attempt.retryTo,
+          firstResponse: attempt.firstResponse
+        } : {})
       };
     } catch (error) {
       return {
@@ -63,6 +67,32 @@ export class MetaCloudWhatsAppProvider {
       };
     }
   }
+}
+
+async function sendMetaText(fetchImpl, endpoint, accessToken, { to, text }) {
+  const response = await fetchImpl(endpoint, {
+    method: "POST",
+    headers: {
+      "authorization": `Bearer ${accessToken}`,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to,
+      type: "text",
+      text: { preview_url: false, body: text }
+    })
+  });
+  const body = await readBody(response);
+  return { response, body };
+}
+
+function metaBrazilianAllowedListRetryNumber(phone = "", responseBody = {}) {
+  const digits = String(phone || "").replace(/\D/g, "");
+  if (!digits.startsWith("55") || digits.length !== 12) return "";
+  if (responseBody?.error?.code !== 131030) return "";
+  return `${digits.slice(0, 4)}9${digits.slice(4)}`;
 }
 
 async function readBody(response) {

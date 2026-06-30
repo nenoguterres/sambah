@@ -86,6 +86,40 @@ test("erro de envio Meta nao vaza access token", async () => {
   assert.match(serialized, /\[masked\]/);
 });
 
+test("provider meta tenta nono digito brasileiro quando Meta recusa destinatario", async () => {
+  const requests = [];
+  const provider = createWhatsAppProvider({
+    config: {
+      provider: "meta",
+      phoneNumberId: "12345",
+      accessToken: "token-secreto",
+      verifyToken: "verify"
+    },
+    fetchImpl: async (url, options) => {
+      requests.push({ url, body: JSON.parse(options.body) });
+      if (requests.length === 1) {
+        return new Response(JSON.stringify({
+          error: {
+            message: "(#131030) Recipient phone number not in allowed list",
+            code: 131030
+          }
+        }), { status: 400 });
+      }
+      return new Response(JSON.stringify({ messages: [{ id: "wamid-retry" }] }), { status: 200 });
+    }
+  });
+  const result = await provider.sendText({ to: "555180413745", text: "Buenas" });
+  assert.equal(result.ok, true);
+  assert.equal(result.sent, true);
+  assert.equal(result.retried, true);
+  assert.equal(result.originalTo, "555180413745");
+  assert.equal(result.retryTo, "5551980413745");
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].url, "https://graph.facebook.com/v25.0/12345/messages");
+  assert.equal(requests[0].body.to, "555180413745");
+  assert.equal(requests[1].body.to, "5551980413745");
+});
+
 test("parser normaliza payload da Meta Cloud API", () => {
   const normalized = parseWhatsAppWebhookPayload(metaPayload({
     from: "5551999999999",
