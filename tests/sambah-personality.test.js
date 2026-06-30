@@ -14,9 +14,13 @@ import {
 
 test("personalidade SamBah contem abertura oficial e opcao de atendimento humano", () => {
   const opening = buildSambahInitialMessage();
-  assert.match(opening, /Buenas/);
-  assert.match(opening, /o que tu precisa agora/);
-  assert.match(opening, /6️⃣ Quero falar com um atendente/);
+  assert.match(opening, /Buenas! Aqui é o SamBah, atendimento do Portal Insano\./);
+  assert.match(opening, /Me diz o que tu precisa/);
+  assert.match(opening, /1 - Fazer pedido/);
+  assert.match(opening, /2 - Ver cardápio/);
+  assert.match(opening, /6 - Falar com atendente/);
+  assert.doesNotMatch(opening, /Que bom te ver por aqui/);
+  assert.doesNotMatch(opening, /1️⃣/);
 });
 
 test("personalidade SamBah descreve fluxo humano sem exigir repeticao", () => {

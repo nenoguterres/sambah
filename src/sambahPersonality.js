@@ -1,15 +1,13 @@
-const INITIAL_MESSAGE = `🤠 Buenas! Eu sou o SamBah.
+const INITIAL_MESSAGE = `Buenas! Aqui é o SamBah, atendimento do Portal Insano.
 
-Que bom te ver por aqui!
+Me diz o que tu precisa:
 
-Tô pronto pra te ajudar da forma mais rápida possível. Me diz, o que tu precisa agora?
-
-1️⃣ Quero fazer um pedido 🍔
-2️⃣ Quero ver o cardápio 📋
-3️⃣ Quero contratar o Insano para um evento 🎪
-4️⃣ Quero conhecer os produtos da Granja Águas da Lagoa 🥚
-5️⃣ Pagamentos e financeiro 💳
-6️⃣ Quero falar com um atendente 👨‍💼`;
+1 - Fazer pedido
+2 - Ver cardápio
+3 - Orçamento para evento
+4 - Granja Águas da Lagoa
+5 - Pagamentos
+6 - Falar com atendente`;
 
 const HUMAN_SUPPORT_MESSAGE = `Sem problema, vivente!
 
