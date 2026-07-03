@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SamBah Security / i9ACAO</title>
+    <link rel="icon" href="/admin/assets/favicon.png" type="image/png">
+    <link rel="stylesheet" href="/sambah-ecosystem.css">
+      <link rel="stylesheet" href="/admin/assets/sambah-shell.css">
+  </head>
+  <body>
+    <main class="eco-shell">
+      <header class="eco-topbar">
+        <a class="eco-brand" href="/sambah-central">
+          <img src="/admin/assets/brand/logo-sambah-oficial.png" alt="samBah!">
+          <span>Security / i9ACAO</span>
+        </a>
+        <nav class="eco-nav">
+          <a href="/sambah-central">Central</a>
+          <a href="/sambah-events">Event Bus</a>
+          <a href="/sambah-observability">Cockpit</a>
+          <a href="/sambah-locker">Locker</a>
+        </nav>
+      </header>
+
+      <section class="eco-hero">
+        <div>
+          <p class="eyebrow">Seguranca simulada</p>
+          <h1>SamBah Security / i9ACAO</h1>
+          <p>Incidentes, acoes mockadas, correlacao, auditoria e contrato futuro i9ACAO sem camera, sirene, sensor, MQTT ou hardware real.</p>
+          <div id="securityNotice" class="eco-notice">Carregando seguranca...</div>
+        </div>
+        <div class="eco-actions">
+          <button id="refreshSecurity" class="eco-secondary" type="button">Atualizar</button>
+          <button data-sim="locker-fraud" class="eco-button" type="button">Fraude locker</button>
+          <button data-sim="zone-mismatch" class="eco-secondary" type="button">Zona nao autorizada</button>
+          <button data-sim="device-offline" class="eco-secondary" type="button">Device offline</button>
+          <button data-sim="door-open-without-payment" class="eco-secondary" type="button">Porta sem pagamento</button>
+          <button data-sim="weight-fraud" class="eco-secondary" type="button">Peso suspeito</button>
+        </div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Resumo</h2>
+          <span id="securityUpdated" class="eco-pill">Sincronizando</span>
+        </div>
+        <div id="securityKpis" class="eco-kpis"></div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Incidentes recentes</h2>
+          <span class="eco-pill">open / acknowledged / resolved</span>
+        </div>
+        <div id="incidentList" class="eco-list"></div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Contrato futuro i9ACAO</h2>
+          <span class="eco-pill">mock</span>
+        </div>
+        <div id="futureContracts" class="eco-list"></div>
+      </section>
+    </main>
+    <script src="/sambah-security.js"></script>
+      <script src="/admin/assets/sambah-shell.js"></script>
+    <script>
+      renderSambahShell("admin");
+    </script>
+</body>
+</html>

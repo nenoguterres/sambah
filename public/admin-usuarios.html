@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Usu&aacute;rios SamBah</title>
+    <meta name="application-name" content="samBah!">
+    <meta name="theme-color" content="#0c1015">
+    <link rel="icon" href="/admin/assets/favicon.png" type="image/png">
+    <link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/admin/assets/sambah-shell.css">
+    <link rel="stylesheet" href="/admin-usuarios.css">
+  </head>
+  <body class="sambah-admin-users-shell">
+    <main class="users-shell">
+      <header class="users-topbar">
+        <a class="brand" href="/admin" aria-label="Voltar para o admin">
+          <img src="/admin/assets/brand/logo-sambah-oficial.png" alt="samBah!">
+          <span>Usu&aacute;rios SamBah</span>
+        </a>
+        <nav class="top-links" aria-label="Atalhos administrativos">
+          <span data-auth-user>Usuario</span>
+          <span data-auth-role>Perfil</span>
+          <a href="/admin">Admin</a>
+          <a href="/admin/permissoes">Permiss&otilde;es</a>
+          <a href="/sambah-voice-pay">SamBah Pay</a>
+          <button data-auth-logout type="button">Sair</button>
+        </nav>
+      </header>
+
+      <section class="intro-panel">
+        <p class="eyebrow">Autentica&ccedil;&atilde;o interna</p>
+        <h1>Usu&aacute;rios internos</h1>
+        <p>Lista operacional dos usu&aacute;rios locais do admin. Esta etapa mostra perfis e permiss&otilde;es principais sem expor credenciais internas.</p>
+        <span id="usersStatus" class="status-pill">Carregando usu&aacute;rios</span>
+      </section>
+
+      <section class="users-panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Acessos locais</p>
+            <h2>Operadores cadastrados</h2>
+          </div>
+          <span id="usersMode" class="status-pill muted">sessao</span>
+        </div>
+        <div id="usersGrid" class="users-grid"></div>
+      </section>
+
+      <section class="users-panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Novo acesso</p>
+            <h2>Criar usu&aacute;rio interno</h2>
+          </div>
+          <span id="userActionStatus" class="status-pill muted">Pronto</span>
+        </div>
+        <form id="createUserForm" class="user-form">
+          <label>Usu&aacute;rio<input name="username" autocomplete="off" placeholder="operador"></label>
+          <label>Nome<input name="displayName" autocomplete="off" placeholder="Operador SamBah"></label>
+          <label>Perfil<select name="role"></select></label>
+          <label>Senha inicial<input name="password" type="password" autocomplete="new-password" placeholder="minimo 8 caracteres"></label>
+          <button class="primary-button" type="submit">Criar usu&aacute;rio</button>
+        </form>
+      </section>
+    </main>
+    <script src="/admin/assets/sambah-shell.js"></script>
+    <script>
+      renderSambahShell("admin");
+    </script>
+    <script src="/auth-ui.js"></script>
+    <script src="/admin-usuarios.js"></script>
+  </body>
+</html>

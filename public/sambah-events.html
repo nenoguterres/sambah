@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SamBah Event Bus</title>
+    <link rel="icon" href="/admin/assets/favicon.png" type="image/png">
+    <link rel="stylesheet" href="/sambah-ecosystem.css">
+      <link rel="stylesheet" href="/admin/assets/sambah-shell.css">
+  </head>
+  <body>
+    <main class="eco-shell">
+      <header class="eco-topbar">
+        <a class="eco-brand" href="/sambah-central">
+          <img src="/admin/assets/brand/logo-sambah-oficial.png" alt="samBah!">
+          <span>Event Bus</span>
+        </a>
+        <nav class="eco-nav">
+          <a href="/sambah-central">Central</a>
+          <a href="/sambah-observability">Cockpit</a>
+          <a href="/sambah-locker">Locker</a>
+          <a href="/sambah-pay">Pay</a>
+        </nav>
+      </header>
+
+      <section class="eco-hero">
+        <div>
+          <p class="eyebrow">Mensageria simulada</p>
+          <h1>SamBah Event Bus</h1>
+          <p>Fila operacional mockada para eventos, outbox, dead letter, retries, consumidores e correlacao entre SamBah Pay, Locker, Devices, ERP futuro e auditoria.</p>
+          <div id="eventsNotice" class="eco-notice">Carregando Event Bus...</div>
+        </div>
+        <div class="eco-actions">
+          <button id="refreshEvents" class="eco-secondary" type="button">Atualizar</button>
+          <button id="publishPayment" class="eco-button" type="button">Simular pagamento confirmado</button>
+          <button id="processQueue" class="eco-secondary" type="button">Processar fila</button>
+          <button id="simulateErpFailure" class="eco-secondary" type="button">Simular falha ERP</button>
+          <button id="retryAll" class="eco-secondary" type="button">Retry falhados</button>
+        </div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Metricas do barramento</h2>
+          <span id="eventsUpdated" class="eco-pill">Sincronizando</span>
+        </div>
+        <div id="eventKpis" class="eco-kpis"></div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Busca por correlacao</h2>
+          <a class="eco-secondary" href="/sambah-observability">Abrir Cockpit</a>
+        </div>
+        <div class="eco-inline">
+          <input id="correlationInput" placeholder="correlationId">
+          <button id="searchCorrelation" class="eco-button" type="button">Buscar</button>
+        </div>
+        <div id="correlationResult" class="eco-list"></div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Eventos recentes</h2>
+          <span class="eco-pill">event store</span>
+        </div>
+        <div id="eventsList" class="eco-list"></div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Outbox</h2>
+          <span class="eco-pill">pending / processed / failed</span>
+        </div>
+        <div id="outboxList" class="eco-list"></div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Dead Letter</h2>
+          <span class="eco-pill">falhas persistentes</span>
+        </div>
+        <div id="deadLetterList" class="eco-list"></div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Consumidores</h2>
+          <span class="eco-pill">mock</span>
+        </div>
+        <div id="consumerList" class="eco-grid"></div>
+      </section>
+    </main>
+    <script src="/sambah-events.js"></script>
+      <script src="/admin/assets/sambah-shell.js"></script>
+    <script>
+      renderSambahShell("admin");
+    </script>
+</body>
+</html>

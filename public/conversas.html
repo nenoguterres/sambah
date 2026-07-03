@@ -3,28 +3,46 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Central de Conversas SamBah</title>
+    <title>Inbox WhatsApp SamBah</title>
     <link rel="stylesheet" href="/conversas.css">
+    <link rel="stylesheet" href="/admin/assets/sambah-shell.css">
   </head>
   <body>
-    <header class="topbar">
-      <a href="/sambah">SamBah</a>
-      <nav>
-        <a href="/crm">CRM</a>
-        <a href="/oportunidades">Oportunidades</a>
-        <a href="/conversas">Conversas</a>
-      </nav>
-    </header>
+    <main class="app" aria-label="Inbox WhatsApp SamBah">
+      <aside class="sidebar">
+        <header class="sidebar-header">
+          <div>
+            <p>SamBah</p>
+            <h1>WhatsApp</h1>
+          </div>
+          <button class="icon-button" id="refreshButton" type="button" title="Atualizar conversas">↻</button>
+        </header>
 
-    <main>
-      <section class="hero">
-        <p>WhatsApp inteligente</p>
-        <h1>Central de Conversas</h1>
+        <div class="search-row">
+          <input id="searchInput" type="search" placeholder="Pesquisar conversa">
+        </div>
+
+        <nav class="filters" aria-label="Filtros">
+          <button class="active" type="button" data-filter="all">Tudo</button>
+          <button type="button" data-filter="needs_reply">Responder</button>
+          <button type="button" data-filter="human">Humano</button>
+        </nav>
+
+        <section class="conversation-list" id="conversationList" aria-label="Conversas"></section>
+      </aside>
+
+      <section class="chat" id="chatPane" aria-live="polite">
+        <div class="empty-state">
+          <strong>Selecione uma conversa</strong>
+          <span>As mensagens do WhatsApp chegam aqui para tu acompanhar e responder pelo SamBah.</span>
+        </div>
       </section>
-
-      <section class="columns" id="columns"></section>
     </main>
 
     <script src="/conversas.js"></script>
+    <script src="/admin/assets/sambah-shell.js"></script>
+    <script>
+      renderSambahShell("atendimento");
+    </script>
   </body>
 </html>

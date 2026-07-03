@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SamBah Banco / PostgreSQL</title>
+    <link rel="icon" href="/admin/assets/favicon.png" type="image/png">
+    <link rel="stylesheet" href="/sambah-ecosystem.css">
+      <link rel="stylesheet" href="/admin/assets/sambah-shell.css">
+  </head>
+  <body>
+    <main class="eco-shell">
+      <header class="eco-topbar">
+        <a class="eco-brand" href="/sambah-central">
+          <img src="/admin/assets/brand/logo-sambah-oficial.png" alt="samBah!">
+          <span>Banco / PostgreSQL</span>
+        </a>
+        <nav class="eco-nav">
+          <a href="/sambah-central">Central</a>
+          <a href="/sambah-events">Event Bus</a>
+          <a href="/sambah-lgpd">LGPD</a>
+          <a href="/sambah-observability">Cockpit</a>
+        </nav>
+      </header>
+
+      <section class="eco-hero">
+        <div>
+          <p class="eyebrow">Database Layer</p>
+          <h1>SamBah Banco / PostgreSQL</h1>
+          <p>Persistencia JSON preservada e PostgreSQL preparado como modo opcional com migrations, health check e dry-run sem exigir banco instalado.</p>
+          <div id="databaseNotice" class="eco-notice">Carregando camada de banco...</div>
+        </div>
+        <div class="eco-actions">
+          <button id="refreshDatabase" class="eco-secondary" type="button">Atualizar</button>
+          <button id="dryRunMigrations" class="eco-button" type="button">Dry-run migrations</button>
+          <button id="seedDemo" class="eco-secondary" type="button">Seed demo simulado</button>
+        </div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Status</h2>
+          <span id="databaseMode" class="eco-pill">Sincronizando</span>
+        </div>
+        <div id="databaseKpis" class="eco-kpis"></div>
+        <div id="databaseHealth" class="eco-list"></div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Migrations</h2>
+          <span class="eco-pill">SQL planejado</span>
+        </div>
+        <div id="migrationList" class="eco-list"></div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Repositorios</h2>
+          <span class="eco-pill">contrato futuro</span>
+        </div>
+        <div id="repositoryList" class="eco-list"></div>
+      </section>
+    </main>
+    <script src="/sambah-database.js"></script>
+      <script src="/admin/assets/sambah-shell.js"></script>
+    <script>
+      renderSambahShell("admin");
+    </script>
+</body>
+</html>

@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SamBah Central</title>
+    <link rel="icon" href="/admin/assets/favicon.png" type="image/png">
+    <link rel="stylesheet" href="/sambah-ecosystem.css">
+    <link rel="stylesheet" href="/assets/sambah-central.css">
+    <link rel="stylesheet" href="/admin/assets/sambah-shell.css">
+  </head>
+  <body>
+    <main class="eco-shell">
+      <header class="eco-topbar">
+        <a class="eco-brand" href="/sambah-central">
+          <img src="/admin/assets/brand/logo-sambah-oficial.png" alt="samBah!">
+          <span>SamBah Central</span>
+        </a>
+        <nav class="eco-nav">
+          <a href="/sambah-central">Central</a>
+          <a href="http://127.0.0.1:4173/">Mesa</a>
+          <a href="/sambah-crm">SamBah</a>
+          <a href="/perola">Pérola</a>
+          <a href="/sambah-voice-pay">Voice Pay</a>
+          <a href="/sambah-pay">Pay</a>
+          <a href="/sambah-autoserve">AutoServe</a>
+          <a href="/sambah-devices">Devices</a>
+          <a href="/sambah-locker">Locker Frio</a>
+          <a href="/sambah-weight">Weight Control</a>
+          <a href="/sambah-events">Event Bus</a>
+          <a href="/sambah-messaging">Mensageria</a>
+          <a href="/sambah-observability">Cockpit</a>
+          <a href="/sambah-security">Seguranca</a>
+          <a href="/sambah-lgpd">LGPD</a>
+          <a href="/sambah-database">Banco</a>
+          <a href="/admin">Admin</a>
+        </nav>
+        <label class="eco-role">Perfil
+          <select id="ecoRole">
+            <option>ADMIN</option>
+            <option>CAIXA</option>
+            <option>OPERADOR</option>
+            <option>ATENDENTE</option>
+            <option>AUDITOR</option>
+          </select>
+        </label>
+      </header>
+
+      <section class="eco-hero">
+        <div>
+          <p class="eyebrow">Ecossistema operacional</p>
+          <div class="eco-title-row">
+            <h1>SamBah Central</h1>
+            <span class="eco-help">
+              <button class="eco-help-button" type="button" aria-label="Sobre a Central" aria-describedby="centralHelpText">?</button>
+              <span id="centralHelpText" class="eco-help-bubble" role="tooltip">Um painel para operar Mesa, SamBah, Pay e Pérola, acompanhar suas pontes e entrar em cada fluxo sem deixar módulo solto.</span>
+            </span>
+          </div>
+          <div id="centralNotice" class="eco-notice">Carregando ecossistema...</div>
+        </div>
+        <div class="eco-actions">
+          <button id="refreshCentral" class="eco-secondary" type="button">Atualizar</button>
+          <button id="bootstrapDemo" class="eco-button" data-permission="bootstrap" type="button">Preparar demo operacional</button>
+          <button id="guidedDemo" class="eco-secondary" data-permission="guided_demo" type="button">Executar demo guiado</button>
+          <button id="simulateCentralFraud" class="eco-secondary" data-permission="operate" type="button">Simular fraude peso</button>
+        </div>
+      </section>
+
+      <section class="eco-section" aria-labelledby="operationalPathsTitle">
+        <div class="eco-head">
+          <div>
+            <p class="eyebrow">Acesso direto</p>
+            <h2 id="operationalPathsTitle">Caminhos operacionais</h2>
+          </div>
+          <span id="pathsUpdatedAt" class="eco-pill">Verificando</span>
+        </div>
+        <div class="eco-path-grid" id="operationalPaths">
+          <article class="eco-path-card" data-path="mesa">
+            <header><h3>Mesa do Xeriffe</h3><span id="pathMesaStatus" class="eco-status">Verificando</span></header>
+            <p id="pathMesaSummary">Conferindo ponte e fila de pedidos.</p>
+            <nav class="eco-path-actions" aria-label="Acessos do Mesa">
+              <a class="eco-button" href="http://127.0.0.1:4173/">Abrir Mesa</a>
+              <a class="eco-secondary" href="/admin#mesaBridge">Ponte SamBah</a>
+              <a class="eco-secondary" href="/sambah-crm#pedidos">Pedidos do site</a>
+              <a class="eco-secondary" href="/cozinha">Cozinha</a>
+            </nav>
+          </article>
+          <article class="eco-path-card" data-path="sambah">
+            <header><h3>SamBah</h3><span id="pathSambahStatus" class="eco-status">Verificando</span></header>
+            <p id="pathSambahSummary">Conferindo CRM e atendimento.</p>
+            <nav class="eco-path-actions" aria-label="Acessos do SamBah">
+              <a class="eco-button" href="/sambah-crm">Abrir CRM</a>
+              <a class="eco-secondary" href="/conversas">Atendimento</a>
+              <a class="eco-secondary" href="/sambah-crm#precomandas">Pré-comandas</a>
+              <a class="eco-secondary" href="/admin">Admin</a>
+            </nav>
+          </article>
+          <article class="eco-path-card" data-path="pay">
+            <header><h3>SamBah Pay</h3><span id="pathPayStatus" class="eco-status">Verificando</span></header>
+            <p id="pathPaySummary">Conferindo pagamentos e dispositivos.</p>
+            <nav class="eco-path-actions" aria-label="Acessos do SamBah Pay">
+              <a class="eco-button" href="/sambah-pay">Abrir Pay</a>
+              <a class="eco-secondary" href="/sambah-voice-pay">Voice Pay</a>
+              <a class="eco-secondary" href="/sambah-pay#wallet">Wallet</a>
+              <a class="eco-secondary" href="/sambah-autoserve">AutoServe</a>
+            </nav>
+          </article>
+          <article class="eco-path-card" data-path="perola">
+            <header><h3>Pérola</h3><span id="pathPerolaStatus" class="eco-status">Verificando</span></header>
+            <p id="pathPerolaSummary">Conferindo publicação e integração comercial.</p>
+            <nav class="eco-path-actions" aria-label="Acessos da Pérola">
+              <a class="eco-button" href="/perola">Abrir Pérola</a>
+              <a class="eco-secondary" href="/perola#campaignsList">Campanhas</a>
+              <a class="eco-secondary" href="/perola#radarInsano">Radar</a>
+              <a class="eco-secondary" href="/perola#payPerolaBridge">Ponte Pay</a>
+            </nav>
+          </article>
+        </div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Missao operacional</h2>
+          <span id="missionState" class="eco-pill">Sincronizando</span>
+        </div>
+        <div id="missionSummary" class="eco-kpis"></div>
+        <div class="eco-inline" style="margin-top:12px">
+          <div><strong>Perfil ativo</strong><span id="roleSummary">ADMIN</span></div>
+          <div><strong>Fluxo demo</strong><span>Pedido, pagamento, locker, peso e auditoria</span></div>
+          <div><strong>Modo</strong><span>Híbrido local</span></div>
+          <div><strong>Integrações</strong><span>Mesa, SamBah, Pay e Pérola</span></div>
+        </div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Fluxo demo guiado</h2>
+          <span class="eco-pill">ponta a ponta</span>
+        </div>
+        <ol id="guidedSteps" class="eco-steps">
+          <li class="eco-step pending"><strong>Aguardando execucao</strong><span>Use Executar demo guiado</span></li>
+        </ol>
+      </section>
+
+      <section id="status" class="eco-section">
+        <div class="eco-head">
+          <h2>Status do Ecossistema</h2>
+          <span id="updatedAt" class="eco-pill">Sincronizando</span>
+        </div>
+        <div id="kpis" class="eco-kpis"></div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Modulos SamBah</h2>
+          <span class="eco-pill">modo simulado</span>
+        </div>
+        <div id="moduleCards" class="eco-grid"></div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Alertas criticos</h2>
+          <a class="eco-secondary" href="/sambah-weight">Abrir Weight Control</a>
+        </div>
+        <div id="criticalAlerts" class="eco-list"></div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Auditoria recente</h2>
+          <a class="eco-secondary" href="/admin/auditoria">Abrir auditoria</a>
+        </div>
+        <div id="recentAudit" class="eco-list"></div>
+      </section>
+
+      <section id="seguranca" class="eco-section">
+        <div class="eco-head">
+          <h2>Seguranca e i9ACAO futuro</h2>
+          <a class="eco-secondary" href="/sambah-central#integracoes">Ver integracoes</a>
+        </div>
+        <div id="securityEvents" class="eco-list"></div>
+      </section>
+
+      <section id="integracoes" class="eco-section">
+        <div class="eco-head">
+          <h2>Integracoes futuras</h2>
+          <span class="eco-pill">contratos preparados</span>
+        </div>
+        <div class="eco-grid">
+          <article class="eco-card"><h3>Pix automatico</h3><p>Nao implementado nesta fase.</p></article>
+          <article class="eco-card"><h3>TEF</h3><p>Sem adquirente real nesta fase.</p></article>
+          <article class="eco-card"><h3>ERP</h3><p>Adapter simulado permanece ativo.</p></article>
+          <article class="eco-card"><h3>MQTT/Hardware</h3><p>Sem MQTT, ESP32, locker, balanca ou sensor real.</p></article>
+        </div>
+      </section>
+    </main>
+    <script src="/sambah-central.js"></script>
+      <script src="/admin/assets/sambah-shell.js"></script>
+    <script>
+      renderSambahShell("central");
+    </script>
+</body>
+</html>

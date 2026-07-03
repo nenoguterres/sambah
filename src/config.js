@@ -1,4 +1,6 @@
-﻿export const API_BASES = {
+import { readFileSync } from "node:fs";
+
+export const API_BASES = {
   local: "http://localhost:3000",
   production: "https://api.insanofoodtruck.com.br",
   alternative: "https://api.sambahcrm.com.br"
@@ -18,6 +20,7 @@ export function getBaseApi(env = globalThis.process?.env || {}) {
 }
 
 export function getRuntimeConfig(env = globalThis.process?.env || {}) {
+  const localEnv = loadLocalEnv();
   return {
     nodeEnv: env.NODE_ENV || "development",
     port: Number(env.PORT || 3000),
@@ -30,16 +33,28 @@ export function getRuntimeConfig(env = globalThis.process?.env || {}) {
     siteOrdersEnabled: env.SITE_ORDERS_ENABLED !== "false",
     dataDir: env.DATA_DIR || "data",
     whatsappBusiness: {
-      provider: env.WHATSAPP_PROVIDER || "meta",
-      sendEnabled: env.WHATSAPP_SEND_ENABLED === "true",
-      verifyToken: env.WHATSAPP_VERIFY_TOKEN || "",
-      accessToken: env.WHATSAPP_TOKEN || env.WHATSAPP_ACCESS_TOKEN || "",
-      phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID || "",
-      businessAccountId: env.WHATSAPP_BUSINESS_ACCOUNT_ID || "",
-      webhookSecret: env.WHATSAPP_WEBHOOK_SECRET || "",
-      apiVersion: env.WHATSAPP_API_VERSION || "v21.0",
+      provider: firstEnv(env, localEnv, ["WHATSAPP_PROVIDER"]) || "meta",
+      sendEnabled: firstEnv(env, localEnv, ["WHATSAPP_SEND_ENABLED"]) === "true",
+      verifyToken: firstEnv(env, localEnv, ["META_VERIFY_TOKEN", "WHATSAPP_META_VERIFY_TOKEN", "SAMBAH_META_VERIFY_TOKEN", "WHATSAPP_VERIFY_TOKEN"]),
+      accessToken: firstEnv(env, localEnv, ["META_ACCESS_TOKEN", "WHATSAPP_META_ACCESS_TOKEN", "SAMBAH_META_ACCESS_TOKEN", "WHATSAPP_ACCESS_TOKEN", "WHATSAPP_TOKEN"]),
+      phoneNumberId: firstEnv(env, localEnv, ["META_PHONE_NUMBER_ID", "WHATSAPP_META_PHONE_NUMBER_ID", "SAMBAH_META_PHONE_NUMBER_ID", "WHATSAPP_PHONE_NUMBER_ID"]),
+      businessAccountId: firstEnv(env, localEnv, ["META_WABA_ID", "WHATSAPP_BUSINESS_ACCOUNT_ID", "SAMBAH_META_WABA_ID"]),
+      webhookSecret: env.SAMBAH_WEBHOOK_SECRET || env.WHATSAPP_WEBHOOK_SECRET || "",
+      apiVersion: firstEnv(env, localEnv, ["META_API_VERSION", "WHATSAPP_META_API_VERSION", "SAMBAH_META_API_VERSION"]) || "v25.0",
       apiBaseUrl: env.WHATSAPP_API_BASE_URL || "https://graph.facebook.com",
-      publicWebhookUrl: env.WEBHOOK_PUBLIC_URL || ""
+      publicWebhookUrl: firstEnv(env, localEnv, ["WEBHOOK_PUBLIC_URL", "SAMBAH_PUBLIC_WEBHOOK_URL"])
+    },
+    perolaInstagram: {
+      enabled: firstEnv(env, localEnv, ["PEROLA_INSTAGRAM_ENABLED"]) === "true",
+      accessToken: firstEnv(env, localEnv, ["PEROLA_INSTAGRAM_ACCESS_TOKEN"]),
+      userId: firstEnv(env, localEnv, ["PEROLA_INSTAGRAM_USER_ID"]),
+      account: firstEnv(env, localEnv, ["PEROLA_INSTAGRAM_ACCOUNT"]),
+      apiVersion: firstEnv(env, localEnv, ["PEROLA_INSTAGRAM_API_VERSION"]) || "v25.0",
+      apiBaseUrl: firstEnv(env, localEnv, ["PEROLA_INSTAGRAM_API_BASE_URL"]) || "https://graph.instagram.com"
+    },
+    sambahWhatsapp: {
+      neno: env.SAMBAH_WHATSAPP_NENO || "5551980413745",
+      kazuko: env.SAMBAH_WHATSAPP_KAZUKO || "5551997920292"
     },
     ai: {
       provider: env.AI_PROVIDER || "openai",
@@ -94,5 +109,29 @@ function parseList(value, fallback) {
   return String(value).split(",").map((item) => item.trim()).filter(Boolean);
 }
 
+function firstEnv(env, localEnv, keys) {
+  for (const key of keys) {
+    if (env[key]) return env[key];
+  }
+  for (const key of keys) {
+    if (localEnv[key]) return localEnv[key];
+  }
+  return "";
+}
 
+function loadLocalEnv() {
+  try {
+    const raw = readFileSync(".env.local", "utf8");
+    return Object.fromEntries(raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("#") && line.includes("="))
+      .map((line) => {
+        const index = line.indexOf("=");
+        return [line.slice(0, index).trim(), line.slice(index + 1).trim()];
+      }));
+  } catch {
+    return {};
+  }
+}
 

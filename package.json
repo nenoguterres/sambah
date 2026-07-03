@@ -6,6 +6,7 @@
   "description": "Painel/admin e auditoria operacional para automacao WhatsApp samBah!.",
   "scripts": {
     "start": "node src/server.js",
+    "start:clean:3000": "powershell -ExecutionPolicy Bypass -File scripts/start-clean-3000.ps1",
     "start:prod": "set NODE_ENV=production&& node src/server.js",
     "test:prod": "set NODE_ENV=production&& node --test tests/*.test.js",
     "test": "node --test tests/*.test.js"

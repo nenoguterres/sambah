@@ -52,6 +52,30 @@ a {
   padding: 24px 0 44px;
 }
 
+body.sambah-admin-shell.sambah-shell-mounted .command-shell {
+  width: min(1280px, calc(100% - var(--sambah-shell-width, 264px) - 48px));
+  margin-left: calc(var(--sambah-shell-width, 264px) + 24px);
+  margin-right: 24px;
+}
+
+body.sambah-admin-shell.sambah-shell-mounted.sambah-shell-collapsed .command-shell {
+  width: min(1280px, calc(100% - var(--sambah-shell-collapsed-width, 72px) - 48px));
+  margin-left: calc(var(--sambah-shell-collapsed-width, 72px) + 24px);
+}
+
+body.sambah-admin-shell.sambah-shell-mounted .admin-shortcuts {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  body.sambah-admin-shell.sambah-shell-mounted .command-shell,
+  body.sambah-admin-shell.sambah-shell-mounted.sambah-shell-collapsed .command-shell {
+    width: calc(100% - var(--sambah-shell-collapsed-width, 72px) - 16px);
+    margin-left: calc(var(--sambah-shell-collapsed-width, 72px) + 8px);
+    margin-right: 8px;
+  }
+}
+
 .topbar,
 .brand-lockup,
 .topbar-actions,
@@ -602,6 +626,12 @@ h3 {
     radial-gradient(circle at 0% 0%, rgba(84, 214, 210, 0.1), transparent 32%);
 }
 
+.whatsapp-panel {
+  background:
+    linear-gradient(135deg, rgba(20, 27, 36, 0.98), rgba(15, 22, 30, 0.96)),
+    radial-gradient(circle at 100% 0%, rgba(84, 214, 210, 0.1), transparent 32%);
+}
+
 .events-panel {
   background:
     linear-gradient(135deg, rgba(20, 27, 36, 0.98), rgba(15, 22, 30, 0.96)),
@@ -646,6 +676,37 @@ h3 {
   display: grid;
   gap: 10px;
   margin-top: 14px;
+}
+
+.whatsapp-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.whatsapp-grid h3 {
+  margin: 0 0 10px;
+}
+
+.whatsapp-list {
+  display: grid;
+  gap: 10px;
+}
+
+.whatsapp-item {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(32, 43, 56, 0.68);
+  padding: 12px;
+}
+
+.whatsapp-item span,
+.whatsapp-item small,
+.whatsapp-item time {
+  color: var(--muted);
 }
 
 .events-table {

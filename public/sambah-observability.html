@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SamBah Cockpit Operacional</title>
+    <link rel="icon" href="/admin/assets/favicon.png" type="image/png">
+    <link rel="stylesheet" href="/sambah-ecosystem.css">
+      <link rel="stylesheet" href="/admin/assets/sambah-shell.css">
+  </head>
+  <body>
+    <main class="eco-shell">
+      <header class="eco-topbar">
+        <a class="eco-brand" href="/sambah-central">
+          <img src="/admin/assets/brand/logo-sambah-oficial.png" alt="samBah!">
+          <span>Cockpit Operacional</span>
+        </a>
+        <nav class="eco-nav">
+          <a href="/sambah-central">Central</a>
+          <a href="/sambah-events">Event Bus</a>
+          <a href="/sambah-locker">Locker</a>
+          <a href="/sambah-weight">Weight</a>
+        </nav>
+      </header>
+
+      <section class="eco-hero">
+        <div>
+          <p class="eyebrow">Observabilidade simulada</p>
+          <h1>SamBah Cockpit Operacional</h1>
+          <p>Saude, metricas, traces, alertas operacionais e correlacao entre eventos sem Prometheus, Grafana, Loki ou OpenTelemetry real nesta fase.</p>
+          <div id="observabilityNotice" class="eco-notice">Carregando Cockpit...</div>
+        </div>
+        <div class="eco-actions">
+          <button id="refreshCockpit" class="eco-secondary" type="button">Atualizar</button>
+          <button id="criticalAlert" class="eco-button" type="button">Simular alerta critico</button>
+          <a class="eco-secondary" href="/sambah-events">Abrir Event Bus</a>
+        </div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Saude operacional</h2>
+          <span id="healthState" class="eco-pill">Sincronizando</span>
+        </div>
+        <div id="healthKpis" class="eco-kpis"></div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Correlacao</h2>
+          <span class="eco-pill">eventos + traces</span>
+        </div>
+        <div class="eco-inline">
+          <input id="cockpitCorrelationInput" placeholder="correlationId">
+          <button id="cockpitCorrelationSearch" class="eco-button" type="button">Buscar</button>
+        </div>
+        <div id="cockpitCorrelationResult" class="eco-list"></div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Alertas operacionais</h2>
+          <span class="eco-pill">open / resolved</span>
+        </div>
+        <div id="alertList" class="eco-list"></div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Traces recentes</h2>
+          <span class="eco-pill">mock</span>
+        </div>
+        <div id="traceList" class="eco-list"></div>
+      </section>
+    </main>
+    <script src="/sambah-observability.js"></script>
+      <script src="/admin/assets/sambah-shell.js"></script>
+    <script>
+      renderSambahShell("admin");
+    </script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+[
+  {
+    "id": "2026-06-17-kachurrasco",
+    "date": "2026-06-17",
+    "productId": "kachurrasco",
+    "product": "Kachurrasco",
+    "initialStock": 30,
+    "producedToday": 0,
+    "sold": 6,
+    "previousLeftover": 0,
+    "finalStock": 24,
+    "normalPrice": 28
+  }
+]

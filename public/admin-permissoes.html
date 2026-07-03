@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Permiss&otilde;es SamBah</title>
+    <meta name="application-name" content="samBah!">
+    <meta name="theme-color" content="#0c1015">
+    <link rel="icon" href="/admin/assets/favicon.png" type="image/png">
+    <link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/admin/assets/sambah-shell.css">
+    <link rel="stylesheet" href="/admin-permissoes.css">
+  </head>
+  <body class="sambah-admin-permissions-shell">
+    <main class="permissions-shell">
+      <header class="permissions-topbar">
+        <a class="brand" href="/admin" aria-label="Voltar para o admin">
+          <img src="/admin/assets/brand/logo-sambah-oficial.png" alt="samBah!">
+          <span>Permiss&otilde;es SamBah</span>
+        </a>
+        <nav class="top-links" aria-label="Atalhos administrativos">
+          <span data-auth-user>Usuario</span>
+          <span data-auth-role>Perfil</span>
+          <a href="/admin">Admin</a>
+          <a href="/sambah-voice-pay">Voice Pay</a>
+          <button data-auth-logout type="button">Sair</button>
+        </nav>
+      </header>
+
+      <section class="intro-panel" aria-label="Contexto da matriz">
+        <p class="eyebrow">SamBah Voice Pay</p>
+        <h1>Matriz administrativa de permiss&otilde;es</h1>
+        <p>
+          Matriz administrativa de permiss&otilde;es do SamBah Voice Pay. No modo real local, o perfil vem da sess&atilde;o interna do operador. O modo mock permanece apenas para desenvolvimento e testes controlados.
+        </p>
+        <span id="matrixStatus" class="status-pill">Carregando matriz</span>
+      </section>
+
+      <section class="matrix-panel" aria-label="Tabela de permissoes por perfil">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Perfis internos</p>
+            <h2>Permiss&otilde;es por a&ccedil;&atilde;o cr&iacute;tica</h2>
+          </div>
+          <span class="status-pill muted" id="matrixMode">mock</span>
+        </div>
+        <div class="table-wrap">
+          <table class="permissions-table">
+            <thead id="permissionsHead"></thead>
+            <tbody id="permissionsBody">
+              <tr><td>Carregando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+    <script src="/admin/assets/sambah-shell.js"></script>
+    <script>
+      renderSambahShell("admin");
+    </script>
+    <script src="/auth-ui.js"></script>
+    <script src="/admin-permissoes.js"></script>
+  </body>
+</html>

@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import crypto from "node:crypto";
+import { extractWhatsAppMessageText } from "./whatsapp/whatsappWebhookParser.js";
 
 const INTENT_RESPONSES = {
   pedido: "Perfeito. Tu quer delivery, retirada ou esta no local?",
@@ -113,7 +114,7 @@ export class WhatsAppConversationService {
     };
   }
 
-  async addOutgoing(id, body = {}, { runtimeConfig = {} } = {}) {
+  async addOutgoing(id, body = {}, { runtimeConfig = {}, whatsappProvider = null } = {}) {
     const data = await this.#read();
     const index = data.conversas.findIndex((item) => item.id === id || item.telefone === normalizePhone(id));
     if (index === -1) return { ok: false, error: "Conversa nao encontrada" };
@@ -122,18 +123,66 @@ export class WhatsAppConversationService {
     if (!text) return { ok: false, error: "Resposta vazia" };
     const enabled = runtimeConfig.whatsappBusiness?.sendEnabled === true;
     const hasCredentials = Boolean(runtimeConfig.whatsappBusiness?.accessToken && runtimeConfig.whatsappBusiness?.phoneNumberId);
-    const sendStatus = enabled && hasCredentials ? "envio_real_nao_implementado" : "registrada_sem_envio";
-    const message = { id: `msg_${crypto.randomUUID()}`, direction: "out", type: "text", text, createdAt: now, status: sendStatus };
+    const canSend = enabled && hasCredentials && whatsappProvider && data.conversas[index].telefone;
+    const sendResult = canSend
+      ? await whatsappProvider.sendText({ to: data.conversas[index].telefone, text })
+      : null;
+    const sendStatus = sendResult
+      ? sendResult.status
+      : enabled && hasCredentials
+        ? "envio_real_indisponivel"
+        : "registrada_sem_envio";
+    const message = {
+      id: `msg_${crypto.randomUUID()}`,
+      direction: "out",
+      type: "text",
+      text,
+      createdAt: now,
+      status: sendStatus,
+      httpStatus: sendResult?.httpStatus || null,
+      response: sendResult?.response || null
+    };
     const updated = {
       ...data.conversas[index],
-      status: enabled && !hasCredentials ? "erro_configuracao" : "aguardando_cliente",
+      status: sendResult?.sent ? "aguardando_cliente" : enabled && !hasCredentials ? "erro_configuracao" : data.conversas[index].status,
       ultimaInteracao: now,
       updatedAt: now,
       mensagens: [...(data.conversas[index].mensagens || []), message].slice(-60)
     };
     data.conversas[index] = updated;
     await this.#write(data);
-    return { ok: true, enviado: false, reason: sendStatus, conversa: this.#withPriority(updated), message };
+    return { ok: true, enviado: Boolean(sendResult?.sent), reason: sendStatus, sendResult, conversa: this.#withPriority(updated), message };
+  }
+
+  async recordOutgoing(id, body = {}) {
+    const data = await this.#read();
+    const index = data.conversas.findIndex((item) => item.id === id || item.telefone === normalizePhone(id));
+    if (index === -1) return { ok: false, error: "Conversa nao encontrada" };
+    const now = this.now().toISOString();
+    const text = String(body.text || body.message || "").trim();
+    if (!text) return { ok: false, error: "Resposta vazia" };
+    const sendResult = body.sendResult || null;
+    const sendStatus = body.status || sendResult?.status || "registrada";
+    const message = {
+      id: `msg_${crypto.randomUUID()}`,
+      direction: "out",
+      type: "text",
+      text,
+      createdAt: now,
+      status: sendStatus,
+      httpStatus: sendResult?.httpStatus || null,
+      response: sendResult?.response || null
+    };
+    const updated = {
+      ...data.conversas[index],
+      status: sendResult?.sent ? "aguardando_cliente" : data.conversas[index].status,
+      ultimaInteracao: now,
+      updatedAt: now,
+      mensagens: [...(data.conversas[index].mensagens || []), message].slice(-60)
+    };
+    data.conversas[index] = updated;
+    await this.#write(data);
+    return { ok: true, enviado: Boolean(sendResult?.sent), reason: sendStatus, conversa: this.#withPriority(updated), message };
   }
 
   async markHuman(id) {
@@ -194,9 +243,9 @@ export function parseWhatsAppIncoming(payload = {}) {
   const source = metaMessage || payload;
   const rawType = source.type || payload.messageType || "text";
   const tipo = normalizeMessageType(rawType);
-  const text = tipo === "text"
-    ? String(source.text?.body || source.message || source.text || source.body || payload.message || payload.text || "").trim()
-    : "";
+  const text = String(metaMessage
+    ? extractWhatsAppMessageText(metaMessage, payload)
+    : source.message || source.text || source.body || payload.message || payload.text || "").trim();
   const audio = source.audio || payload.audio || {};
   return {
     messageId: source.id || payload.eventId || payload.messageId || "",
@@ -237,7 +286,7 @@ export function suggestedWhatsAppResponse(intent) {
 
 function normalizeMessageType(type = "") {
   const normalized = String(type || "").toLowerCase();
-  if (["text", "audio", "image", "document", "interactive"].includes(normalized)) return normalized;
+  if (["text", "audio", "image", "video", "document", "interactive", "button", "order"].includes(normalized)) return normalized;
   return "unknown";
 }
 

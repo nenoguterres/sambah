@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Central Única de Trabalhos</title>
+    <link rel="icon" href="/admin/assets/favicon.png" type="image/png">
+    <link rel="stylesheet" href="/insano-workhub.css">
+      <link rel="stylesheet" href="/admin/assets/sambah-shell.css">
+  </head>
+  <body>
+    <main class="workhub-shell">
+      <header class="workhub-topbar">
+        <a class="workhub-brand" href="/sambah-central">
+          <img src="/admin/assets/brand/logo-sambah-oficial.png" alt="SamBah">
+          <span><strong>Insano Workhub</strong><small>Ecossistema integrado</small></span>
+        </a>
+        <nav aria-label="Módulos do ecossistema">
+          <a href="/sambah-central">Central</a>
+          <a href="/mesa">Mesa</a>
+          <a href="/admin">SamBah</a>
+          <a href="/perola">Pérola</a>
+          <a href="/sambah-pay">Pay</a>
+        </nav>
+      </header>
+
+      <section class="workhub-titlebar">
+        <div>
+          <p class="eyebrow">Operação do ecossistema</p>
+          <h1>Central Única de Trabalhos</h1>
+          <p>Mesa, SamBah, Pérola e Pay em uma única fila operacional.</p>
+        </div>
+        <div class="title-actions">
+          <button id="refreshTasks" class="button secondary" type="button">Atualizar</button>
+          <button id="toggleTaskForm" class="button primary" type="button" aria-expanded="false" aria-controls="taskComposer">Nova tarefa</button>
+        </div>
+      </section>
+
+      <section class="workhub-metrics" id="workhubMetrics" aria-label="Indicadores das tarefas"></section>
+
+      <section class="task-composer" id="taskComposer" hidden>
+        <div class="section-head">
+          <div><p class="eyebrow">Novo trabalho</p><h2>Registrar tarefa</h2></div>
+          <button id="closeTaskForm" class="icon-button" type="button" aria-label="Fechar formulário" title="Fechar">×</button>
+        </div>
+        <form id="taskForm" class="task-form">
+          <label>Módulo de origem<select name="sourceModule" required><option value="mesa">Mesa</option><option value="sambah">SamBah</option><option value="perola">Pérola</option><option value="pay">Pay</option></select></label>
+          <label>Módulo de destino<select name="targetModule" required><option value="workhub">WorkHub</option><option value="sambah">SamBah</option><option value="mesa">Mesa</option><option value="perola">Pérola</option><option value="pay">Pay</option></select></label>
+          <label class="wide">Título<input name="title" required maxlength="120" placeholder="Título objetivo da tarefa"></label>
+          <label class="wide">Descrição<textarea name="description" maxlength="600" placeholder="Contexto operacional"></textarea></label>
+          <label>Prioridade<select name="priority"><option value="medium">Média</option><option value="low">Baixa</option><option value="high">Alta</option><option value="urgent">Urgente</option></select></label>
+          <div class="form-actions wide"><span id="taskFormMessage" role="status"></span><button class="button primary" type="submit">Criar tarefa</button></div>
+        </form>
+      </section>
+
+      <section class="workhub-toolbar" aria-label="Filtros de tarefas">
+        <label>Origem<select id="sourceFilter"><option value="">Todos os módulos</option><option value="mesa">Mesa</option><option value="sambah">SamBah</option><option value="perola">Pérola</option><option value="pay">Pay</option></select></label>
+        <label>Destino<select id="targetFilter"><option value="">Todos os módulos</option><option value="mesa">Mesa</option><option value="sambah">SamBah</option><option value="perola">Pérola</option><option value="pay">Pay</option><option value="workhub">WorkHub</option></select></label>
+        <label>Status<select id="statusFilter"><option value="">Todos os status</option><option value="pending">Pendente</option><option value="in_progress">Em andamento</option><option value="blocked">Bloqueada</option><option value="completed">Concluída</option></select></label>
+        <label class="search-field">Buscar<input id="taskSearch" type="search" placeholder="Título, descrição ou responsável"></label>
+        <span id="workhubNotice" class="workhub-notice" role="status">Carregando tarefas...</span>
+      </section>
+
+      <section class="workhub-board" id="workhubBoard" aria-label="Quadro de tarefas" data-testid="workhub-board"></section>
+    </main>
+    <script src="/insano-workhub.js"></script>
+      <script src="/admin/assets/sambah-shell.js"></script>
+    <script>
+      renderSambahShell("admin");
+    </script>
+</body>
+</html>

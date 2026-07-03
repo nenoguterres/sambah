@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SamBah CRM</title>
+    <link rel="icon" href="/admin/assets/favicon.png" type="image/png">
+    <link rel="stylesheet" href="/admin/assets/sambah-shell.css">
+    <link rel="stylesheet" href="/assets/sambah-crm.css">
+  </head>
+  <body class="sambah-crm-shell-page">
+    <main class="crm-shell">
+      <header class="crm-top">
+        <a class="crm-brand" href="/sambah-central">
+          <img src="/admin/assets/brand/logo-sambah-oficial.png" alt="samBah!">
+          <span>SamBah CRM</span>
+        </a>
+        <div class="crm-top-actions">
+          <span id="crmStatus" class="status-pill">Carregando</span>
+          <button id="refreshLeads" class="ghost-button" type="button">Atualizar</button>
+        </div>
+      </header>
+
+      <section class="crm-hero">
+        <div>
+          <p class="eyebrow">Operação comercial</p>
+          <h1>SamBah CRM</h1>
+          <p>Leads, clientes, atendimentos, oportunidades, pré-comandas e pedidos do site em um painel único.</p>
+        </div>
+        <div class="hero-actions">
+          <a class="link-button" href="/oportunidades">Oportunidades</a>
+          <a class="link-button" href="/admin">Painel Admin</a>
+        </div>
+      </section>
+
+      <section id="metricGrid" class="metric-grid" aria-label="Resumo do CRM"></section>
+
+      <nav class="crm-tabs" aria-label="Áreas do CRM">
+        <button class="is-active" type="button" data-crm-tab="visao">Visão</button>
+        <button type="button" data-crm-tab="leads">Leads</button>
+        <button type="button" data-crm-tab="clientes">Clientes</button>
+        <button type="button" data-crm-tab="atendimentos">Atendimentos</button>
+        <button type="button" data-crm-tab="oportunidades">Oportunidades</button>
+        <button type="button" data-crm-tab="precomandas">Pré-comandas</button>
+        <button type="button" data-crm-tab="pedidos">Pedidos do Site</button>
+      </nav>
+
+      <section class="crm-layout">
+        <aside class="crm-panel quick-panel">
+          <div class="section-title">
+            <h2>Novo lead</h2>
+            <span>cadastro rápido</span>
+          </div>
+          <form id="leadForm">
+            <label>Nome<input name="nome" autocomplete="name"></label>
+            <label>Telefone<input name="whatsapp" required inputmode="tel" autocomplete="tel"></label>
+            <label>Origem<input name="origem" required placeholder="site, whatsapp, evento"></label>
+            <label>Interesse
+              <select name="interesse">
+                <option value="pedido">Pedido</option>
+                <option value="evento">Evento</option>
+                <option value="orcamento">Orçamento</option>
+                <option value="festa_xeriffe">Festa Xeriffe</option>
+                <option value="parceria">Parceria</option>
+              </select>
+            </label>
+            <label>Operação<input name="operacao" placeholder="Insano, Xeriffe, SamBah"></label>
+            <label>Valor estimado<input name="valor_estimado" type="number" min="0" step="0.01"></label>
+            <label class="wide">Mensagem<textarea name="message" rows="4"></textarea></label>
+            <button class="primary-button" type="submit">Criar lead</button>
+            <p id="formMessage" class="form-message" role="status"></p>
+          </form>
+        </aside>
+
+        <section class="crm-workspace">
+          <div class="crm-tools">
+            <label class="search-field">Buscar
+              <input id="crmSearch" type="search" placeholder="nome, telefone, origem, status">
+            </label>
+            <label class="search-field">Filtro
+              <select id="crmFilter">
+                <option value="todos">Todos</option>
+                <option value="quente">Quentes</option>
+                <option value="morno">Mornos</option>
+                <option value="frio">Frios</option>
+                <option value="aguardando_dados">Aguardando dados</option>
+                <option value="orcamento_solicitado">Orçamento solicitado</option>
+                <option value="orcamento_enviado">Orçamento enviado</option>
+                <option value="aguardando_resposta">Aguardando resposta</option>
+                <option value="fechado">Fechados</option>
+                <option value="perdido">Perdidos</option>
+              </select>
+            </label>
+          </div>
+
+          <section id="crmPanels" class="crm-panels" aria-live="polite"></section>
+        </section>
+      </section>
+    </main>
+
+    <script src="/assets/sambah-crm.js"></script>
+    <script src="/admin/assets/sambah-shell.js"></script>
+    <script>
+      renderSambahShell("crm");
+    </script>
+  </body>
+</html>

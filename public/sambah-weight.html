@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SamBah Weight Control</title>
+    <link rel="icon" href="/admin/assets/favicon.png" type="image/png">
+    <link rel="stylesheet" href="/sambah-ecosystem.css">
+      <link rel="stylesheet" href="/admin/assets/sambah-shell.css">
+  </head>
+  <body>
+    <main class="eco-shell">
+      <header class="eco-topbar">
+        <a class="eco-brand" href="/sambah-central">
+          <img src="/admin/assets/brand/logo-sambah-oficial.png" alt="samBah!">
+          <span>SamBah Weight Control</span>
+        </a>
+        <nav class="eco-nav">
+          <a href="/sambah-central">Central</a>
+          <a href="/sambah-locker">Locker Frio</a>
+          <a href="/sambah-pay">Pay</a>
+          <a href="/sambah-autoserve">AutoServe</a>
+          <a href="/sambah-devices">Devices</a>
+        </nav>
+        <label class="eco-role">Perfil
+          <select id="ecoRole">
+            <option>ADMIN</option>
+            <option>CAIXA</option>
+            <option>OPERADOR</option>
+            <option>ATENDENTE</option>
+            <option>AUDITOR</option>
+          </select>
+        </label>
+      </header>
+
+      <section class="eco-hero">
+        <div>
+          <p class="eyebrow">Peso simulado e antifraude</p>
+          <h1>Weight Control</h1>
+          <p>Camada simulada para comparar peso esperado, peso real, estoque fisico, retirada paga e eventos futuros de seguranca.</p>
+          <div id="weightNotice" class="eco-notice">Carregando Weight Control...</div>
+        </div>
+        <div class="eco-actions">
+          <button id="calibrateWeight" class="eco-secondary" type="button">Calibrar mock</button>
+          <button id="simulateLocker" class="eco-button" type="button">Simular Locker</button>
+          <button id="simulateFraud" class="eco-secondary" type="button">Simular fraude</button>
+        </div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Dashboard de peso</h2>
+          <span class="eco-pill">modo simulado</span>
+        </div>
+        <div class="eco-kpis">
+          <article class="eco-kpi"><span>Leituras</span><strong id="readingCount">0</strong></article>
+          <article class="eco-kpi"><span>Validacoes</span><strong id="validationCount">0</strong></article>
+          <article class="eco-kpi"><span>Alertas</span><strong id="alertCount">0</strong></article>
+          <article class="eco-kpi"><span>Eventos</span><strong id="eventCount">0</strong></article>
+        </div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Simuladores</h2>
+          <a class="eco-secondary" href="/sambah-locker">Abrir Locker Frio</a>
+        </div>
+        <div class="eco-actions">
+          <button id="simulateBeverage" class="eco-secondary" type="button">Bebida 392g</button>
+          <button id="simulateUnder" class="eco-secondary" type="button">Self-service abaixo</button>
+          <button id="simulateInventory" class="eco-secondary" type="button">Estoque por peso</button>
+          <button id="simulatePickup" class="eco-secondary" type="button">Pickup peso ok</button>
+        </div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Leituras, validacoes e alertas</h2>
+        </div>
+        <div id="weightDetails" class="eco-list"></div>
+      </section>
+
+      <section class="eco-section">
+        <div class="eco-head">
+          <h2>Eventos futuros i9ACAO preparados</h2>
+        </div>
+        <div id="securityEvents" class="eco-list"></div>
+      </section>
+    </main>
+    <script src="/sambah-weight.js"></script>
+      <script src="/admin/assets/sambah-shell.js"></script>
+    <script>
+      renderSambahShell("pay");
+    </script>
+</body>
+</html>

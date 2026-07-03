@@ -1,0 +1,123 @@
+﻿<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SamBah Pay</title>
+    <meta name="theme-color" content="#090d12">
+    <link rel="icon" href="/admin/assets/favicon.png" type="image/png">
+    <link rel="stylesheet" href="/admin/assets/sambah-shell.css">
+    <link rel="stylesheet" href="/voice-pay.css">
+  </head>
+  <body class="sambah-pay-shell">
+    <main class="voice-shell">
+      <header class="voice-topbar">
+        <a class="brand" href="/admin" aria-label="Voltar ao admin">
+          <img src="/assets/brand/sambah-pay-logo.png" alt="SamBah Pay">
+          <span>SamBah Pay</span>
+        </a>
+        <div class="top-actions">
+          <span class="status-pill">Usuario <strong id="voiceUserName" data-auth-user>Usuario</strong></span>
+          <span id="voiceRoleBadge" class="status-pill">Perfil ATENDENTE</span>
+          <label class="role-select">Perfil mock
+            <select id="voiceRoleSelect" aria-label="Selecionar perfil mockado">
+              <option value="ADMIN">ADMIN</option>
+              <option value="GERENTE">GERENTE</option>
+              <option value="CAIXA">CAIXA</option>
+              <option value="OPERADOR">OPERADOR</option>
+              <option value="ATENDENTE">ATENDENTE</option>
+              <option value="AUDITOR">AUDITOR</option>
+            </select>
+          </label>
+          <span id="voiceMode" class="status-pill">mock online</span>
+          <button id="refreshVoice" class="primary-action" type="button">Atualizar</button>
+          <button data-auth-logout class="secondary-action" type="button">Sair</button>
+        </div>
+      </header>
+      <div id="permissionNotice" class="permission-notice" role="status" aria-live="polite">Permissoes mockadas ativas. Perfil padrao: ATENDENTE.</div>
+      <section class="hero-strip">
+        <div>
+          <p class="eyebrow">Pagamentos, voz e operacao interna</p>
+          <h1>SamBah Pay</h1>
+          <p>Central interna para simular checkout por voz, wallet, AutoServe, auditoria e permissao por perfil antes de qualquer fornecedor real.</p>
+        </div>
+        <div class="pay-hero-brand" aria-label="Marca SamBah Pay">
+          <img src="/assets/brand/sambah-pay-logo.png" alt="SamBah Pay">
+        </div>
+      </section>
+      <section id="central" class="pay-command-center" aria-label="Central SamBah Pay">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Central SamBah Pay</p>
+            <h2>Operacao interna</h2>
+          </div>
+          <span id="payCentralStatus" class="status-pill">Sincronizando</span>
+        </div>
+        <div class="pay-action-grid">
+          <article class="pay-action-card pay-session-card">
+            <span>Sessao</span>
+            <strong id="centralUser">Usuario</strong>
+            <small id="centralRole">Perfil ATENDENTE</small>
+          </article>
+          <a class="pay-action-card" href="#checkout">
+            <span>Checkout</span>
+            <strong id="centralCheckouts">0</strong>
+            <small>Pagamentos por voz</small>
+          </a>
+          <a class="pay-action-card" href="#wallet">
+            <span>Wallet</span>
+            <strong id="centralWallet">0</strong>
+            <small>Recargas simuladas</small>
+          </a>
+          <a class="pay-action-card" href="#autoserve">
+            <span>AutoServe</span>
+            <strong id="centralAutoserve">0</strong>
+            <small>Compras liberadas</small>
+          </a>
+          <a class="pay-action-card" href="#auditoria">
+            <span>Auditoria</span>
+            <strong id="centralAudit">Perfil</strong>
+            <small>Eventos e permissoes</small>
+          </a>
+          <a class="pay-action-card" href="/admin/permissoes">
+            <span>Permissoes</span>
+            <strong>Matriz</strong>
+            <small>Perfis internos</small>
+          </a>
+        </div>
+      </section>
+      <nav class="voice-tabs" aria-label="Areas SamBah Pay">
+        <a href="#central">Central</a><a href="#dashboard">Dashboard Pay</a><a href="#checkout">Checkout</a><a href="#wallet">Wallet</a><a href="#autoserve">AutoServe</a><a href="#auditoria">Auditoria</a><a href="#laboratorio">Laboratorio</a>
+      </nav>
+      <div class="mode-switch" aria-label="Modo do painel SamBah Pay">
+        <button class="mode-button is-active" type="button" data-pay-mode="operacao">Operacao</button>
+        <button class="mode-button" type="button" data-pay-mode="laboratorio">Laboratorio</button>
+      </div>
+      <section id="dashboard" class="panel-section" data-panel-mode="operacao">
+        <div class="section-head"><div><p class="eyebrow">Dashboard SamBah Pay</p><h2>Indicadores operacionais</h2></div><span id="dashboardUpdated" class="muted">Aguardando dados</span></div>
+        <div id="voiceMetrics" class="metrics-grid"></div>
+      </section>
+      <section id="laboratorio" class="panel-section lab-panel" data-panel-mode="laboratorio">
+        <div class="section-head"><div><p class="eyebrow">Laboratorio SamBah Pay</p><h2>Simuladores tecnicos</h2></div><span class="muted">Modo interno</span></div>
+      </section>
+      <section id="simulador" class="panel-section two-col" data-panel-mode="laboratorio">
+        <div><div class="section-head compact"><div><p class="eyebrow">Simulador WhatsApp Voz</p><h2>Enviar audio simulado</h2></div></div>
+          <form id="voiceWebhookForm" class="voice-form"><label>CustomerId ou telefone<input name="from" value="51999990000"></label><label>Texto simulando audio<textarea name="transcript" rows="4">quero fazer um pedido e pagar pelo SamBah Pay</textarea></label><button class="big-action" type="submit">Enviar audio simulado</button></form>
+        </div><div class="result-box"><h3>Retorno da sessao</h3><pre id="webhookResult">Sem simulacao ainda.</pre></div>
+      </section>
+      <section id="transcricoes" class="panel-section" data-panel-mode="laboratorio"><div class="section-head"><div><p class="eyebrow">Transcricoes</p><h2>Audio convertido em texto</h2></div></div><div id="transcriptionsList" class="table-list"></div></section>
+      <section id="intents" class="panel-section" data-panel-mode="laboratorio"><div class="section-head"><div><p class="eyebrow">Intents</p><h2>Intencoes identificadas</h2></div></div><div id="intentsList" class="table-list"></div></section>
+      <section id="checkout" class="panel-section two-col" data-panel-mode="operacao"><form id="voiceCheckoutForm" class="voice-form"><div class="section-head compact"><div><p class="eyebrow">Checkout por Voz</p><h2>Pagamento mockado</h2></div></div><label>SessionId<input name="session_id" value="voice-checkout-panel"></label><label>Valor<input name="amount" type="number" min="0" step="0.01" value="30"></label><label class="check-row"><input name="confirmed" type="checkbox" checked> Confirmado pelo cliente</label><button class="big-action" type="submit" data-permission="voice_checkout">Criar checkout por voz</button></form><div class="result-box"><h3>Resultado</h3><pre id="checkoutResult">Sem checkout.</pre></div></section>
+      <section id="wallet" class="panel-section two-col" data-panel-mode="operacao"><form id="voiceWalletForm" class="voice-form"><div class="section-head compact"><div><p class="eyebrow">Wallet por Voz</p><h2>Credito mockado</h2></div></div><label>CustomerId<input name="customer_id" value="cliente-voz"></label><label>Valor<input name="amount" type="number" min="0" step="0.01" value="45"></label><label class="check-row"><input name="confirmed" type="checkbox" checked> Confirmado pelo cliente</label><button class="big-action" type="submit" data-permission="voice_wallet_topup">Comprar credito wallet</button></form><div class="result-box"><h3>Resultado</h3><pre id="walletResult">Sem compra.</pre></div></section>
+      <section id="autoserve" class="panel-section two-col" data-panel-mode="operacao"><form id="voiceAutoserveForm" class="voice-form"><div class="section-head compact"><div><p class="eyebrow">AutoServe por Voz</p><h2>Compra mockada</h2></div></div><label>DeviceId<input name="device_id" placeholder="Use Criar device demo"></label><label>Produto<input name="product_id" value="agua"></label><label>Quantidade<input name="quantity" type="number" min="1" value="1"></label><label class="check-row"><input name="confirmed" type="checkbox" checked> Confirmado pelo cliente</label><button id="prepareAutoserveDemo" class="secondary-action" type="button">Criar device demo</button><button class="big-action" type="submit" data-permission="voice_autoserve_release">Comprar AutoServe por voz</button></form><div class="result-box"><h3>Resultado</h3><pre id="autoserveResult">Sem compra.</pre></div></section>
+      <section id="handoff" class="panel-section two-col" data-panel-mode="laboratorio"><form id="voiceHandoffForm" class="voice-form"><div class="section-head compact"><div><p class="eyebrow">Handoff Humano</p><h2>Transferencia mockada</h2></div></div><label>SessionId<input name="session_id" value="voice-human-panel"></label><label>Motivo<textarea name="reason" rows="3">cliente pediu atendimento humano</textarea></label><button class="big-action" type="submit" data-permission="voice_handoff">Transferir para humano</button></form><div><div class="result-box"><h3>Resultado</h3><pre id="handoffResult">Sem handoff.</pre></div><div id="handoffsList" class="table-list compact-list"></div></div></section>
+      <section id="auditoria" class="panel-section" data-permission-panel="voice_audit_full" data-panel-mode="operacao"><div class="section-head"><div><p class="eyebrow">Auditoria Voice</p><h2>Eventos do Voice Pay</h2></div><span id="auditPermissionState" class="muted">Permissao mockada</span></div><div id="voiceAuditList" class="table-list"></div></section>
+    </main>
+    <script src="/admin/assets/sambah-shell.js"></script>
+    <script>
+      renderSambahShell("pay");
+    </script>
+    <script src="/auth-ui.js"></script>
+    <script src="/voice-pay.js"></script>
+  </body>
+</html>
