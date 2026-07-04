@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { MesaIntegrationService } from "../src/mesaIntegrationService.js";
 import { WhatsAppConversationService } from "../src/whatsappConversationService.js";
 
 test("Central de Conversas envia resposta manual pelo provider WhatsApp configurado", async () => {
@@ -148,6 +149,67 @@ test("WhatsApp pedido nao cria precomanda e aguarda Mesa Comanda", async () => {
     assert.equal(linked.conversa.atendimentoEstado, "AGUARDANDO_FORMA_PAGAMENTO");
     assert.equal(linked.conversa.mesaPedido.id, "mesa-123");
     assert.equal(linked.conversa.statusCobranca, "A_COBRAR");
+
+    const duplicated = await service.linkMesaOrder("wa_5551999999999", {
+      id: "mesa-123",
+      customer: { name: "Kazuko", phone: "5551999999999" },
+      type: "retirada"
+    });
+    assert.equal(duplicated.ok, true);
+    assert.equal(duplicated.duplicated, true);
+    assert.equal(duplicated.conversa.mesaPedido.id, "mesa-123");
+
+    const pix = await service.recordIncoming({ from: "5551999999999", text: "pix", messageId: "in-pix" }, { crmService });
+    assert.equal(pix.conversa.atendimentoEstado, "COBRANCA_ENVIADA");
+    assert.equal(pix.conversa.statusCobranca, "COBRANCA_ENVIADA");
+
+    const charged = await service.recordSambahPayCharge("wa_5551999999999", {
+      id: "pay-123",
+      status: "pending",
+      amount: 0
+    });
+    assert.equal(charged.ok, true);
+    assert.equal(charged.conversa.sambahPay.paymentId, "pay-123");
+    assert.equal(charged.conversa.statusCobranca, "COBRANCA_ENVIADA");
+
+    const paid = await service.markPaymentConfirmed("wa_5551999999999", {
+      id: "pay-123",
+      status: "paid"
+    });
+    assert.equal(paid.ok, true);
+    assert.equal(paid.conversa.atendimentoEstado, "PAGAMENTO_CONFIRMADO");
+    assert.equal(paid.conversa.statusCobranca, "PAGAMENTO_EFETUADO");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Mesa recebe status financeiro A_COBRAR e PAGAMENTO_EFETUADO", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-mesa-financial-"));
+  const queueFile = join(dir, "mesa-queue.json");
+  const service = new MesaIntegrationService({ queueFile });
+  try {
+    await service.enqueueOrder({
+      externalId: "mesa-123",
+      customer: { name: "Kazuko", phone: "5551999999999" },
+      order: { items: [], total: null }
+    });
+
+    const pending = await service.updateFinancialStatus("mesa-123", {
+      statusFinanceiro: "A_COBRAR",
+      correlationId: "wa_5551999999999:mesa-123"
+    });
+    assert.equal(pending.ok, true);
+    assert.equal(pending.statusFinanceiro, "A_COBRAR");
+    assert.equal(pending.item.statusFinanceiro, "A_COBRAR");
+
+    const paid = await service.updateFinancialStatus("mesa-123", {
+      statusFinanceiro: "PAGAMENTO_EFETUADO",
+      correlationId: "wa_5551999999999:mesa-123"
+    });
+    assert.equal(paid.ok, true);
+    assert.equal(paid.statusFinanceiro, "PAGAMENTO_EFETUADO");
+    assert.equal(paid.item.statusFinanceiro, "PAGAMENTO_EFETUADO");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

@@ -72,6 +72,20 @@ test("personalidade SamBah reinicia menu quando cliente manda saudacao apos flux
   assert.equal(buildSambahAutoReply("Ola", { conversation }), buildSambahInitialMessage());
 });
 
+test("personalidade SamBah nao exibe menu principal durante pedido Mesa ativo", () => {
+  const conversation = {
+    atendimentoEstado: "AGUARDANDO_PEDIDO_MESA",
+    mensagens: []
+  };
+  const reply = buildSambahAutoReply("oi", {
+    conversation,
+    mesaComandaUrl: "https://mesa.example/pedir"
+  });
+  assert.equal(reply, "Para montar teu pedido, usa a comanda do Mesa aqui: https://mesa.example/pedir");
+  assert.doesNotMatch(reply, /1 - Fazer pedido/);
+  assert.doesNotMatch(reply, /6 - Falar com atendente/);
+});
+
 test("personalidade SamBah mantem contexto do pedido apos cliente informar nome", () => {
   const conversation = {
     mensagens: [
@@ -110,9 +124,7 @@ test("personalidade SamBah nao interpreta item livre durante pedido Mesa", () =>
     atendimentoEstado: "AGUARDANDO_PEDIDO_MESA"
   };
   const reply = buildSambahAutoReply("farofa", { conversation, mesaComandaUrl: "https://mesa.example/pedir" });
-  assert.match(reply, /Para montar teu pedido/);
-  assert.match(reply, /comanda do Mesa/);
-  assert.match(reply, /https:\/\/mesa\.example\/pedir/);
+  assert.equal(reply, "Para montar teu pedido, usa a comanda do Mesa aqui: https://mesa.example/pedir");
   assert.notEqual(reply, buildSambahOrderMessage());
 });
 

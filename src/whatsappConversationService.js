@@ -26,9 +26,11 @@ const ORDER_STATES = new Set([
   "AGUARDANDO_PEDIDO_MESA",
   "PEDIDO_MESA_RECEBIDO",
   "AGUARDANDO_FORMA_PAGAMENTO",
-  "COBRANCA_SAMBAH_PAY_ENVIADA",
+  "COBRANCA_ENVIADA",
   "PAGAMENTO_CONFIRMADO",
-  "A_COBRAR"
+  "A_COBRAR",
+  "CANCELADO",
+  "HUMANO"
 ]);
 
 export class WhatsAppConversationService {
@@ -255,6 +257,7 @@ export class WhatsAppConversationService {
     const index = data.conversas.findIndex((item) => item.id === id || item.telefone === normalizePhone(id));
     if (index === -1) return { ok: false, error: "Conversa nao encontrada" };
     const now = this.now().toISOString();
+    const existingOrder = data.conversas[index].mesaPedido || null;
     const mesaPedido = {
       id: order.id || order.orderId || order.mesaOrderId || order.externalId || `mesa_${crypto.randomUUID()}`,
       nome: order.nome || order.customerName || order.customer?.name || data.conversas[index].nome || "Cliente WhatsApp",
@@ -265,6 +268,9 @@ export class WhatsAppConversationService {
       correlationId: order.correlationId || order.sambahAtendimentoId || data.conversas[index].id,
       linkedAt: now
     };
+    if (existingOrder?.id === mesaPedido.id) {
+      return { ok: true, duplicated: true, conversa: this.#withPriority(data.conversas[index]), mesaPedido: existingOrder };
+    }
     const updated = {
       ...data.conversas[index],
       nome: mesaPedido.nome || data.conversas[index].nome,
@@ -280,6 +286,54 @@ export class WhatsAppConversationService {
     data.conversas[index] = updated;
     await this.#write(data);
     return { ok: true, conversa: this.#withPriority(updated), mesaPedido };
+  }
+
+  async recordSambahPayCharge(id, payment = {}) {
+    const data = await this.#read();
+    const index = data.conversas.findIndex((item) => item.id === id || item.telefone === normalizePhone(id));
+    if (index === -1) return { ok: false, error: "Conversa nao encontrada" };
+    const now = this.now().toISOString();
+    const updated = {
+      ...data.conversas[index],
+      atendimentoEstado: "COBRANCA_ENVIADA",
+      statusCobranca: "COBRANCA_ENVIADA",
+      sambahPay: {
+        paymentId: payment.id || payment.payment_id || "",
+        status: payment.status || "pending",
+        amount: payment.amount ?? null,
+        createdAt: payment.createdAt || now
+      },
+      status: "aguardando_cliente",
+      ultimaInteracao: now,
+      updatedAt: now
+    };
+    data.conversas[index] = updated;
+    await this.#write(data);
+    return { ok: true, conversa: this.#withPriority(updated) };
+  }
+
+  async markPaymentConfirmed(id, payment = {}) {
+    const data = await this.#read();
+    const index = data.conversas.findIndex((item) => item.id === id || item.telefone === normalizePhone(id));
+    if (index === -1) return { ok: false, error: "Conversa nao encontrada" };
+    const now = this.now().toISOString();
+    const updated = {
+      ...data.conversas[index],
+      atendimentoEstado: "PAGAMENTO_CONFIRMADO",
+      statusCobranca: "PAGAMENTO_EFETUADO",
+      sambahPay: {
+        ...(data.conversas[index].sambahPay || {}),
+        paymentId: payment.id || payment.payment_id || data.conversas[index].sambahPay?.paymentId || "",
+        status: "paid",
+        confirmedAt: now
+      },
+      status: "aguardando_equipe",
+      ultimaInteracao: now,
+      updatedAt: now
+    };
+    data.conversas[index] = updated;
+    await this.#write(data);
+    return { ok: true, conversa: this.#withPriority(updated) };
   }
 
   async #updateStatus(id, status) {
@@ -409,13 +463,13 @@ async function updateCrmFromConversation(crmService, conversation, incoming, int
 function nextOrderState(conversation = {}, incoming = {}, intent = "") {
   const current = conversation.atendimentoEstado || "";
   const text = normalizeText(incoming.text || incoming.transcricao || "");
-  if (isCancelIntent(text)) return "FINALIZADO";
+  if (isCancelIntent(text)) return "CANCELADO";
   if (current === "AGUARDANDO_NOME" && text) return "ENVIADO_PARA_MESA_COMANDA";
-  if (HUMAN_INTENTS.has(intent)) return current;
+  if (HUMAN_INTENTS.has(intent)) return current || "HUMANO";
   if (["ENVIADO_PARA_MESA_COMANDA", "AGUARDANDO_PEDIDO_MESA"].includes(current)) return "AGUARDANDO_PEDIDO_MESA";
   if (current === "PEDIDO_MESA_RECEBIDO") return "AGUARDANDO_FORMA_PAGAMENTO";
   if (current === "AGUARDANDO_FORMA_PAGAMENTO") {
-    if (isPixPaymentText(text)) return "COBRANCA_SAMBAH_PAY_ENVIADA";
+    if (isPixPaymentText(text)) return "COBRANCA_ENVIADA";
     if (isManualPaymentText(text)) return "A_COBRAR";
     return current;
   }
@@ -428,7 +482,7 @@ function nextPaymentStatus(conversation = {}, incoming = {}) {
   const state = conversation.atendimentoEstado || "";
   const text = normalizeText(incoming.text || incoming.transcricao || "");
   if (state !== "AGUARDANDO_FORMA_PAGAMENTO") return current;
-  if (isPixPaymentText(text)) return "COBRANCA_SAMBAH_PAY_ENVIADA";
+  if (isPixPaymentText(text)) return "COBRANCA_ENVIADA";
   if (isManualPaymentText(text)) return "A_COBRAR";
   return current;
 }
@@ -453,85 +507,6 @@ function normalizeFinancialStatus(value = "") {
   const normalized = normalizeText(value);
   if (normalized.includes("pagamento efetuado") || normalized.includes("pago") || normalized.includes("paid")) return "PAGAMENTO_EFETUADO";
   return "A_COBRAR";
-}
-
-function extractCompletedOrderFromConversation(conversation = {}, incoming = {}) {
-  const messages = Array.isArray(conversation.mensagens) ? conversation.mensagens : [];
-  if (!messages.length) return null;
-  const currentIndex = findCurrentMessageIndex(messages, incoming);
-  const previousOut = previousOutboundText(messages, currentIndex);
-  if (!normalizeText(previousOut).includes("ja anotei a ideia do pedido")) return null;
-  const promptIndex = findLastOrderPromptIndex(messages, currentIndex);
-  if (promptIndex < 0) return null;
-  const answers = messages
-    .slice(promptIndex + 1, currentIndex + 1)
-    .filter((message) => message?.direction === "in")
-    .map((message) => String(message.text || message.transcricao || "").trim())
-    .filter(Boolean);
-  if (answers.length < 3) return null;
-  const serviceText = answers[2] || "";
-  const serviceType = normalizeOrderServiceType(serviceText);
-  if (!serviceType) return null;
-  const itemName = answers[1] || "";
-  const payment = extractPaymentMethod(answers.slice(2).join(" "));
-  return {
-    nome: answers[0] || conversation.nome || "Cliente WhatsApp",
-    whatsapp: conversation.telefone || incoming.telefone,
-    itens: itemName ? [{ nome: itemName, quantidade: 1 }] : [],
-    tipo: serviceType,
-    type: serviceType,
-    pagamento: payment,
-    endereco: serviceType === "entrega" ? extractDeliveryAddress(serviceText) : "",
-    observacoes: `Pedido iniciado pelo WhatsApp. Mensagens: ${answers.join(" | ")}`,
-    mensagem_whatsapp_sugerida: "Pedido recebido pelo SamBah. Conferir itens, pagamento e confirmar com o cliente."
-  };
-}
-
-function findCurrentMessageIndex(messages = [], incoming = {}) {
-  const id = incoming.messageId || "";
-  if (id) {
-    const index = messages.findIndex((message) => message?.id === id);
-    if (index >= 0) return index;
-  }
-  return messages.length - 1;
-}
-
-function previousOutboundText(messages = [], currentIndex = messages.length - 1) {
-  for (let index = currentIndex - 1; index >= 0; index -= 1) {
-    const message = messages[index] || {};
-    if (message.direction === "out" && message.text) return message.text;
-  }
-  return "";
-}
-
-function findLastOrderPromptIndex(messages = [], currentIndex = messages.length - 1) {
-  for (let index = currentIndex - 1; index >= 0; index -= 1) {
-    const message = messages[index] || {};
-    if (message.direction === "out" && normalizeText(message.text || "").includes("vamos montar teu pedido")) return index;
-  }
-  return -1;
-}
-
-function normalizeOrderServiceType(value = "") {
-  const normalized = normalizeText(value);
-  if (/\b(delivery|entrega|entregar)\b/.test(normalized)) return "entrega";
-  if (/\b(retirada|retirar|busco|buscar)\b/.test(normalized)) return "retirada";
-  if (/\b(local|mesa|consumo no local|consumir no local)\b/.test(normalized)) return "local";
-  return "";
-}
-
-function extractPaymentMethod(value = "") {
-  const normalized = normalizeText(value);
-  if (/\bpix\b/.test(normalized)) return "pix";
-  if (/\bcartao|cartao|credito|debito\b/.test(normalized)) return "cartao";
-  if (/\bdinheiro\b/.test(normalized)) return "dinheiro";
-  return "";
-}
-
-function extractDeliveryAddress(value = "") {
-  const text = String(value || "").trim();
-  if (!text) return "";
-  return text.replace(/\b(delivery|entrega|entregar)\b/gi, "").trim();
 }
 
 function describeMessageType(type) {

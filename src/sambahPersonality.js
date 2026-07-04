@@ -44,9 +44,7 @@ Para montar teu pedido, usa a comanda do Mesa aqui: {MESA_COMANDA_URL}
 
 Por lá tu escolhe item, adicional, retirada, delivery ou consumo no local.`;
 
-const ORDER_ITEMS_RECEIVED_MESSAGE = `Para montar teu pedido, usa a comanda do Mesa aqui: {MESA_COMANDA_URL}
-
-O cardápio, adicionais, observações, retirada, delivery ou local ficam por lá. Assim a equipe recebe a comanda certinha.`;
+const ORDER_ITEMS_RECEIVED_MESSAGE = "Para montar teu pedido, usa a comanda do Mesa aqui: {MESA_COMANDA_URL}";
 
 const ORDER_DELIVERY_RECEIVED_MESSAGE = `Boa, teu pedido já chegou pela Comanda Mesa.
 
@@ -178,6 +176,10 @@ export function buildSambahAutoReply(text = "", context = {}) {
   if (detectSambahHumanSupportIntent(text)) {
     return buildSambahHumanSupportMessage();
   }
+  if (hasBlockingOrderState(context.conversation || context.conversa || null)) {
+    const contextualReply = buildContextualReply(normalized, nextContext);
+    if (contextualReply) return contextualReply;
+  }
   if (isGreetingIntent(normalized)) return buildSambahInitialMessage();
   const contextualReply = buildContextualReply(normalized, nextContext);
   if (contextualReply) return contextualReply;
@@ -282,6 +284,11 @@ function lastOutboundText(conversation = {}) {
     if (message.direction === "out" && message.text) return message.text;
   }
   return "";
+}
+
+function hasBlockingOrderState(conversation = {}) {
+  const state = conversation?.atendimentoEstado || conversation?.estadoAtendimento || "";
+  return ["AGUARDANDO_NOME", "ENVIADO_PARA_MESA_COMANDA", "AGUARDANDO_PEDIDO_MESA", "PEDIDO_MESA_RECEBIDO", "AGUARDANDO_FORMA_PAGAMENTO", "COBRANCA_ENVIADA"].includes(state);
 }
 
 function isOrderAlreadyForwarded(conversation = {}) {

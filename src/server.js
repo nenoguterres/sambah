@@ -669,6 +669,19 @@ export function createApp({
         return sendJson(res, result.ok ? 200 : 404, result);
       }
 
+      const conversaPagamentoConfirmadoMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/pagamento-confirmado$/);
+      if (req.method === "POST" && conversaPagamentoConfirmadoMatch) {
+        const body = await readJson(req, { requireBody: false });
+        const result = await whatsappConversationService.markPaymentConfirmed(decodeURIComponent(conversaPagamentoConfirmadoMatch[1]), body);
+        if (result.ok && result.conversa?.mesaPedido?.id) {
+          await mesaService.updateFinancialStatus?.(result.conversa.mesaPedido.id, {
+            statusFinanceiro: "PAGAMENTO_EFETUADO",
+            correlationId: result.conversa.mesaPedido.correlationId
+          });
+        }
+        return sendJson(res, result.ok ? 200 : 404, result);
+      }
+
       if (req.method === "GET" && url.pathname === "/api/orders/tracking/refresh") {
         return sendJson(res, 200, await trackingService.refreshStatuses({
           mesaService,
@@ -1177,7 +1190,7 @@ export function createApp({
       }
 
       if (req.method === "POST" && ["/webhook/whatsapp", "/webhook/site"].includes(url.pathname)) {
-        return handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappMessageService, whatsappSendFetch);
+        return handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappMessageService, whatsappSendFetch, sambahPayModule);
       }
 
       if (req.method === "POST" && url.pathname === "/webhooks/meta") {
@@ -1265,7 +1278,7 @@ function summarizeMetaWebhookPayload(payload = {}) {
   };
 }
 
-async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappMessageService, whatsappSendFetch = globalThis.fetch) {
+async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappMessageService, whatsappSendFetch = globalThis.fetch, sambahPayModule = null) {
   let body = {};
   try {
     body = await readJson(req, { requireBody: true });
@@ -1336,6 +1349,14 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
         runtimeConfig: getRuntimeConfig(),
         crmService
       });
+      const paymentSync = await syncWhatsAppOrderPaymentState({
+        conversationResult,
+        whatsappConversationService,
+        mesaService,
+        sambahPayModule,
+        auditService
+      });
+      if (paymentSync?.conversa) conversationResult.conversa = paymentSync.conversa;
       const directAutoReply = await sendWhatsAppCloudAutoReply(body, {
         runtimeConfig: getRuntimeConfig(),
         fetchImpl: whatsappSendFetch,
@@ -1663,6 +1684,74 @@ async function recordWhatsAppMetaStatuses(payload = {}, { whatsappMessageService
     context: { statuses: results.length, updated, results }
   });
   return { ok: true, statuses: statuses.length, updated, results };
+}
+
+async function syncWhatsAppOrderPaymentState({ conversationResult, whatsappConversationService, mesaService, sambahPayModule, auditService } = {}) {
+  const conversa = conversationResult?.conversa || null;
+  const mesaPedido = conversa?.mesaPedido || null;
+  if (!conversa?.id || !mesaPedido?.id) return null;
+
+  if (conversa.statusCobranca === "A_COBRAR" || conversa.atendimentoEstado === "A_COBRAR") {
+    await mesaService.updateFinancialStatus?.(mesaPedido.id, {
+      statusFinanceiro: "A_COBRAR",
+      correlationId: mesaPedido.correlationId
+    });
+    await safeAuditRecord(auditService, {
+      type: "whatsapp_mesa_payment_pending",
+      status: "info",
+      source: "whatsapp_sambah",
+      message: "Pagamento marcado como A_COBRAR para pedido Mesa",
+      context: {
+        conversationId: conversa.id,
+        mesaOrderId: mesaPedido.id
+      },
+      dedupeKey: `wa-mesa-a-cobrar:${conversa.id}:${mesaPedido.id}`
+    });
+    return null;
+  }
+
+  if (conversa.atendimentoEstado !== "COBRANCA_ENVIADA" || conversa.sambahPay?.paymentId) {
+    return null;
+  }
+
+  let payment = null;
+  try {
+    const paymentResult = await sambahPayModule?.services?.coreService?.createPayment?.({
+      amount: 0,
+      method: "pix",
+      status: "pending",
+      channel: "whatsapp_sambah",
+      source: "whatsapp_sambah",
+      customer_id: conversa.telefone || conversa.id,
+      metadata: {
+        conversationId: conversa.id,
+        mesaOrderId: mesaPedido.id,
+        origin: "WHATSAPP_SAMBAH"
+      }
+    });
+    payment = paymentResult?.payment || null;
+  } catch (error) {
+    await safeAuditRecord(auditService, {
+      type: "whatsapp_sambah_pay_charge_failed",
+      status: "warning",
+      source: "whatsapp_sambah",
+      message: "Falha ao criar cobranca pendente no SamBah Pay",
+      context: {
+        conversationId: conversa.id,
+        mesaOrderId: mesaPedido.id,
+        error: error.message
+      },
+      dedupeKey: `wa-pay-fail:${conversa.id}:${mesaPedido.id}`
+    });
+  }
+
+  await mesaService.updateFinancialStatus?.(mesaPedido.id, {
+    statusFinanceiro: "A_COBRAR",
+    correlationId: mesaPedido.correlationId
+  });
+
+  if (!payment) return null;
+  return whatsappConversationService.recordSambahPayCharge(conversa.id, payment);
 }
 
 async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRuntimeConfig(), fetchImpl = globalThis.fetch, auditService = null, conversation = null, mesaComandaUrl = "" } = {}) {
