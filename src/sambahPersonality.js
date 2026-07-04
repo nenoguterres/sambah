@@ -32,30 +32,33 @@ const CONTINUE_WITH_SAMBAH_MESSAGE = "Fechado, seguimos por aqui contigo. Me diz
 const WAITING_FOR_ATTENDANT_MESSAGE = "Combinado. Tua conversa ficou na fila da equipe. Assim que um atendente estiver disponível, ele assume por aqui.";
 const FALLBACK_MESSAGE = "Certo. Me conta um pouco mais do que tu precisa, ou responde com um número de 1 a 6 para eu te levar direto ao ponto.";
 
-const ORDER_MESSAGE = `Bah, perfeito. Vamos montar teu pedido.
+const DEFAULT_MESA_COMANDA_URL = "https://insanofoodtruck.com.br/pedir?origem=whatsapp_sambah";
 
-Me manda, por favor:
+const ORDER_MESSAGE = `Bah, perfeito. Vou te levar para a Comanda Mesa.
 
-1. Teu nome
-2. O que tu quer pedir
-3. Retirada, delivery ou consumo no local
-4. Se for delivery, teu endereço completo
-
-Com isso eu já deixo tudo encaminhado contigo.`;
+Primeiro me manda teu nome, por favor.`;
 
 const ORDER_NAME_RECEIVED_MESSAGE = `Perfeito, já peguei teu nome.
 
-Agora me manda o que tu quer pedir. Pode escrever do teu jeito mesmo.`;
+Para montar teu pedido, usa a comanda do Mesa aqui: {MESA_COMANDA_URL}
 
-const ORDER_ITEMS_RECEIVED_MESSAGE = `Boa, já anotei a ideia do pedido.
+Por lá tu escolhe item, adicional, retirada, delivery ou consumo no local.`;
 
-Agora me diz se vai ser retirada, delivery ou consumo no local. Se for delivery, já manda o endereço completo.`;
+const ORDER_ITEMS_RECEIVED_MESSAGE = `Para montar teu pedido, usa a comanda do Mesa aqui: {MESA_COMANDA_URL}
 
-const ORDER_DELIVERY_RECEIVED_MESSAGE = `Fechado. Pedido encaminhado para a equipe conferir.
+O cardápio, adicionais, observações, retirada, delivery ou local ficam por lá. Assim a equipe recebe a comanda certinha.`;
 
-Pra deixar redondo, me diz a forma de pagamento: Pix, cartão ou dinheiro.
+const ORDER_DELIVERY_RECEIVED_MESSAGE = `Boa, teu pedido já chegou pela Comanda Mesa.
 
-Se quiser acrescentar algo ao pedido, pode mandar na sequência.`;
+Agora me diz a forma de pagamento:
+
+1 - Pix pelo SamBah Pay
+2 - Cartão
+3 - Dinheiro
+4 - A cobrar`;
+
+const SAMBAH_PAY_PIX_MESSAGE = "Fechado. Vou deixar a cobrança Pix encaminhada pelo SamBah Pay.";
+const PAYMENT_TO_COLLECT_MESSAGE = "Combinado. Vou deixar marcado como A COBRAR na comanda do Mesa.";
 
 const MENU_MESSAGE = `Claro! Vou te ajudar com o cardápio.
 
@@ -125,11 +128,11 @@ export function buildSambahOrderMessage() {
 }
 
 export function buildSambahOrderNameReceivedMessage() {
-  return ORDER_NAME_RECEIVED_MESSAGE;
+  return withMesaComandaUrl(ORDER_NAME_RECEIVED_MESSAGE);
 }
 
 export function buildSambahOrderItemsReceivedMessage() {
-  return ORDER_ITEMS_RECEIVED_MESSAGE;
+  return withMesaComandaUrl(ORDER_ITEMS_RECEIVED_MESSAGE);
 }
 
 export function buildSambahOrderDeliveryReceivedMessage() {
@@ -171,11 +174,12 @@ export function detectSambahHumanSupportIntent(text = "") {
 
 export function buildSambahAutoReply(text = "", context = {}) {
   const normalized = normalizeText(text);
+  const nextContext = { ...context, textNormalized: normalized };
   if (detectSambahHumanSupportIntent(text)) {
     return buildSambahHumanSupportMessage();
   }
   if (isGreetingIntent(normalized)) return buildSambahInitialMessage();
-  const contextualReply = buildContextualReply(normalized, context);
+  const contextualReply = buildContextualReply(normalized, nextContext);
   if (contextualReply) return contextualReply;
   if (isOrderIntent(normalized) || normalized === "1") return buildSambahOrderMessage();
   if (isMenuIntent(normalized) || normalized === "2") return buildSambahMenuMessage();
@@ -190,7 +194,7 @@ function buildContextualReply(normalized = "", context = {}) {
   const conversation = context.conversation || context.conversa || null;
   const flow = inferActiveFlow(conversation);
   if (!flow) return "";
-  if (flow === "order") return buildOrderContextualReply(conversation);
+  if (flow === "order") return buildOrderContextualReply(conversation, context);
   if (flow === "menu") {
     return `Certo. Vou seguir pelo cardápio contigo.
 
@@ -214,26 +218,37 @@ Me manda o assunto, comprovante ou número do pedido que eu deixo encaminhado.`;
   return "";
 }
 
-function buildOrderContextualReply(conversation = {}) {
+function buildOrderContextualReply(conversation = {}, context = {}) {
+  const state = conversation?.atendimentoEstado || conversation?.estadoAtendimento || "";
+  if (state === "AGUARDANDO_FORMA_PAGAMENTO" || state === "PEDIDO_MESA_RECEBIDO") {
+    if (isPixPaymentIntent(context.textNormalized || "")) return SAMBAH_PAY_PIX_MESSAGE;
+    if (isManualPaymentIntent(context.textNormalized || "")) return PAYMENT_TO_COLLECT_MESSAGE;
+    return buildSambahOrderDeliveryReceivedMessage();
+  }
+  if (["ENVIADO_PARA_MESA_COMANDA", "AGUARDANDO_PEDIDO_MESA"].includes(state)) {
+    return withMesaComandaUrl(ORDER_ITEMS_RECEIVED_MESSAGE, context);
+  }
   const answers = inboundTextsSinceLastOrderPrompt(conversation);
   if (isOrderAlreadyForwarded(conversation)) {
-    return `Teu pedido já ficou encaminhado para a equipe.
-
-Se quiser ajustar alguma coisa, me manda o complemento. Se estiver tudo certo, me diz a forma de pagamento: Pix, cartão ou dinheiro.`;
+    return buildSambahOrderDeliveryReceivedMessage();
   }
-  if (answers.length <= 1) return buildSambahOrderNameReceivedMessage();
-  if (answers.length === 2) return buildSambahOrderItemsReceivedMessage();
-  return buildSambahOrderDeliveryReceivedMessage();
+  if (answers.length <= 1) return withMesaComandaUrl(ORDER_NAME_RECEIVED_MESSAGE, context);
+  return withMesaComandaUrl(ORDER_ITEMS_RECEIVED_MESSAGE, context);
 }
 
 function inferActiveFlow(conversation = {}) {
+  const state = conversation?.atendimentoEstado || conversation?.estadoAtendimento || "";
+  if (["AGUARDANDO_NOME", "ENVIADO_PARA_MESA_COMANDA", "AGUARDANDO_PEDIDO_MESA", "PEDIDO_MESA_RECEBIDO", "AGUARDANDO_FORMA_PAGAMENTO"].includes(state)) return "order";
   const lastOut = lastOutboundText(conversation);
   const normalized = normalizeText(lastOut);
   if (!normalized) return "";
   if (normalized.includes("vamos montar teu pedido")) return "order";
+  if (normalized.includes("vou te levar para a comanda mesa")) return "order";
   if (normalized.includes("ja peguei teu nome")) return "order";
   if (normalized.includes("ja anotei a ideia do pedido")) return "order";
   if (normalized.includes("pedido encaminhado")) return "order";
+  if (normalized.includes("comanda do mesa")) return "order";
+  if (normalized.includes("pedido ja chegou pela comanda mesa")) return "order";
   if (normalized.includes("vou te ajudar com o cardapio")) return "menu";
   if (normalized.includes("para evento eu consigo")) return "event";
   if (normalized.includes("baita escolha") || normalized.includes("vou seguir pela granja")) return "granja";
@@ -277,6 +292,11 @@ function isOrderAlreadyForwarded(conversation = {}) {
   ));
 }
 
+function withMesaComandaUrl(message = "", context = {}) {
+  const url = context.mesaComandaUrl || context.mesaUrl || DEFAULT_MESA_COMANDA_URL;
+  return message.replaceAll("{MESA_COMANDA_URL}", url);
+}
+
 function isOrderIntent(normalized = "") {
   return ["pedido", "pedir", "comprar", "espetinho", "lanche", "delivery", "retirada"].some((term) => normalized.includes(term));
 }
@@ -295,6 +315,14 @@ function isGranjaIntent(normalized = "") {
 
 function isFinanceIntent(normalized = "") {
   return ["pagamento", "financeiro", "comprovante", "pix", "valor", "cobrar", "cobranca"].some((term) => normalized.includes(term));
+}
+
+function isPixPaymentIntent(normalized = "") {
+  return normalized === "1" || /\bpix\b/.test(normalized) || normalized.includes("sambah pay");
+}
+
+function isManualPaymentIntent(normalized = "") {
+  return normalized === "2" || normalized === "3" || normalized === "4" || ["cartao", "credito", "debito", "dinheiro", "a cobrar", "cobrar"].some((term) => normalized.includes(term));
 }
 
 function isGreetingIntent(normalized = "") {

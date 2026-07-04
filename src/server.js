@@ -656,6 +656,19 @@ export function createApp({
         return sendJson(res, result.ok ? 200 : 404, result);
       }
 
+      const conversaMesaPedidoMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/mesa-pedido$/);
+      if (req.method === "POST" && conversaMesaPedidoMatch) {
+        const body = await readJson(req, { requireBody: true });
+        const result = await whatsappConversationService.linkMesaOrder(decodeURIComponent(conversaMesaPedidoMatch[1]), body);
+        if (result.ok && result.mesaPedido?.id) {
+          await mesaService.updateFinancialStatus?.(result.mesaPedido.id, {
+            statusFinanceiro: result.mesaPedido.statusFinanceiro,
+            correlationId: result.mesaPedido.correlationId
+          });
+        }
+        return sendJson(res, result.ok ? 200 : 404, result);
+      }
+
       if (req.method === "GET" && url.pathname === "/api/orders/tracking/refresh") {
         return sendJson(res, 200, await trackingService.refreshStatuses({
           mesaService,
@@ -1327,7 +1340,8 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
         runtimeConfig: getRuntimeConfig(),
         fetchImpl: whatsappSendFetch,
         auditService,
-        conversation: conversationResult.conversa
+        conversation: conversationResult.conversa,
+        mesaComandaUrl: getRuntimeConfig().mesaComandaUrl
       });
       if (directAutoReply.sent || directAutoReply.status === "meta_error" || directAutoReply.status === "request_failed") {
         await recordDirectWhatsAppAutoReply(whatsappMessageService, body, directAutoReply);
@@ -1651,7 +1665,7 @@ async function recordWhatsAppMetaStatuses(payload = {}, { whatsappMessageService
   return { ok: true, statuses: statuses.length, updated, results };
 }
 
-async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRuntimeConfig(), fetchImpl = globalThis.fetch, auditService = null, conversation = null } = {}) {
+async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRuntimeConfig(), fetchImpl = globalThis.fetch, auditService = null, conversation = null, mesaComandaUrl = "" } = {}) {
   const summary = summarizeWhatsAppPostPayload(payload);
   const config = runtimeConfig.whatsappBusiness || {};
   if (config.sendEnabled !== true) {
@@ -1666,7 +1680,7 @@ async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRun
   }
 
   const endpoint = `https://graph.facebook.com/v25.0/${encodeURIComponent(sendPhoneNumberId)}/messages`;
-  const autoReplyText = buildSambahAutoReply(summary.textBody, { conversation });
+  const autoReplyText = buildSambahAutoReply(summary.textBody, { conversation, mesaComandaUrl: mesaComandaUrl || runtimeConfig.mesaComandaUrl });
   const baseRequestBody = {
     messaging_product: "whatsapp",
     type: "text",

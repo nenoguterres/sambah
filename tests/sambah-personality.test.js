@@ -86,34 +86,39 @@ test("personalidade SamBah mantem contexto do pedido apos cliente informar nome"
   assert.notEqual(buildSambahAutoReply("Kazuko", { conversation }), buildSambahInitialMessage());
 });
 
-test("personalidade SamBah avanca pedido apos cliente informar item", () => {
+test("personalidade SamBah envia cliente para Mesa Comanda apos informar nome", () => {
   const conversation = {
     mensagens: [
       { direction: "out", text: buildSambahOrderMessage() },
-      { direction: "in", text: "Kazuko" },
-      { direction: "out", text: buildSambahOrderNameReceivedMessage() },
-      { direction: "in", text: "dois espetinhos e uma coca" }
-    ]
+      { direction: "in", text: "Kazuko" }
+    ],
+    atendimentoEstado: "AGUARDANDO_NOME"
   };
-  assert.equal(buildSambahAutoReply("dois espetinhos e uma coca", { conversation }), buildSambahOrderItemsReceivedMessage());
+  const reply = buildSambahAutoReply("Kazuko", { conversation, mesaComandaUrl: "https://mesa.example/pedir" });
+  assert.match(reply, /comanda do Mesa/);
+  assert.match(reply, /https:\/\/mesa\.example\/pedir/);
 });
 
-test("personalidade SamBah nao reinicia pedido depois de encaminhar para equipe", () => {
+test("personalidade SamBah nao interpreta item livre durante pedido Mesa", () => {
   const conversation = {
     mensagens: [
       { direction: "out", text: buildSambahOrderMessage() },
       { direction: "in", text: "Kazuko" },
       { direction: "out", text: buildSambahOrderNameReceivedMessage() },
-      { direction: "in", text: "calabresa" },
-      { direction: "out", text: buildSambahOrderItemsReceivedMessage() },
-      { direction: "in", text: "retirada" },
-      { direction: "out", text: buildSambahOrderDeliveryReceivedMessage() },
-      { direction: "in", text: "so pedido" }
-    ]
+      { direction: "in", text: "farofa" }
+    ],
+    atendimentoEstado: "AGUARDANDO_PEDIDO_MESA"
   };
-  const reply = buildSambahAutoReply("so pedido", { conversation });
-  assert.match(reply, /Teu pedido j/);
-  assert.match(reply, /ficou encaminhado/);
-  assert.match(reply, /forma de pagamento/);
+  const reply = buildSambahAutoReply("farofa", { conversation, mesaComandaUrl: "https://mesa.example/pedir" });
+  assert.match(reply, /Para montar teu pedido/);
+  assert.match(reply, /comanda do Mesa/);
+  assert.match(reply, /https:\/\/mesa\.example\/pedir/);
   assert.notEqual(reply, buildSambahOrderMessage());
+});
+
+test("personalidade SamBah pergunta pagamento depois que pedido Mesa foi recebido", () => {
+  const conversation = { atendimentoEstado: "AGUARDANDO_FORMA_PAGAMENTO", mensagens: [] };
+  assert.equal(buildSambahAutoReply("ok", { conversation }), buildSambahOrderDeliveryReceivedMessage());
+  assert.match(buildSambahAutoReply("pix", { conversation }), /SamBah Pay/);
+  assert.match(buildSambahAutoReply("dinheiro", { conversation }), /A COBRAR/);
 });

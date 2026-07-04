@@ -86,9 +86,12 @@ test("Central de Conversas page keeps the message list scrollable", async () => 
   assert.match(js, /function scrollMessagesToBottom/);
   assert.match(js, /scrollTop\s*=\s*list\.scrollHeight/);
   assert.match(js, /window\.scrollTo/);
+  assert.match(js, /REFRESH_INTERVAL_MS\s*=\s*5000/);
+  assert.match(js, /silentRefresh:\s*true/);
+  assert.match(js, /cache:\s*"no-store"/);
 });
 
-test("WhatsApp pedido cria precomanda somente quando tem nome item e retirada", async () => {
+test("WhatsApp pedido nao cria precomanda e aguarda Mesa Comanda", async () => {
   const dir = await mkdtemp(join(tmpdir(), "sambha-conversation-order-"));
   const filePath = join(dir, "conversas.json");
   const nowValues = [
@@ -122,24 +125,29 @@ test("WhatsApp pedido cria precomanda somente quando tem nome item e retirada", 
     now: () => new Date(nowValues[nowIndex++] || "2026-07-04T01:58:00.000Z")
   });
   try {
-    await service.recordIncoming({ from: "5551999999999", text: "1", messageId: "in-1" }, { crmService });
-    await service.recordOutgoing("wa_5551999999999", { text: "Bah, perfeito. Vamos montar teu pedido." });
-    await service.recordIncoming({ from: "5551999999999", text: "Kazuko", messageId: "in-name" }, { crmService });
+    const start = await service.recordIncoming({ from: "5551999999999", text: "1", messageId: "in-1" }, { crmService });
+    await service.recordOutgoing("wa_5551999999999", { text: "Bah, perfeito. Vou te levar para a Comanda Mesa." });
+    const named = await service.recordIncoming({ from: "5551999999999", text: "Kazuko", messageId: "in-name" }, { crmService });
     await service.recordOutgoing("wa_5551999999999", { text: "Perfeito, ja peguei teu nome." });
-    await service.recordIncoming({ from: "5551999999999", text: "Calabresa", messageId: "in-item" }, { crmService });
-    await service.recordOutgoing("wa_5551999999999", { text: "Boa, ja anotei a ideia do pedido." });
-    await service.recordIncoming({ from: "5551999999999", text: "Retirada", messageId: "in-service" }, { crmService });
-    await service.recordOutgoing("wa_5551999999999", { text: "Fechado. Pedido encaminhado para a equipe conferir." });
-    await service.recordIncoming({ from: "5551999999999", text: "So pedido", messageId: "in-after" }, { crmService });
+    const itemText = await service.recordIncoming({ from: "5551999999999", text: "Farofa", messageId: "in-item" }, { crmService });
+    const deliveryText = await service.recordIncoming({ from: "5551999999999", text: "Delivery", messageId: "in-service" }, { crmService });
 
-    assert.equal(savedOrders.length, 1);
-    assert.equal(savedOrders[0].nome, "Kazuko");
-    assert.equal(savedOrders[0].whatsapp, "5551999999999");
-    assert.deepEqual(savedOrders[0].itens, [{ nome: "Calabresa", quantidade: 1 }]);
-    assert.equal(savedOrders[0].tipo, "retirada");
-    assert.equal(savedOrders[0].status, "aguardando_pagamento");
-    assert.equal(savedOrders[0].proximo_passo, "Confirmar forma de pagamento");
-    assert.equal(commercialRecords.some((record) => record.interesse === "desconhecido"), true);
+    assert.equal(start.conversa.atendimentoEstado, "AGUARDANDO_NOME");
+    assert.equal(named.conversa.atendimentoEstado, "ENVIADO_PARA_MESA_COMANDA");
+    assert.equal(itemText.conversa.atendimentoEstado, "AGUARDANDO_PEDIDO_MESA");
+    assert.equal(deliveryText.conversa.atendimentoEstado, "AGUARDANDO_PEDIDO_MESA");
+    assert.equal(savedOrders.length, 0);
+    assert.equal(commercialRecords.length, 0);
+
+    const linked = await service.linkMesaOrder("wa_5551999999999", {
+      id: "mesa-123",
+      customer: { name: "Kazuko", phone: "5551999999999" },
+      type: "retirada"
+    });
+    assert.equal(linked.ok, true);
+    assert.equal(linked.conversa.atendimentoEstado, "AGUARDANDO_FORMA_PAGAMENTO");
+    assert.equal(linked.conversa.mesaPedido.id, "mesa-123");
+    assert.equal(linked.conversa.statusCobranca, "A_COBRAR");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
