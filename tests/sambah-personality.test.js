@@ -49,6 +49,17 @@ test("personalidade SamBah responde opcoes do menu sem repetir abertura", () => 
   assert.match(buildSambahAutoReply("quero ver o cardapio"), /cardápio/);
 });
 
+test("personalidade SamBah nao confunde menu principal com fluxo da Granja", () => {
+  const conversation = {
+    mensagens: [
+      { direction: "in", text: "Boa noite" },
+      { direction: "out", text: buildSambahInitialMessage() },
+      { direction: "in", text: "1" }
+    ]
+  };
+  assert.equal(buildSambahAutoReply("1", { conversation }), buildSambahOrderMessage());
+});
+
 test("personalidade SamBah mantem contexto do pedido apos cliente informar nome", () => {
   const conversation = {
     mensagens: [

@@ -228,7 +228,7 @@ function inferActiveFlow(conversation = {}) {
   if (normalized.includes("ja anotei a ideia do pedido")) return "order";
   if (normalized.includes("vou te ajudar com o cardapio")) return "menu";
   if (normalized.includes("para evento eu consigo")) return "event";
-  if (normalized.includes("granja aguas da lagoa")) return "granja";
+  if (normalized.includes("baita escolha") || normalized.includes("vou seguir pela granja")) return "granja";
   if (normalized.includes("vamos pelo financeiro")) return "finance";
   return "";
 }
