@@ -60,6 +60,17 @@ test("personalidade SamBah nao confunde menu principal com fluxo da Granja", () 
   assert.equal(buildSambahAutoReply("1", { conversation }), buildSambahOrderMessage());
 });
 
+test("personalidade SamBah reinicia menu quando cliente manda saudacao apos fluxo travado", () => {
+  const conversation = {
+    mensagens: [
+      { direction: "in", text: "1" },
+      { direction: "out", text: "Certo. Vou seguir pela Granja Águas da Lagoa.\n\nMe diz se tu quer saber sobre ovos, produtos, valores ou entrega." },
+      { direction: "in", text: "Ola" }
+    ]
+  };
+  assert.equal(buildSambahAutoReply("Ola", { conversation }), buildSambahInitialMessage());
+});
+
 test("personalidade SamBah mantem contexto do pedido apos cliente informar nome", () => {
   const conversation = {
     mensagens: [

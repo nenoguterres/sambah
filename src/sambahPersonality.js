@@ -172,6 +172,7 @@ export function buildSambahAutoReply(text = "", context = {}) {
   if (detectSambahHumanSupportIntent(text)) {
     return buildSambahHumanSupportMessage();
   }
+  if (isGreetingIntent(normalized)) return buildSambahInitialMessage();
   const contextualReply = buildContextualReply(normalized, context);
   if (contextualReply) return contextualReply;
   if (isOrderIntent(normalized) || normalized === "1") return buildSambahOrderMessage();
@@ -179,7 +180,6 @@ export function buildSambahAutoReply(text = "", context = {}) {
   if (isEventIntent(normalized) || normalized === "3") return buildSambahEventMessage();
   if (isGranjaIntent(normalized) || normalized === "4") return buildSambahGranjaMessage();
   if (isFinanceIntent(normalized) || normalized === "5") return buildSambahFinanceMessage();
-  if (isGreetingIntent(normalized)) return buildSambahInitialMessage();
   return buildSambahFallbackMessage();
 }
 
