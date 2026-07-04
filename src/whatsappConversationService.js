@@ -341,6 +341,26 @@ function computeConfigStatus(incoming, runtimeConfig) {
 }
 
 async function updateCrmFromConversation(crmService, conversation, incoming, intent) {
+  const completedOrder = extractCompletedOrderFromConversation(conversation, incoming);
+  if (completedOrder) {
+    try {
+      await crmService.salvarPrecomanda({
+        ...completedOrder,
+        origem: "whatsapp",
+        source: "whatsapp",
+        canal: "whatsapp",
+        channel: "whatsapp",
+        operacao: "SamBah",
+        pipeline: "pedido_whatsapp",
+        status: completedOrder.pagamento ? "novo" : "aguardando_pagamento",
+        proximo_passo: completedOrder.pagamento ? "Conferir pedido e confirmar com cliente" : "Confirmar forma de pagamento"
+      });
+    } catch {
+      // O webhook nao pode cair por falha secundaria de CRM.
+    }
+    return;
+  }
+  if (intent === "pedido") return;
   const payload = {
     nome: conversation.nome || "Cliente WhatsApp",
     whatsapp: conversation.telefone,
@@ -356,6 +376,85 @@ async function updateCrmFromConversation(crmService, conversation, incoming, int
   } catch {
     // O webhook nao pode cair por falha secundaria de CRM.
   }
+}
+
+function extractCompletedOrderFromConversation(conversation = {}, incoming = {}) {
+  const messages = Array.isArray(conversation.mensagens) ? conversation.mensagens : [];
+  if (!messages.length) return null;
+  const currentIndex = findCurrentMessageIndex(messages, incoming);
+  const previousOut = previousOutboundText(messages, currentIndex);
+  if (!normalizeText(previousOut).includes("ja anotei a ideia do pedido")) return null;
+  const promptIndex = findLastOrderPromptIndex(messages, currentIndex);
+  if (promptIndex < 0) return null;
+  const answers = messages
+    .slice(promptIndex + 1, currentIndex + 1)
+    .filter((message) => message?.direction === "in")
+    .map((message) => String(message.text || message.transcricao || "").trim())
+    .filter(Boolean);
+  if (answers.length < 3) return null;
+  const serviceText = answers[2] || "";
+  const serviceType = normalizeOrderServiceType(serviceText);
+  if (!serviceType) return null;
+  const itemName = answers[1] || "";
+  const payment = extractPaymentMethod(answers.slice(2).join(" "));
+  return {
+    nome: answers[0] || conversation.nome || "Cliente WhatsApp",
+    whatsapp: conversation.telefone || incoming.telefone,
+    itens: itemName ? [{ nome: itemName, quantidade: 1 }] : [],
+    tipo: serviceType,
+    type: serviceType,
+    pagamento: payment,
+    endereco: serviceType === "entrega" ? extractDeliveryAddress(serviceText) : "",
+    observacoes: `Pedido iniciado pelo WhatsApp. Mensagens: ${answers.join(" | ")}`,
+    mensagem_whatsapp_sugerida: "Pedido recebido pelo SamBah. Conferir itens, pagamento e confirmar com o cliente."
+  };
+}
+
+function findCurrentMessageIndex(messages = [], incoming = {}) {
+  const id = incoming.messageId || "";
+  if (id) {
+    const index = messages.findIndex((message) => message?.id === id);
+    if (index >= 0) return index;
+  }
+  return messages.length - 1;
+}
+
+function previousOutboundText(messages = [], currentIndex = messages.length - 1) {
+  for (let index = currentIndex - 1; index >= 0; index -= 1) {
+    const message = messages[index] || {};
+    if (message.direction === "out" && message.text) return message.text;
+  }
+  return "";
+}
+
+function findLastOrderPromptIndex(messages = [], currentIndex = messages.length - 1) {
+  for (let index = currentIndex - 1; index >= 0; index -= 1) {
+    const message = messages[index] || {};
+    if (message.direction === "out" && normalizeText(message.text || "").includes("vamos montar teu pedido")) return index;
+  }
+  return -1;
+}
+
+function normalizeOrderServiceType(value = "") {
+  const normalized = normalizeText(value);
+  if (/\b(delivery|entrega|entregar)\b/.test(normalized)) return "entrega";
+  if (/\b(retirada|retirar|busco|buscar)\b/.test(normalized)) return "retirada";
+  if (/\b(local|mesa|consumo no local|consumir no local)\b/.test(normalized)) return "local";
+  return "";
+}
+
+function extractPaymentMethod(value = "") {
+  const normalized = normalizeText(value);
+  if (/\bpix\b/.test(normalized)) return "pix";
+  if (/\bcartao|cartao|credito|debito\b/.test(normalized)) return "cartao";
+  if (/\bdinheiro\b/.test(normalized)) return "dinheiro";
+  return "";
+}
+
+function extractDeliveryAddress(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  return text.replace(/\b(delivery|entrega|entregar)\b/gi, "").trim();
 }
 
 function describeMessageType(type) {

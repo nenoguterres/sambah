@@ -51,9 +51,11 @@ const ORDER_ITEMS_RECEIVED_MESSAGE = `Boa, já anotei a ideia do pedido.
 
 Agora me diz se vai ser retirada, delivery ou consumo no local. Se for delivery, já manda o endereço completo.`;
 
-const ORDER_DELIVERY_RECEIVED_MESSAGE = `Fechado. Vou deixar teu pedido encaminhado para a equipe conferir e te confirmar por aqui.
+const ORDER_DELIVERY_RECEIVED_MESSAGE = `Fechado. Pedido encaminhado para a equipe conferir.
 
-Se quiser acrescentar algo, pode mandar na sequência.`;
+Pra deixar redondo, me diz a forma de pagamento: Pix, cartão ou dinheiro.
+
+Se quiser acrescentar algo ao pedido, pode mandar na sequência.`;
 
 const MENU_MESSAGE = `Claro! Vou te ajudar com o cardápio.
 
@@ -214,6 +216,11 @@ Me manda o assunto, comprovante ou número do pedido que eu deixo encaminhado.`;
 
 function buildOrderContextualReply(conversation = {}) {
   const answers = inboundTextsSinceLastOrderPrompt(conversation);
+  if (isOrderAlreadyForwarded(conversation)) {
+    return `Teu pedido já ficou encaminhado para a equipe.
+
+Se quiser ajustar alguma coisa, me manda o complemento. Se estiver tudo certo, me diz a forma de pagamento: Pix, cartão ou dinheiro.`;
+  }
   if (answers.length <= 1) return buildSambahOrderNameReceivedMessage();
   if (answers.length === 2) return buildSambahOrderItemsReceivedMessage();
   return buildSambahOrderDeliveryReceivedMessage();
@@ -226,6 +233,7 @@ function inferActiveFlow(conversation = {}) {
   if (normalized.includes("vamos montar teu pedido")) return "order";
   if (normalized.includes("ja peguei teu nome")) return "order";
   if (normalized.includes("ja anotei a ideia do pedido")) return "order";
+  if (normalized.includes("pedido encaminhado")) return "order";
   if (normalized.includes("vou te ajudar com o cardapio")) return "menu";
   if (normalized.includes("para evento eu consigo")) return "event";
   if (normalized.includes("baita escolha") || normalized.includes("vou seguir pela granja")) return "granja";
@@ -259,6 +267,14 @@ function lastOutboundText(conversation = {}) {
     if (message.direction === "out" && message.text) return message.text;
   }
   return "";
+}
+
+function isOrderAlreadyForwarded(conversation = {}) {
+  const messages = Array.isArray(conversation?.mensagens) ? conversation.mensagens : [];
+  return messages.some((message) => (
+    message?.direction === "out"
+    && normalizeText(message.text || "").includes("pedido encaminhado")
+  ));
 }
 
 function isOrderIntent(normalized = "") {

@@ -10,6 +10,7 @@ import {
   buildSambahInitialMessage,
   buildSambahMenuMessage,
   buildSambahOrderItemsReceivedMessage,
+  buildSambahOrderDeliveryReceivedMessage,
   buildSambahOrderMessage,
   buildSambahOrderNameReceivedMessage,
   detectSambahHumanSupportIntent
@@ -95,4 +96,24 @@ test("personalidade SamBah avanca pedido apos cliente informar item", () => {
     ]
   };
   assert.equal(buildSambahAutoReply("dois espetinhos e uma coca", { conversation }), buildSambahOrderItemsReceivedMessage());
+});
+
+test("personalidade SamBah nao reinicia pedido depois de encaminhar para equipe", () => {
+  const conversation = {
+    mensagens: [
+      { direction: "out", text: buildSambahOrderMessage() },
+      { direction: "in", text: "Kazuko" },
+      { direction: "out", text: buildSambahOrderNameReceivedMessage() },
+      { direction: "in", text: "calabresa" },
+      { direction: "out", text: buildSambahOrderItemsReceivedMessage() },
+      { direction: "in", text: "retirada" },
+      { direction: "out", text: buildSambahOrderDeliveryReceivedMessage() },
+      { direction: "in", text: "so pedido" }
+    ]
+  };
+  const reply = buildSambahAutoReply("so pedido", { conversation });
+  assert.match(reply, /Teu pedido j/);
+  assert.match(reply, /ficou encaminhado/);
+  assert.match(reply, /forma de pagamento/);
+  assert.notEqual(reply, buildSambahOrderMessage());
 });

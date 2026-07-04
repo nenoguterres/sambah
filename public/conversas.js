@@ -9,8 +9,9 @@ const listEl = document.querySelector("#conversationList");
 const chatEl = document.querySelector("#chatPane");
 const searchInput = document.querySelector("#searchInput");
 const refreshButton = document.querySelector("#refreshButton");
+const REFRESH_INTERVAL_MS = 5000;
 
-refreshButton?.addEventListener("click", loadConversas);
+refreshButton?.addEventListener("click", () => loadConversas({ forceLoading: true }));
 searchInput?.addEventListener("input", (event) => {
   state.query = event.target.value;
   renderList();
@@ -24,13 +25,15 @@ document.querySelectorAll("[data-filter]").forEach((button) => {
   });
 });
 
-loadConversas();
-setInterval(loadConversas, 30000);
+loadConversas({ forceLoading: true });
+setInterval(() => loadConversas({ silentRefresh: true }), REFRESH_INTERVAL_MS);
 
-async function loadConversas() {
-  listEl.innerHTML = `<div class="loading">Carregando...</div>`;
+async function loadConversas({ silentRefresh = false, forceLoading = false } = {}) {
+  if (forceLoading || (!silentRefresh && !state.items.length)) {
+    listEl.innerHTML = `<div class="loading">Carregando...</div>`;
+  }
   try {
-    const response = await fetch("/api/conversas");
+    const response = await fetch("/api/conversas", { cache: "no-store" });
     const data = await response.json();
     if (!data.ok) throw new Error(data.error || "Erro ao carregar conversas");
     state.items = data.items || [];
@@ -38,7 +41,9 @@ async function loadConversas() {
     renderList();
     if (state.selectedId) await openConversation(state.selectedId, { silent: true });
   } catch (error) {
-    listEl.innerHTML = `<div class="loading">${escapeHtml(error.message || "Nao foi possivel carregar.")}</div>`;
+    if (!silentRefresh) {
+      listEl.innerHTML = `<div class="loading">${escapeHtml(error.message || "Nao foi possivel carregar.")}</div>`;
+    }
   }
 }
 
@@ -78,16 +83,18 @@ async function openConversation(id, { silent = false } = {}) {
   renderList();
   if (!silent) chatEl.innerHTML = `<div class="empty-state"><strong>Carregando conversa...</strong></div>`;
   try {
-    const response = await fetch(`/api/conversas/${encodeURIComponent(id)}`);
+    const draft = chatEl.querySelector("#replyText")?.value || "";
+    const hasDraftFocus = document.activeElement === chatEl.querySelector("#replyText");
+    const response = await fetch(`/api/conversas/${encodeURIComponent(id)}`, { cache: "no-store" });
     const data = await response.json();
     if (!data.ok) throw new Error(data.error || "Conversa nao encontrada");
-    renderChat(data.conversa);
+    renderChat(data.conversa, { draft: hasDraftFocus ? draft : "" });
   } catch (error) {
     chatEl.innerHTML = `<div class="empty-state"><strong>${escapeHtml(error.message || "Falha ao abrir conversa")}</strong></div>`;
   }
 }
 
-function renderChat(conversa) {
+function renderChat(conversa, { draft = "" } = {}) {
   const messages = conversa.mensagens || [];
   chatEl.innerHTML = `
     <header class="chat-header">
@@ -121,6 +128,11 @@ function renderChat(conversa) {
     chatEl.querySelector("#replyText").value = conversa.respostaSugerida || "";
     chatEl.querySelector("#replyText").focus();
   });
+  if (draft) {
+    const textarea = chatEl.querySelector("#replyText");
+    textarea.value = draft;
+    textarea.focus();
+  }
   chatEl.querySelector("#sendReply")?.addEventListener("click", () => sendReply(conversa.id));
 }
 
@@ -168,13 +180,15 @@ async function sendReply(id) {
     const data = await response.json();
     if (!data.ok) throw new Error(data.error || data.reason || "Falha ao enviar");
     textarea.value = "";
+    if (data.conversa) renderChat(data.conversa);
+    const currentStatus = chatEl.querySelector("#replyStatus") || status;
     if (data.enviado) {
-      status.textContent = "Resposta enviada pelo SamBah.";
+      currentStatus.textContent = "Resposta enviada pelo SamBah.";
     } else {
       const metaError = data.sendResult?.response?.error?.message || data.sendResult?.error || data.reason || "sem envio real";
-      status.textContent = `Nao enviado pela Meta: ${metaError}`;
+      currentStatus.textContent = `Nao enviado pela Meta: ${metaError}`;
     }
-    await loadConversas();
+    await loadConversas({ silentRefresh: true });
   } catch (error) {
     status.textContent = error.message || "Nao foi possivel enviar.";
   }
