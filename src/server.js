@@ -656,6 +656,18 @@ export function createApp({
         return sendJson(res, result.ok ? 200 : 404, result);
       }
 
+      if (req.method === "POST" && url.pathname === "/api/conversas/mesa-pedido") {
+        const body = await readJson(req, { requireBody: true });
+        const result = await whatsappConversationService.linkMesaOrderByReference(body);
+        if (result.ok && result.mesaPedido?.id) {
+          await mesaService.updateFinancialStatus?.(result.mesaPedido.id, {
+            statusFinanceiro: result.mesaPedido.statusFinanceiro,
+            correlationId: result.mesaPedido.correlationId
+          });
+        }
+        return sendJson(res, result.ok ? 200 : 400, result);
+      }
+
       const conversaMesaPedidoMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/mesa-pedido$/);
       if (req.method === "POST" && conversaMesaPedidoMatch) {
         const body = await readJson(req, { requireBody: true });

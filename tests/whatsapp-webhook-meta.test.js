@@ -462,6 +462,60 @@ test("POST /webhook/whatsapp registra callback Meta de status sem reenviar mensa
   }
 });
 
+test("POST /api/conversas/mesa-pedido vincula pedido Mesa por conversationId", async () => {
+  const { server, base, conversationsFile, cleanup } = await createTestServer();
+  try {
+    await writeFile(conversationsFile, JSON.stringify({
+      conversas: [{
+        id: "wa_55517776666",
+        nome: "Cliente Mesa",
+        telefone: "55517776666",
+        atendimentoEstado: "AGUARDANDO_PEDIDO_MESA",
+        status: "aguardando_cliente",
+        mensagens: [],
+        createdAt: "2026-07-04T12:00:00.000Z",
+        updatedAt: "2026-07-04T12:00:00.000Z"
+      }]
+    }), "utf8");
+
+    const missingReference = await fetch(`${base}/api/conversas/mesa-pedido`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        mesaOrderId: "mesa-sem-referencia",
+        customerName: "Cliente Mesa",
+        origin: "WHATSAPP_SAMBAH"
+      })
+    });
+    const missingBody = await missingReference.json();
+    assert.equal(missingReference.status, 400);
+    assert.equal(missingBody.ok, false);
+    assert.equal(missingBody.error, "conversation_reference_required");
+
+    const response = await fetch(`${base}/api/conversas/mesa-pedido`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        conversationId: "wa_55517776666",
+        mesaOrderId: "mesa-789",
+        customerName: "Cliente Mesa",
+        mode: "retirada",
+        total: 42,
+        origin: "WHATSAPP_SAMBAH"
+      })
+    });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.conversa.atendimentoEstado, "PEDIDO_MESA_RECEBIDO");
+    assert.equal(body.mesaPedido.id, "mesa-789");
+    assert.equal(body.mesaPedido.origem, "WHATSAPP_SAMBAH");
+  } finally {
+    await close(server);
+    await cleanup();
+  }
+});
+
 test("POST /webhook/site continua respondendo 202", async () => {
   const { server, base, cleanup } = await createTestServer();
   try {

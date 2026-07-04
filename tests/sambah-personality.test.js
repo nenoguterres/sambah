@@ -8,6 +8,7 @@ import {
   buildSambahGranjaMessage,
   buildSambahHumanSupportMessage,
   buildSambahInitialMessage,
+  buildMesaComandaUrl,
   buildSambahMenuMessage,
   buildSambahOrderItemsReceivedMessage,
   buildSambahOrderDeliveryReceivedMessage,
@@ -81,9 +82,21 @@ test("personalidade SamBah nao exibe menu principal durante pedido Mesa ativo", 
     conversation,
     mesaComandaUrl: "https://mesa.example/pedir"
   });
-  assert.equal(reply, "Para montar teu pedido, usa a comanda do Mesa aqui: https://mesa.example/pedir");
+  assert.equal(reply, "Para montar teu pedido, usa a comanda do Mesa aqui: https://mesa.example/pedir?origem=whatsapp_sambah&origin=WHATSAPP_SAMBAH");
   assert.doesNotMatch(reply, /1 - Fazer pedido/);
   assert.doesNotMatch(reply, /6 - Falar com atendente/);
+});
+
+test("link da Mesa Comanda carrega identificador da conversa WhatsApp", () => {
+  const url = buildMesaComandaUrl("https://mesa.example/pedir?origem=whatsapp_sambah", {
+    id: "wa_5551999999999",
+    telefone: "5551999999999"
+  });
+  const parsed = new URL(url);
+  assert.equal(parsed.searchParams.get("conversationId"), "wa_5551999999999");
+  assert.equal(parsed.searchParams.get("sambahConversationId"), "wa_5551999999999");
+  assert.equal(parsed.searchParams.get("phone"), "5551999999999");
+  assert.equal(parsed.searchParams.get("origin"), "WHATSAPP_SAMBAH");
 });
 
 test("personalidade SamBah mantem contexto do pedido apos cliente informar nome", () => {
@@ -102,6 +115,8 @@ test("personalidade SamBah mantem contexto do pedido apos cliente informar nome"
 
 test("personalidade SamBah envia cliente para Mesa Comanda apos informar nome", () => {
   const conversation = {
+    id: "wa_5551999999999",
+    telefone: "5551999999999",
     mensagens: [
       { direction: "out", text: buildSambahOrderMessage() },
       { direction: "in", text: "Kazuko" }
@@ -110,7 +125,7 @@ test("personalidade SamBah envia cliente para Mesa Comanda apos informar nome", 
   };
   const reply = buildSambahAutoReply("Kazuko", { conversation, mesaComandaUrl: "https://mesa.example/pedir" });
   assert.match(reply, /comanda do Mesa/);
-  assert.match(reply, /https:\/\/mesa\.example\/pedir/);
+  assert.match(reply, /conversationId=wa_5551999999999/);
 });
 
 test("personalidade SamBah nao interpreta item livre durante pedido Mesa", () => {
@@ -124,7 +139,7 @@ test("personalidade SamBah nao interpreta item livre durante pedido Mesa", () =>
     atendimentoEstado: "AGUARDANDO_PEDIDO_MESA"
   };
   const reply = buildSambahAutoReply("farofa", { conversation, mesaComandaUrl: "https://mesa.example/pedir" });
-  assert.equal(reply, "Para montar teu pedido, usa a comanda do Mesa aqui: https://mesa.example/pedir");
+  assert.equal(reply, "Para montar teu pedido, usa a comanda do Mesa aqui: https://mesa.example/pedir?origem=whatsapp_sambah&origin=WHATSAPP_SAMBAH");
   assert.notEqual(reply, buildSambahOrderMessage());
 });
 

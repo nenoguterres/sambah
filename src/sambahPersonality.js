@@ -300,8 +300,24 @@ function isOrderAlreadyForwarded(conversation = {}) {
 }
 
 function withMesaComandaUrl(message = "", context = {}) {
-  const url = context.mesaComandaUrl || context.mesaUrl || DEFAULT_MESA_COMANDA_URL;
+  const url = buildMesaComandaUrl(context.mesaComandaUrl || context.mesaUrl || DEFAULT_MESA_COMANDA_URL, context.conversation || context.conversa || null);
   return message.replaceAll("{MESA_COMANDA_URL}", url);
+}
+
+export function buildMesaComandaUrl(baseUrl = DEFAULT_MESA_COMANDA_URL, conversation = {}) {
+  const rawUrl = String(baseUrl || DEFAULT_MESA_COMANDA_URL);
+  const fallbackBase = "https://insanofoodtruck.com.br";
+  const url = new URL(rawUrl, fallbackBase);
+  url.searchParams.set("origem", "whatsapp_sambah");
+  url.searchParams.set("origin", "WHATSAPP_SAMBAH");
+  if (conversation?.id) {
+    url.searchParams.set("conversationId", conversation.id);
+    url.searchParams.set("sambahConversationId", conversation.id);
+  }
+  if (conversation?.telefone) {
+    url.searchParams.set("phone", conversation.telefone);
+  }
+  return rawUrl.startsWith("/") ? `${url.pathname}${url.search}` : url.toString();
 }
 
 function isOrderIntent(normalized = "") {

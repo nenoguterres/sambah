@@ -146,7 +146,7 @@ test("WhatsApp pedido nao cria precomanda e aguarda Mesa Comanda", async () => {
       type: "retirada"
     });
     assert.equal(linked.ok, true);
-    assert.equal(linked.conversa.atendimentoEstado, "AGUARDANDO_FORMA_PAGAMENTO");
+    assert.equal(linked.conversa.atendimentoEstado, "PEDIDO_MESA_RECEBIDO");
     assert.equal(linked.conversa.mesaPedido.id, "mesa-123");
     assert.equal(linked.conversa.statusCobranca, "A_COBRAR");
 
@@ -179,6 +179,49 @@ test("WhatsApp pedido nao cria precomanda e aguarda Mesa Comanda", async () => {
     assert.equal(paid.ok, true);
     assert.equal(paid.conversa.atendimentoEstado, "PAGAMENTO_CONFIRMADO");
     assert.equal(paid.conversa.statusCobranca, "PAGAMENTO_EFETUADO");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Pedido Mesa criado com identificador correto vincula conversa e sem identificador nao vincula", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-conversation-link-"));
+  const filePath = join(dir, "conversas.json");
+  await writeFile(filePath, JSON.stringify({
+    conversas: [{
+      id: "wa_55518887777",
+      nome: "Cliente Mesa",
+      telefone: "55518887777",
+      atendimentoEstado: "AGUARDANDO_PEDIDO_MESA",
+      status: "aguardando_cliente",
+      mensagens: [],
+      createdAt: "2026-07-04T10:00:00.000Z",
+      updatedAt: "2026-07-04T10:00:00.000Z"
+    }]
+  }), "utf8");
+  const service = new WhatsAppConversationService({ filePath });
+  try {
+    const missing = await service.linkMesaOrderByReference({
+      mesaOrderId: "mesa-sem-referencia",
+      customerName: "Cliente Mesa",
+      origin: "WHATSAPP_SAMBAH"
+    });
+    assert.equal(missing.ok, false);
+    assert.equal(missing.error, "conversation_reference_required");
+
+    const linked = await service.linkMesaOrderByReference({
+      conversationId: "wa_55518887777",
+      mesaOrderId: "mesa-456",
+      customerName: "Cliente Mesa",
+      mode: "delivery",
+      total: 78.5,
+      origin: "WHATSAPP_SAMBAH"
+    });
+    assert.equal(linked.ok, true);
+    assert.equal(linked.conversa.atendimentoEstado, "PEDIDO_MESA_RECEBIDO");
+    assert.equal(linked.conversa.mesaPedido.id, "mesa-456");
+    assert.equal(linked.conversa.mesaPedido.origem, "WHATSAPP_SAMBAH");
+    assert.equal(linked.conversa.respostaSugerida.includes("forma de pagamento"), true);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

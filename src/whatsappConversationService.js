@@ -262,7 +262,8 @@ export class WhatsAppConversationService {
       id: order.id || order.orderId || order.mesaOrderId || order.externalId || `mesa_${crypto.randomUUID()}`,
       nome: order.nome || order.customerName || order.customer?.name || data.conversas[index].nome || "Cliente WhatsApp",
       telefone: normalizePhone(order.telefone || order.whatsapp || order.phone || order.customer?.phone || data.conversas[index].telefone || ""),
-      modo: order.modo || order.tipo || order.type || order.customer?.serviceType || "",
+      modo: order.modo || order.mode || order.tipo || order.type || order.customer?.serviceType || "",
+      total: order.total ?? order.amount ?? order.valorTotal ?? null,
       origem: "WHATSAPP_SAMBAH",
       statusFinanceiro: normalizeFinancialStatus(order.statusFinanceiro || order.financialStatus || "A_COBRAR"),
       correlationId: order.correlationId || order.sambahAtendimentoId || data.conversas[index].id,
@@ -275,7 +276,7 @@ export class WhatsAppConversationService {
       ...data.conversas[index],
       nome: mesaPedido.nome || data.conversas[index].nome,
       telefone: data.conversas[index].telefone || mesaPedido.telefone,
-      atendimentoEstado: "AGUARDANDO_FORMA_PAGAMENTO",
+      atendimentoEstado: "PEDIDO_MESA_RECEBIDO",
       mesaPedido,
       statusCobranca: mesaPedido.statusFinanceiro,
       status: "aguardando_cliente",
@@ -286,6 +287,25 @@ export class WhatsAppConversationService {
     data.conversas[index] = updated;
     await this.#write(data);
     return { ok: true, conversa: this.#withPriority(updated), mesaPedido };
+  }
+
+  async linkMesaOrderByReference(order = {}) {
+    const conversationId = order.conversationId || order.sambahConversationId || order.atendimentoId || order.sambahAtendimentoId || "";
+    if (conversationId) return this.linkMesaOrder(conversationId, order);
+
+    const phone = normalizePhone(order.telefone || order.whatsapp || order.phone || order.customer?.phone || "");
+    if (!phone) return { ok: false, error: "conversation_reference_required" };
+
+    const data = await this.#read();
+    const matches = data.conversas.filter((item) => item.telefone === phone);
+    if (matches.length !== 1) {
+      return {
+        ok: false,
+        error: matches.length > 1 ? "conversation_reference_ambiguous" : "conversation_not_found",
+        phone
+      };
+    }
+    return this.linkMesaOrder(matches[0].id, order);
   }
 
   async recordSambahPayCharge(id, payment = {}) {
@@ -467,7 +487,11 @@ function nextOrderState(conversation = {}, incoming = {}, intent = "") {
   if (current === "AGUARDANDO_NOME" && text) return "ENVIADO_PARA_MESA_COMANDA";
   if (HUMAN_INTENTS.has(intent)) return current || "HUMANO";
   if (["ENVIADO_PARA_MESA_COMANDA", "AGUARDANDO_PEDIDO_MESA"].includes(current)) return "AGUARDANDO_PEDIDO_MESA";
-  if (current === "PEDIDO_MESA_RECEBIDO") return "AGUARDANDO_FORMA_PAGAMENTO";
+  if (current === "PEDIDO_MESA_RECEBIDO") {
+    if (isPixPaymentText(text)) return "COBRANCA_ENVIADA";
+    if (isManualPaymentText(text)) return "A_COBRAR";
+    return "AGUARDANDO_FORMA_PAGAMENTO";
+  }
   if (current === "AGUARDANDO_FORMA_PAGAMENTO") {
     if (isPixPaymentText(text)) return "COBRANCA_ENVIADA";
     if (isManualPaymentText(text)) return "A_COBRAR";
@@ -481,7 +505,7 @@ function nextPaymentStatus(conversation = {}, incoming = {}) {
   const current = conversation.statusCobranca || "";
   const state = conversation.atendimentoEstado || "";
   const text = normalizeText(incoming.text || incoming.transcricao || "");
-  if (state !== "AGUARDANDO_FORMA_PAGAMENTO") return current;
+  if (!["PEDIDO_MESA_RECEBIDO", "AGUARDANDO_FORMA_PAGAMENTO"].includes(state)) return current;
   if (isPixPaymentText(text)) return "COBRANCA_ENVIADA";
   if (isManualPaymentText(text)) return "A_COBRAR";
   return current;
