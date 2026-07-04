@@ -1293,6 +1293,19 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
 
     if (req.url?.includes("/webhook/whatsapp")) {
       if (isMetaWhatsAppEnvelope(body) && metaSummary.messagesLength === 0) {
+        const statusResult = await recordWhatsAppMetaStatuses(body, {
+          whatsappMessageService,
+          whatsappConversationService,
+          auditService
+        });
+        if (statusResult.statuses > 0) {
+          return sendJson(res, 200, {
+            ok: true,
+            statuses: statusResult.statuses,
+            updated: statusResult.updated,
+            reason: "meta_status_callback"
+          });
+        }
         await safeAuditRecord(auditService, {
           type: "whatsapp_webhook_ignored",
           status: "info",
@@ -1313,7 +1326,8 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
       const directAutoReply = await sendWhatsAppCloudAutoReply(body, {
         runtimeConfig: getRuntimeConfig(),
         fetchImpl: whatsappSendFetch,
-        auditService
+        auditService,
+        conversation: conversationResult.conversa
       });
       if (directAutoReply.sent || directAutoReply.status === "meta_error" || directAutoReply.status === "request_failed") {
         await recordDirectWhatsAppAutoReply(whatsappMessageService, body, directAutoReply);
@@ -1575,12 +1589,17 @@ function summarizeWhatsAppPostPayload(payload = {}) {
   const firstChange = entries.flatMap((entry) => Array.isArray(entry?.changes) ? entry.changes : [])[0] || {};
   const value = firstChange.value || {};
   const firstMessage = Array.isArray(value.messages) ? value.messages[0] || {} : {};
+  const firstStatus = Array.isArray(value.statuses) ? value.statuses[0] || {} : {};
   return {
     bodyEntryLength: entries.length,
     changesLength: entries.reduce((total, entry) => total + (Array.isArray(entry?.changes) ? entry.changes.length : 0), 0),
     field: firstChange.field || "",
     phoneNumberIdReceived: value.metadata?.phone_number_id || "",
     messagesLength: Array.isArray(value.messages) ? value.messages.length : 0,
+    statusesLength: Array.isArray(value.statuses) ? value.statuses.length : 0,
+    statusId: firstStatus.id || "",
+    status: firstStatus.status || "",
+    statusRecipientId: firstStatus.recipient_id || "",
     textBody: firstMessage.text?.body || "",
     from: firstMessage.from || value.contacts?.[0]?.wa_id || payload.from || "",
     messageId: firstMessage.id || payload.eventId || payload.messageId || ""
@@ -1591,7 +1610,48 @@ function isMetaWhatsAppEnvelope(payload = {}) {
   return Array.isArray(payload.entry);
 }
 
-async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRuntimeConfig(), fetchImpl = globalThis.fetch, auditService = null } = {}) {
+function extractMetaWhatsAppStatuses(payload = {}) {
+  const entries = Array.isArray(payload.entry) ? payload.entry : [];
+  return entries.flatMap((entry) => {
+    const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+    return changes.flatMap((change) => {
+      const statuses = Array.isArray(change?.value?.statuses) ? change.value.statuses : [];
+      return statuses.map((status) => ({
+        ...status,
+        phone_number_id: change?.value?.metadata?.phone_number_id || ""
+      }));
+    });
+  });
+}
+
+async function recordWhatsAppMetaStatuses(payload = {}, { whatsappMessageService, whatsappConversationService, auditService } = {}) {
+  const statuses = extractMetaWhatsAppStatuses(payload);
+  if (!statuses.length) return { ok: true, statuses: 0, updated: 0 };
+  let updated = 0;
+  const results = [];
+  for (const status of statuses) {
+    const messageResult = await whatsappMessageService?.recordMetaStatus?.(status);
+    const conversationResult = await whatsappConversationService?.recordMetaStatus?.(status);
+    const wasUpdated = Boolean(messageResult?.updated || conversationResult?.updated);
+    if (wasUpdated) updated += 1;
+    results.push({
+      id: status.id || "",
+      status: status.status || "",
+      recipientId: status.recipient_id || "",
+      updated: wasUpdated
+    });
+  }
+  await safeAuditRecord(auditService, {
+    type: "whatsapp_meta_status_callback",
+    status: updated > 0 ? "info" : "warning",
+    source: "meta_whatsapp",
+    message: "Callback de status WhatsApp registrado",
+    context: { statuses: results.length, updated, results }
+  });
+  return { ok: true, statuses: statuses.length, updated, results };
+}
+
+async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRuntimeConfig(), fetchImpl = globalThis.fetch, auditService = null, conversation = null } = {}) {
   const summary = summarizeWhatsAppPostPayload(payload);
   const config = runtimeConfig.whatsappBusiness || {};
   if (config.sendEnabled !== true) {
@@ -1606,7 +1666,7 @@ async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRun
   }
 
   const endpoint = `https://graph.facebook.com/v25.0/${encodeURIComponent(sendPhoneNumberId)}/messages`;
-  const autoReplyText = buildSambahAutoReply(summary.textBody);
+  const autoReplyText = buildSambahAutoReply(summary.textBody, { conversation });
   const baseRequestBody = {
     messaging_product: "whatsapp",
     type: "text",

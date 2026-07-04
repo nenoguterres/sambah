@@ -9,7 +9,9 @@ import {
   buildSambahHumanSupportMessage,
   buildSambahInitialMessage,
   buildSambahMenuMessage,
+  buildSambahOrderItemsReceivedMessage,
   buildSambahOrderMessage,
+  buildSambahOrderNameReceivedMessage,
   detectSambahHumanSupportIntent
 } from "../src/sambahPersonality.js";
 
@@ -45,4 +47,30 @@ test("personalidade SamBah responde opcoes do menu sem repetir abertura", () => 
   assert.equal(buildSambahAutoReply("5"), buildSambahFinanceMessage());
   assert.notEqual(buildSambahAutoReply("1"), buildSambahInitialMessage());
   assert.match(buildSambahAutoReply("quero ver o cardapio"), /cardápio/);
+});
+
+test("personalidade SamBah mantem contexto do pedido apos cliente informar nome", () => {
+  const conversation = {
+    mensagens: [
+      { direction: "in", text: "Bom dia" },
+      { direction: "out", text: buildSambahInitialMessage() },
+      { direction: "in", text: "1" },
+      { direction: "out", text: buildSambahOrderMessage() },
+      { direction: "in", text: "Kazuko" }
+    ]
+  };
+  assert.equal(buildSambahAutoReply("Kazuko", { conversation }), buildSambahOrderNameReceivedMessage());
+  assert.notEqual(buildSambahAutoReply("Kazuko", { conversation }), buildSambahInitialMessage());
+});
+
+test("personalidade SamBah avanca pedido apos cliente informar item", () => {
+  const conversation = {
+    mensagens: [
+      { direction: "out", text: buildSambahOrderMessage() },
+      { direction: "in", text: "Kazuko" },
+      { direction: "out", text: buildSambahOrderNameReceivedMessage() },
+      { direction: "in", text: "dois espetinhos e uma coca" }
+    ]
+  };
+  assert.equal(buildSambahAutoReply("dois espetinhos e uma coca", { conversation }), buildSambahOrderItemsReceivedMessage());
 });

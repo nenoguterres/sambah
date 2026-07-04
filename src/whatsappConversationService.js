@@ -163,6 +163,7 @@ export class WhatsAppConversationService {
     if (!text) return { ok: false, error: "Resposta vazia" };
     const sendResult = body.sendResult || null;
     const sendStatus = body.status || sendResult?.status || "registrada";
+    const providerMessageId = sendResult?.response?.messages?.[0]?.id || "";
     const message = {
       id: `msg_${crypto.randomUUID()}`,
       direction: "out",
@@ -170,6 +171,7 @@ export class WhatsAppConversationService {
       text,
       createdAt: now,
       status: sendStatus,
+      providerMessageId,
       httpStatus: sendResult?.httpStatus || null,
       response: sendResult?.response || null
     };
@@ -183,6 +185,46 @@ export class WhatsAppConversationService {
     data.conversas[index] = updated;
     await this.#write(data);
     return { ok: true, enviado: Boolean(sendResult?.sent), reason: sendStatus, conversa: this.#withPriority(updated), message };
+  }
+
+  async recordMetaStatus(status = {}) {
+    const providerMessageId = String(status.id || "").trim();
+    if (!providerMessageId) return { ok: false, updated: false, reason: "missing_status_id" };
+    const recipientPhone = normalizePhone(status.recipient_id || status.recipientId || "");
+    const data = await this.#read();
+    let updated = false;
+    const now = this.now().toISOString();
+
+    data.conversas = data.conversas.map((conversation) => {
+      const messages = Array.isArray(conversation.mensagens) ? conversation.mensagens : [];
+      const hasPhoneMatch = recipientPhone && normalizePhone(conversation.telefone) === recipientPhone;
+      let conversationTouched = false;
+      const nextMessages = messages.map((message) => {
+        if (!matchesProviderMessageId(message, providerMessageId)) return message;
+        conversationTouched = true;
+        return {
+          ...message,
+          status: status.status || message.status,
+          providerMessageId,
+          recipientId: status.recipient_id || message.recipientId || "",
+          deliveredAt: status.status === "delivered" ? metaTimestamp(status.timestamp) : message.deliveredAt || null,
+          readAt: status.status === "read" ? metaTimestamp(status.timestamp) : message.readAt || null,
+          failedAt: status.status === "failed" ? metaTimestamp(status.timestamp) : message.failedAt || null,
+          statusUpdatedAt: now,
+          statusPayload: sanitizeMetaStatus(status)
+        };
+      });
+      if (!conversationTouched && !hasPhoneMatch) return conversation;
+      updated = true;
+      return {
+        ...conversation,
+        updatedAt: conversationTouched ? now : conversation.updatedAt,
+        mensagens: conversationTouched ? nextMessages : messages
+      };
+    });
+
+    if (updated) await this.#write(data);
+    return { ok: true, updated, providerMessageId, status: status.status || "" };
   }
 
   async markHuman(id) {
@@ -333,6 +375,37 @@ function normalizePhone(value = "") {
 
 function hasAny(text, terms) {
   return terms.some((term) => text.includes(normalizeText(term)));
+}
+
+function matchesProviderMessageId(message = {}, providerMessageId = "") {
+  if (!providerMessageId) return false;
+  if (message.providerMessageId === providerMessageId) return true;
+  if (message.messageId === providerMessageId) return true;
+  const responseMessages = Array.isArray(message.response?.messages) ? message.response.messages : [];
+  return responseMessages.some((item) => item?.id === providerMessageId);
+}
+
+function metaTimestamp(value = "") {
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  return new Date(seconds * 1000).toISOString();
+}
+
+function sanitizeMetaStatus(status = {}) {
+  return {
+    id: status.id || "",
+    status: status.status || "",
+    timestamp: status.timestamp || "",
+    recipient_id: status.recipient_id || "",
+    errors: Array.isArray(status.errors)
+      ? status.errors.map((error) => ({
+          code: error.code,
+          title: error.title,
+          message: error.message,
+          error_data: error.error_data
+        }))
+      : []
+  };
 }
 
 function normalizeText(value = "") {

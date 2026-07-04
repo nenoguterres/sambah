@@ -364,7 +364,7 @@ test("POST /webhook/whatsapp tenta nono digito brasileiro quando Meta recusa all
   }
 });
 
-test("POST /webhook/whatsapp ignora callback Meta sem mensagens reais", async () => {
+test("POST /webhook/whatsapp registra callback Meta de status sem reenviar mensagem", async () => {
   const previousSendEnabled = process.env.WHATSAPP_SEND_ENABLED;
   const previousAccessToken = process.env.META_ACCESS_TOKEN;
   const previousPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
@@ -373,13 +373,43 @@ test("POST /webhook/whatsapp ignora callback Meta sem mensagens reais", async ()
   process.env.WHATSAPP_PHONE_NUMBER_ID = "1234567890";
 
   const graphCalls = [];
-  const { server, base, auditFile, cleanup } = await createTestServer({
+  const { server, base, auditFile, messagesFile, conversationsFile, cleanup } = await createTestServer({
     whatsappSendFetch: async (url, options) => {
       graphCalls.push({ url, options });
       return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
     }
   });
   try {
+    await writeFile(messagesFile, JSON.stringify([{
+      id: "out_1",
+      direction: "out",
+      provider: "meta",
+      phone: "5551999999999",
+      providerMessageId: "wamid-status-only",
+      text: "Buenas",
+      status: "sent",
+      response: { messages: [{ id: "wamid-status-only" }] },
+      createdAt: "2026-07-03T10:00:00.000Z"
+    }]), "utf8");
+    await writeFile(conversationsFile, JSON.stringify({
+      conversas: [{
+        id: "wa_5551999999999",
+        nome: "Cliente Meta",
+        telefone: "5551999999999",
+        mensagens: [{
+          id: "msg_out_1",
+          direction: "out",
+          type: "text",
+          text: "Buenas",
+          status: "sent",
+          providerMessageId: "wamid-status-only",
+          response: { messages: [{ id: "wamid-status-only" }] },
+          createdAt: "2026-07-03T10:00:00.000Z"
+        }],
+        createdAt: "2026-07-03T10:00:00.000Z",
+        updatedAt: "2026-07-03T10:00:00.000Z"
+      }]
+    }), "utf8");
     const response = await fetch(`${base}/webhook/whatsapp`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -396,7 +426,7 @@ test("POST /webhook/whatsapp ignora callback Meta sem mensagens reais", async ()
               },
               statuses: [{
                 id: "wamid-status-only",
-                status: "sent",
+                status: "delivered",
                 timestamp: "1782214373",
                 recipient_id: "5551999999999"
               }]
@@ -408,11 +438,18 @@ test("POST /webhook/whatsapp ignora callback Meta sem mensagens reais", async ()
     const body = await response.json();
     assert.equal(response.status, 200);
     assert.equal(body.ok, true);
-    assert.equal(body.ignored, true);
-    assert.equal(body.reason, "meta_webhook_without_messages");
+    assert.equal(body.reason, "meta_status_callback");
+    assert.equal(body.statuses, 1);
+    assert.equal(body.updated, 1);
     assert.equal(graphCalls.length, 0);
+    const messages = JSON.parse(await readFile(messagesFile, "utf8"));
+    assert.equal(messages[0].status, "delivered");
+    assert.equal(messages[0].statusUpdatedAt.length > 0, true);
+    const conversations = JSON.parse(await readFile(conversationsFile, "utf8"));
+    assert.equal(conversations.conversas[0].mensagens[0].status, "delivered");
+    assert.equal(conversations.conversas[0].mensagens[0].statusUpdatedAt.length > 0, true);
     const audit = JSON.parse(await readFile(auditFile, "utf8"));
-    assert.ok(audit.some((event) => event.type === "whatsapp_webhook_ignored"));
+    assert.ok(audit.some((event) => event.type === "whatsapp_meta_status_callback"));
   } finally {
     await close(server);
     await cleanup();
