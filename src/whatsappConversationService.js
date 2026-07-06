@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import crypto from "node:crypto";
+import { buildSambahAiAudit, classifySambahIntent } from "./intentEngine.js";
 import { extractWhatsAppMessageText } from "./whatsapp/whatsappWebhookParser.js";
 
 const INTENT_RESPONSES = {
@@ -58,14 +59,10 @@ export class WhatsAppConversationService {
   async recordIncoming(payload = {}, { runtimeConfig = {}, crmService = null } = {}) {
     const incoming = parseWhatsAppIncoming(payload);
     const now = this.now().toISOString();
-    const textForIntent = incoming.text || incoming.transcricao || incoming.caption || "";
-    const intent = detectWhatsAppIntent(textForIntent);
-    const respostaSugerida = suggestedWhatsAppResponse(intent);
-    const configStatus = computeConfigStatus(incoming, runtimeConfig);
-    const status = configStatus || (HUMAN_INTENTS.has(intent) ? "humano" : "aguardando_equipe");
     const data = await this.#read();
     const id = incoming.telefone ? `wa_${incoming.telefone}` : `wa_${crypto.randomUUID()}`;
     const existing = data.conversas.find((item) => item.id === id || item.telefone === incoming.telefone);
+    const configStatus = computeConfigStatus(incoming, runtimeConfig);
     const message = {
       id: incoming.messageId || `msg_${crypto.randomUUID()}`,
       direction: "in",
@@ -86,6 +83,29 @@ export class WhatsAppConversationService {
       mensagens: [],
       createdAt: now
     };
+    const textForIntent = incoming.text || incoming.transcricao || incoming.caption || "";
+    const aiDecision = classifySambahIntent({
+      message: textForIntent,
+      conversationState: base,
+      orderContext: base.mesaPedido || null,
+      mesaOrderId: base.mesaPedido?.id || "",
+      paymentStatus: base.statusCobranca || "",
+      customerName: base.nome || "",
+      previousIntent: base.aiDecision?.intent || base.intencao || ""
+    });
+    const aiAudit = buildSambahAiAudit({
+      message: textForIntent,
+      conversationState: base,
+      previousIntent: base.aiDecision?.intent || base.intencao || ""
+    }, aiDecision);
+    const intent = mapAiIntentToWhatsAppIntent(aiDecision.intent);
+    const respostaSugerida = suggestedWhatsAppResponse(intent);
+    const status = configStatus
+      || (aiDecision.allowedAction === "NO_ACTION"
+        ? (base.status || "aguardando_equipe")
+        : HUMAN_INTENTS.has(intent) || aiDecision.allowedAction === "HANDOFF_HUMAN"
+          ? "humano"
+          : "aguardando_equipe");
     const orderState = nextOrderState(base, incoming, intent);
     const paymentStatus = nextPaymentStatus(base, incoming);
     const updated = {
@@ -101,6 +121,11 @@ export class WhatsAppConversationService {
       statusCobranca: paymentStatus || base.statusCobranca || "",
       status,
       respostaSugerida,
+      aiDecision,
+      aiAuditTrail: [...(base.aiAuditTrail || []), {
+        ...aiAudit,
+        at: now
+      }].slice(-20),
       configuracaoPendente: Boolean(configStatus),
       audio: incoming.tipo === "audio" ? {
         mediaId: incoming.mediaId,
@@ -125,6 +150,7 @@ export class WhatsAppConversationService {
       conversa: this.#withPriority(updated),
       message,
       intent,
+      aiDecision,
       respostaSugerida,
       sendEnabled: runtimeConfig.whatsappBusiness?.sendEnabled === true,
       voiceReplyEnabled: runtimeConfig.ai?.voiceReplyEnabled === true
@@ -445,6 +471,13 @@ export function detectWhatsAppIntent(text = "") {
 
 export function suggestedWhatsAppResponse(intent) {
   return INTENT_RESPONSES[intent] || INTENT_RESPONSES.desconhecido;
+}
+
+function mapAiIntentToWhatsAppIntent(intent = "") {
+  if (intent === "unknown") return "desconhecido";
+  if (intent === "reclamar") return "reclamacao";
+  if (String(intent).startsWith("pagamento")) return "pagamento";
+  return intent || "desconhecido";
 }
 
 function normalizeMessageType(type = "") {

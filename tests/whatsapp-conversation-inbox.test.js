@@ -257,3 +257,34 @@ test("Mesa recebe status financeiro A_COBRAR e PAGAMENTO_EFETUADO", async () => 
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("Central registra decisao do AI Core sem responder em atendimento humano", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-ai-core-human-"));
+  const filePath = join(dir, "conversas.json");
+  await writeFile(filePath, JSON.stringify({
+    conversas: [{
+      id: "wa_55518880000",
+      nome: "Cliente Humano",
+      telefone: "55518880000",
+      status: "humano",
+      mensagens: [],
+      createdAt: "2026-07-06T10:00:00.000Z",
+      updatedAt: "2026-07-06T10:00:00.000Z"
+    }]
+  }), "utf8");
+  const service = new WhatsAppConversationService({ filePath });
+  try {
+    const result = await service.recordIncoming({
+      from: "55518880000",
+      text: "tem alguem ai?",
+      messageId: "in-human-no-action"
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.aiDecision.allowedAction, "NO_ACTION");
+    assert.equal(result.conversa.status, "humano");
+    assert.equal(result.conversa.aiAuditTrail.length, 1);
+    assert.equal(result.conversa.aiAuditTrail[0].intent, "humano");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

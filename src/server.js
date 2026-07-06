@@ -1361,6 +1361,20 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
         runtimeConfig: getRuntimeConfig(),
         crmService
       });
+      if (conversationResult.aiDecision) {
+        await safeAuditRecord(auditService, {
+          type: "sambah_ai_decision",
+          status: "info",
+          source: "whatsapp_sambah",
+          message: "Decisao controlada do SamBah AI Core",
+          context: {
+            conversationId: conversationResult.conversa?.id || "",
+            messageType: conversationResult.message?.type || "",
+            aiDecision: conversationResult.aiDecision,
+            aiAudit: conversationResult.conversa?.aiAuditTrail?.at(-1) || null
+          }
+        });
+      }
       const paymentSync = await syncWhatsAppOrderPaymentState({
         conversationResult,
         whatsappConversationService,
@@ -1771,6 +1785,9 @@ async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRun
   const config = runtimeConfig.whatsappBusiness || {};
   if (config.sendEnabled !== true) {
     return { ok: true, sent: false, status: "disabled" };
+  }
+  if (conversation?.aiDecision?.allowedAction === "NO_ACTION") {
+    return { ok: true, sent: false, status: "ai_no_action" };
   }
   if ((summary.field && summary.field !== "messages") || !summary.from || !summary.textBody) {
     return { ok: true, sent: false, status: "ignored_non_text_message" };
