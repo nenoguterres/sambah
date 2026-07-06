@@ -26,7 +26,7 @@ import { createWhatsAppProvider } from "./whatsapp/whatsappProvider.js";
 import { WhatsAppMessageService } from "./whatsapp/whatsappMessageService.js";
 import { isMetaWhatsAppPayload, parseWhatsAppWebhookPayload } from "./whatsapp/whatsappWebhookParser.js";
 import { InstagramPublisher } from "./services/instagramPublisher.js";
-import { buildSambahAutoReply } from "./sambahPersonality.js";
+import { buildMesaComandaUrl, buildSambahAutoReply } from "./sambahPersonality.js";
 
 const publicDir = fileURLToPath(new URL("../public/", import.meta.url));
 const runtimeConfig = getRuntimeConfig();
@@ -1362,16 +1362,25 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
         crmService
       });
       if (conversationResult.aiDecision) {
+        const aiAudit = conversationResult.conversa?.aiAuditTrail?.at(-1) || null;
         await safeAuditRecord(auditService, {
           type: "sambah_ai_decision",
           status: "info",
-          source: "whatsapp_sambah",
+          source: "whatsapp_ai_core",
           message: "Decisao controlada do SamBah AI Core",
           context: {
             conversationId: conversationResult.conversa?.id || "",
+            phone: conversationResult.conversa?.telefone || metaSummary.from || "",
             messageType: conversationResult.message?.type || "",
+            intent: conversationResult.aiDecision.intent,
+            confidence: conversationResult.aiDecision.confidence,
+            conversationState: conversationResult.aiDecision.conversationState || conversationResult.aiDecision.state || "",
+            allowedAction: conversationResult.aiDecision.allowedAction,
+            requiresHuman: conversationResult.aiDecision.requiresHuman === true,
+            auditReason: conversationResult.aiDecision.auditReason || conversationResult.aiDecision.reason || "",
+            timestamp: aiAudit?.at || new Date().toISOString(),
             aiDecision: conversationResult.aiDecision,
-            aiAudit: conversationResult.conversa?.aiAuditTrail?.at(-1) || null
+            aiAudit
           }
         });
       }
@@ -1798,7 +1807,10 @@ async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRun
   }
 
   const endpoint = `https://graph.facebook.com/v25.0/${encodeURIComponent(sendPhoneNumberId)}/messages`;
-  const autoReplyText = buildSambahAutoReply(summary.textBody, { conversation, mesaComandaUrl: mesaComandaUrl || runtimeConfig.mesaComandaUrl });
+  const autoReplyText = resolveControlledWhatsAppReply(summary.textBody, {
+    conversation,
+    mesaComandaUrl: mesaComandaUrl || runtimeConfig.mesaComandaUrl
+  });
   const baseRequestBody = {
     messaging_product: "whatsapp",
     type: "text",
@@ -1874,6 +1886,15 @@ async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRun
     });
     return { ok: false, sent: false, status: "request_failed", text: autoReplyText, error: sanitizeMetaText(error.message, config.accessToken) };
   }
+}
+
+function resolveControlledWhatsAppReply(text = "", { conversation = null, mesaComandaUrl = "" } = {}) {
+  const aiSafeReply = String(conversation?.aiDecision?.safeReply || "").trim();
+  if (!aiSafeReply) {
+    return buildSambahAutoReply(text, { conversation, mesaComandaUrl });
+  }
+  const mesaUrl = buildMesaComandaUrl(mesaComandaUrl, conversation);
+  return aiSafeReply.replaceAll("{MESA_COMANDA_URL}", mesaUrl);
 }
 
 async function sendMetaTextMessage(fetchImpl, endpoint, accessToken, requestBody) {

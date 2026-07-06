@@ -12,7 +12,6 @@ import { OrderDraftService } from "../src/orderDraftService.js";
 import { SambahConversationService } from "../src/sambahConversationService.js";
 import { WhatsAppConversationService } from "../src/whatsappConversationService.js";
 import { createApp } from "../src/server.js";
-import { buildSambahHumanSupportMessage, buildSambahInitialMessage } from "../src/sambahPersonality.js";
 import { MockWhatsAppProvider } from "../src/whatsapp/providers/mockProvider.js";
 import { WhatsAppMessageService } from "../src/whatsapp/whatsappMessageService.js";
 
@@ -104,7 +103,7 @@ test("POST /webhook/whatsapp processa payload real da Meta e envia resposta simp
   const logs = [];
   const previousConsoleInfo = console.info;
   console.info = (...args) => logs.push(args);
-  const { server, base, messagesFile, conversationsFile, cleanup } = await createTestServer({
+  const { server, base, auditFile, messagesFile, conversationsFile, cleanup } = await createTestServer({
     provider: {
       name: "meta-test-provider",
       status: () => ({ provider: "meta-test-provider", configured: true }),
@@ -148,12 +147,15 @@ test("POST /webhook/whatsapp processa payload real da Meta e envia resposta simp
     assert.equal(graphCalls[0].url, "https://graph.facebook.com/v25.0/1234567890/messages");
     assert.equal(graphCalls[0].options.method, "POST");
     assert.equal(graphCalls[0].options.headers.authorization, "Bearer meta-token-teste");
-    assert.deepEqual(JSON.parse(graphCalls[0].options.body), {
+    const sentBody = JSON.parse(graphCalls[0].options.body);
+    assert.deepEqual(sentBody, {
       messaging_product: "whatsapp",
       to: "5551999999999",
       type: "text",
-      text: { body: buildSambahInitialMessage() }
+      text: { body: sentBody.text.body }
     });
+    assert.match(sentBody.text.body, /Aqui e o SamBah/);
+    assert.doesNotMatch(sentBody.text.body, /1 - Fazer pedido|6 - Falar com atendente/);
     const receivedLog = logs.find(([event]) => event === "whatsapp.webhook.post.received");
     assert.ok(receivedLog);
     assert.equal(receivedLog[1].bodyEntryLength, 1);
@@ -163,10 +165,19 @@ test("POST /webhook/whatsapp processa payload real da Meta e envia resposta simp
     assert.equal(receivedLog[1].messagesLength, 1);
     assert.equal(receivedLog[1].textBody, "Oi SamBah");
     assert.equal(receivedLog[1].from, "5551999999999");
+    const audit = JSON.parse(await readFile(auditFile, "utf8"));
+    const aiEvent = audit.find((event) => event.type === "sambah_ai_decision");
+    assert.ok(aiEvent);
+    assert.equal(aiEvent.source, "whatsapp_ai_core");
+    assert.equal(aiEvent.context.phone, "[masked]");
+    assert.equal(aiEvent.context.intent, "saudacao");
+    assert.equal(aiEvent.context.allowedAction, "ANSWER_INFO");
+    assert.equal(aiEvent.context.requiresHuman, false);
+    assert.match(aiEvent.context.auditReason, /Saudacao/);
     const history = JSON.parse(await readFile(messagesFile, "utf8"));
     assert.equal(history.length, 2);
     assert.equal(history[0].direction, "out");
-    assert.equal(history[0].text, buildSambahInitialMessage());
+    assert.equal(history[0].text, sentBody.text.body);
     assert.equal(history[0].status, "sent");
     assert.equal(history[0].httpStatus, 200);
     assert.equal(history[0].response.messages[0].id, "wamid-auto-reply");
@@ -177,7 +188,7 @@ test("POST /webhook/whatsapp processa payload real da Meta e envia resposta simp
     assert.equal(conversations.conversas[0].mensagens.length, 2);
     assert.equal(conversations.conversas[0].mensagens[0].direction, "in");
     assert.equal(conversations.conversas[0].mensagens[1].direction, "out");
-    assert.equal(conversations.conversas[0].mensagens[1].text, buildSambahInitialMessage());
+    assert.equal(conversations.conversas[0].mensagens[1].text, sentBody.text.body);
   } finally {
     console.info = previousConsoleInfo;
     await close(server);
@@ -228,12 +239,15 @@ test("POST /webhook/whatsapp responde fluxo humano quando cliente pede atendente
     assert.equal(response.status, 200);
     assert.equal(body.directAutoReply.sent, true);
     assert.equal(graphCalls.length, 1);
-    assert.deepEqual(JSON.parse(graphCalls[0].options.body), {
+    const sentBody = JSON.parse(graphCalls[0].options.body);
+    assert.deepEqual(sentBody, {
       messaging_product: "whatsapp",
       to: "5551999999999",
       type: "text",
-      text: { body: buildSambahHumanSupportMessage() }
+      text: { body: sentBody.text.body }
     });
+    assert.match(sentBody.text.body, /atendimento humano/);
+    assert.doesNotMatch(sentBody.text.body, /1.*Continuar com o SamBah/s);
   } finally {
     await close(server);
     await cleanup();

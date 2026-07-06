@@ -77,3 +77,60 @@ test("AI Core gera trilha de auditoria estruturada", () => {
   assert.equal(audit.nextState, "AGUARDANDO_NOME");
   assert.match(audit.messageReceived, /quero pedir/);
 });
+
+test("Atendimento Natural Controlado responde saudacao sem menu longo", () => {
+  for (const message of ["oi", "bom dia"]) {
+    const result = classifySambahIntent({ message, conversationState: "IDLE" });
+    assert.equal(result.intent, "saudacao");
+    assert.equal(result.allowedAction, "ANSWER_INFO");
+    assert.equal(result.responseStyle, "natural_short");
+    assert.match(result.safeReply, /SamBah/);
+    assert.doesNotMatch(result.safeReply, /1 - Fazer pedido|6 - Falar com atendente/);
+  }
+});
+
+test("Atendimento Natural Controlado cobre frases reais sem acao operacional proibida", () => {
+  const samples = [
+    ["tem cardapio?", "cardapio", "ANSWER_INFO"],
+    ["quanto ta o xis?", "preco", "ANSWER_INFO"],
+    ["faz entrega?", "pedido", "ASK_NAME"],
+    ["posso retirar ai?", "pedido", "ASK_NAME"],
+    ["quero orcamento para evento", "evento", "ANSWER_INFO"],
+    ["voces atendem empresa?", "evento", "ANSWER_INFO"],
+    ["onde fica?", "localizacao", "ANSWER_INFO"],
+    ["que horas abre?", "horario", "ANSWER_INFO"],
+    ["manda o link", "unknown", "ANSWER_INFO"],
+    ["asdf ???", "unknown", "ANSWER_INFO"]
+  ];
+  for (const [message, intent, allowedAction] of samples) {
+    const result = classifySambahIntent({ message, conversationState: "IDLE" });
+    assert.equal(result.intent, intent, message);
+    assert.equal(result.allowedAction, allowedAction, message);
+    assert.equal(typeof result.safeReply, "string");
+    assert.notEqual(result.safeReply, "");
+  }
+});
+
+test("Atendimento Natural Controlado nao inventa preco nem confirma pagamento", () => {
+  const price = classifySambahIntent({ message: "quanto custa o xis?", conversationState: "IDLE" });
+  assert.equal(price.intent, "preco");
+  assert.equal(price.allowedAction, "ANSWER_INFO");
+  assert.match(price.safeReply, /nao invento preco|valor errado/i);
+
+  const paid = classifySambahIntent({ message: "paguei no pix", conversationState: "AGUARDANDO_FORMA_PAGAMENTO" });
+  assert.equal(paid.intent, "pagamento");
+  assert.equal(paid.allowedAction, "HANDOFF_HUMAN");
+  assert.equal(paid.requiresHuman, true);
+  assert.match(paid.safeReply, /nao confirmo pagamento/i);
+});
+
+test("Atendimento Natural Controlado preserva Mesa e humano", () => {
+  const mesa = classifySambahIntent({ message: "ja fiz o pedido", conversationState: "AGUARDANDO_PEDIDO_MESA" });
+  assert.equal(mesa.allowedAction, "SEND_MESA_LINK");
+  assert.notEqual(mesa.replyKey, "initial_menu");
+  assert.match(mesa.safeReply, /Comanda Mesa/);
+
+  const human = classifySambahIntent({ message: "quero falar com alguem", conversationState: "IDLE" });
+  assert.equal(human.allowedAction, "HANDOFF_HUMAN");
+  assert.equal(human.requiresHuman, true);
+});
