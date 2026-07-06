@@ -218,6 +218,67 @@ test("WhatsApp mantem contexto do pedido entre mensagens livres", async () => {
   }
 });
 
+test("WhatsApp pedido de atendente durante pedido permanece em handoff humano", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-order-human-"));
+  const filePath = join(dir, "conversas.json");
+  const service = new WhatsAppConversationService({ filePath });
+  try {
+    await service.recordIncoming({ from: "5551999999999", text: "quero pedir", messageId: "order-human-1" });
+    await service.recordIncoming({ from: "5551999999999", text: "Neno", messageId: "order-human-2" });
+    const handoff = await service.recordIncoming({
+      from: "5551999999999",
+      text: "quero conversar com atendente",
+      messageId: "order-human-3"
+    });
+    assert.equal(handoff.conversa.atendimentoEstado, "HUMANO");
+    assert.equal(handoff.conversa.status, "humano");
+    assert.equal(handoff.aiDecision.allowedAction, "HANDOFF_HUMAN");
+
+    const recorded = await service.recordOutgoing("wa_5551999999999", {
+      text: handoff.aiDecision.safeReply,
+      sendResult: {
+        sent: true,
+        status: "sent",
+        httpStatus: 200,
+        response: { messages: [{ id: "wamid-human-sent" }] }
+      }
+    });
+    assert.equal(recorded.conversa.status, "humano");
+    assert.equal(recorded.conversa.atendimentoEstado, "HUMANO");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Central marca atendimento humano preservando estado de handoff", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-manual-human-"));
+  const filePath = join(dir, "conversas.json");
+  await writeFile(filePath, JSON.stringify({
+    conversas: [{
+      id: "wa_55518881111",
+      nome: "Cliente Manual",
+      telefone: "55518881111",
+      status: "aguardando_cliente",
+      atendimentoEstado: "AGUARDANDO_PEDIDO_MESA",
+      mensagens: [],
+      createdAt: "2026-07-06T10:00:00.000Z",
+      updatedAt: "2026-07-06T10:00:00.000Z"
+    }]
+  }), "utf8");
+  const service = new WhatsAppConversationService({ filePath });
+  try {
+    const marked = await service.markHuman("wa_55518881111");
+    assert.equal(marked.conversa.status, "humano");
+    assert.equal(marked.conversa.atendimentoEstado, "HUMANO");
+
+    const resolved = await service.markResolved("wa_55518881111");
+    assert.equal(resolved.conversa.status, "resolvido");
+    assert.equal(resolved.conversa.atendimentoEstado, "");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("WhatsApp nao recria conversa quando telefone vem com ou sem nono digito", async () => {
   const dir = await mkdtemp(join(tmpdir(), "sambha-conversation-phone-alias-"));
   const filePath = join(dir, "conversas.json");

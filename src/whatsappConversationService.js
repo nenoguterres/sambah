@@ -231,7 +231,7 @@ export class WhatsAppConversationService {
     };
     const updated = {
       ...data.conversas[index],
-      status: sendResult?.sent ? "aguardando_cliente" : data.conversas[index].status,
+      status: nextOutgoingStatus(data.conversas[index], sendResult),
       ultimaInteracao: now,
       updatedAt: now,
       mensagens: [...(data.conversas[index].mensagens || []), message].slice(-60)
@@ -398,7 +398,12 @@ export class WhatsAppConversationService {
     const index = data.conversas.findIndex((item) => item.id === id || phonesMatch(item.telefone, id));
     if (index === -1) return { ok: false, error: "Conversa nao encontrada" };
     const now = this.now().toISOString();
-    data.conversas[index] = { ...data.conversas[index], status, updatedAt: now };
+    const atendimentoEstado = status === "humano"
+      ? "HUMANO"
+      : status === "resolvido" && data.conversas[index].atendimentoEstado === "HUMANO"
+        ? ""
+        : data.conversas[index].atendimentoEstado;
+    data.conversas[index] = { ...data.conversas[index], status, atendimentoEstado, updatedAt: now };
     await this.#write(data);
     return { ok: true, conversa: this.#withPriority(data.conversas[index]) };
   }
@@ -528,8 +533,8 @@ function nextOrderState(conversation = {}, incoming = {}, intent = "") {
   const current = conversation.atendimentoEstado || "";
   const text = normalizeText(incoming.text || incoming.transcricao || "");
   if (isCancelIntent(text)) return "CANCELADO";
+  if (HUMAN_INTENTS.has(intent)) return "HUMANO";
   if (current === "AGUARDANDO_NOME" && text) return "ENVIADO_PARA_MESA_COMANDA";
-  if (HUMAN_INTENTS.has(intent)) return current || "HUMANO";
   if (["ENVIADO_PARA_MESA_COMANDA", "AGUARDANDO_PEDIDO_MESA"].includes(current)) return "AGUARDANDO_PEDIDO_MESA";
   if (current === "PEDIDO_MESA_RECEBIDO") {
     if (isPixPaymentText(text)) return "COBRANCA_ENVIADA";
@@ -557,6 +562,14 @@ function nextPaymentStatus(conversation = {}, incoming = {}) {
 
 function isOrderConversation(conversation = {}) {
   return ORDER_STATES.has(conversation.atendimentoEstado || "");
+}
+
+function nextOutgoingStatus(conversation = {}, sendResult = null) {
+  if (!sendResult?.sent) return conversation.status;
+  if ((conversation.atendimentoEstado || "") === "HUMANO" || HUMAN_INTENTS.has(conversation.intencao || "")) {
+    return "humano";
+  }
+  return "aguardando_cliente";
 }
 
 function isPixPaymentText(text = "") {
