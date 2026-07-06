@@ -26,7 +26,7 @@ export function getRuntimeConfig(env = globalThis.process?.env || {}) {
     port: Number(env.PORT || 3000),
     baseUrl: env.BASE_URL || API_BASES.local,
     publicBaseUrl: env.PUBLIC_BASE_URL || "https://insanofoodtruck.com.br",
-    mesaComandaUrl: env.MESA_COMANDA_URL || `${env.PUBLIC_BASE_URL || "https://insanofoodtruck.com.br"}/pedir?origem=whatsapp_sambah`,
+    mesaComandaUrl: env.MESA_COMANDA_URL || `${env.SAMBAH_APP_BASE_URL || "https://api.insanofoodtruck.com.br"}/sambah?origem=whatsapp_sambah`,
     corsOrigins: parseList(env.CORS_ORIGINS, DEFAULT_CORS_ORIGINS),
     whatsappNumber: env.WHATSAPP_NUMBER || "5551980413745",
     insanoWhatsappNumber: env.INSANO_WHATSAPP_NUMBER || "",

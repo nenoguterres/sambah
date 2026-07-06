@@ -32,7 +32,7 @@ const CONTINUE_WITH_SAMBAH_MESSAGE = "Fechado, seguimos por aqui contigo. Me diz
 const WAITING_FOR_ATTENDANT_MESSAGE = "Combinado. Tua conversa ficou na fila da equipe. Assim que um atendente estiver disponível, ele assume por aqui.";
 const FALLBACK_MESSAGE = "Certo. Me conta um pouco mais do que tu precisa, ou responde com um número de 1 a 6 para eu te levar direto ao ponto.";
 
-const DEFAULT_MESA_COMANDA_URL = "https://insanofoodtruck.com.br/pedir?origem=whatsapp_sambah";
+const DEFAULT_MESA_COMANDA_URL = "https://api.insanofoodtruck.com.br/sambah?origem=whatsapp_sambah";
 
 const ORDER_MESSAGE = `Bah, perfeito. Vou te levar para a Comanda Mesa.
 
@@ -306,10 +306,13 @@ function withMesaComandaUrl(message = "", context = {}) {
 
 export function buildMesaComandaUrl(baseUrl = DEFAULT_MESA_COMANDA_URL, conversation = {}) {
   const rawUrl = String(baseUrl || DEFAULT_MESA_COMANDA_URL);
-  const fallbackBase = "https://insanofoodtruck.com.br";
+  const fallbackBase = "https://api.insanofoodtruck.com.br";
   const url = new URL(rawUrl, fallbackBase);
   url.searchParams.set("origem", "whatsapp_sambah");
   url.searchParams.set("origin", "WHATSAPP_SAMBAH");
+  if (!url.searchParams.get("returnTo")) {
+    url.searchParams.set("returnTo", "/conversas");
+  }
   if (conversation?.id) {
     url.searchParams.set("conversationId", conversation.id);
     url.searchParams.set("sambahConversationId", conversation.id);

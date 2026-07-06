@@ -72,13 +72,20 @@ main,
   gap: 10px;
 }
 
-.admin-link {
+.admin-link,
+.return-conversation-link {
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 8px;
   padding: 10px 12px;
   color: #f5f0e8;
   text-decoration: none;
   font-weight: 800;
+}
+
+.return-conversation-link {
+  border-color: rgba(37, 211, 102, 0.5);
+  background: rgba(37, 211, 102, 0.12);
+  color: #dfffea;
 }
 
 .header-brand {
@@ -150,6 +157,7 @@ main,
   color: var(--text);
 }
 
+.return-conversation-link:hover,
 .whatsapp-button:hover,
 .primary-action:hover,
 .secondary-action:hover,
