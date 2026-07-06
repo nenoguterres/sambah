@@ -101,14 +101,14 @@ test("link da Mesa Comanda carrega identificador da conversa WhatsApp", () => {
   assert.equal(parsed.searchParams.get("returnTo"), "/conversas");
 });
 
-test("link padrao da Mesa Comanda permanece dentro do app SamBah", () => {
+test("link padrao da Mesa Comanda abre cardapio direcionado dentro do app SamBah", () => {
   const url = buildMesaComandaUrl(undefined, {
     id: "wa_5551999999999",
     telefone: "5551999999999"
   });
   const parsed = new URL(url);
   assert.equal(parsed.origin, "https://api.insanofoodtruck.com.br");
-  assert.equal(parsed.pathname, "/sambah");
+  assert.equal(parsed.pathname, "/cardapio/insano");
   assert.equal(parsed.searchParams.get("returnTo"), "/conversas");
   assert.equal(parsed.searchParams.get("conversationId"), "wa_5551999999999");
 });
@@ -172,4 +172,15 @@ test("pagina SamBah exibe retorno seguro para conversas quando vem da comanda", 
   assert.match(js, /sanitizeReturnPath/);
   assert.match(js, /returnConversationLink\.hidden = false/);
   assert.match(js, /headerBrand\.href = returnTo/);
+});
+
+test("cardapio operacional direciona pedido WhatsApp e preserva vinculo da conversa", async () => {
+  const html = await readFile(new URL("../public/platform.html", import.meta.url), "utf8");
+  const js = await readFile(new URL("../public/platform.js", import.meta.url), "utf8");
+  assert.match(html, /return-conversation-link/);
+  assert.match(html, /Voltar para conversa/);
+  assert.match(js, /focusWhatsAppOrderFlow/);
+  assert.match(js, /notifySambahMesaOrder/);
+  assert.match(js, /\/api\/conversas\/mesa-pedido/);
+  assert.match(js, /name="conversationId"/);
 });

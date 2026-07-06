@@ -14,6 +14,25 @@ const page = route.page;
 const operation = route.operation;
 const table = route.table;
 const app = document.querySelector("#app");
+const pageParams = new URLSearchParams(location.search);
+const returnTo = sanitizeReturnPath(pageParams.get("returnTo"));
+const whatsappContext = {
+  origem: pageParams.get("origem") || "",
+  origin: pageParams.get("origin") || "",
+  conversationId: pageParams.get("conversationId") || "",
+  sambahConversationId: pageParams.get("sambahConversationId") || "",
+  phone: pageParams.get("phone") || ""
+};
+
+if (returnTo) {
+  const brand = document.querySelector(".brand");
+  const returnLink = document.querySelector(".return-conversation-link");
+  if (brand) brand.href = returnTo;
+  if (returnLink) {
+    returnLink.href = returnTo;
+    returnLink.hidden = false;
+  }
+}
 
 render();
 
@@ -46,6 +65,7 @@ function renderMenu(op) {
     ${orderPanel({ operation: title, source: `cardapio_${op}` })}
   `;
   bindOrderForm();
+  focusWhatsAppOrderFlow();
 }
 
 function renderInsanoEvent() {
@@ -94,6 +114,7 @@ function renderTable(op, number) {
     ${orderPanel({ operation: title, source: `mesa_${op}`, table: number })}
   `;
   bindOrderForm();
+  focusWhatsAppOrderFlow();
 }
 
 function renderQrcodes() {
@@ -144,6 +165,10 @@ function orderPanel({ operation, source, table: tableNumber = "", waiter = false
         <textarea name="items" placeholder="Itens do pedido"></textarea>
         <textarea name="observacoes" placeholder="Observacoes"></textarea>
         <input name="source" value="${escapeHtml(source)}" hidden>
+        <input name="conversationId" value="${escapeHtml(whatsappContext.conversationId)}" hidden>
+        <input name="sambahConversationId" value="${escapeHtml(whatsappContext.sambahConversationId)}" hidden>
+        <input name="phone" value="${escapeHtml(whatsappContext.phone)}" hidden>
+        <input name="origin" value="${escapeHtml(whatsappContext.origin)}" hidden>
         <button class="primary" type="submit">Enviar pedido</button>
         <p id="orderResult" class="result" role="status"></p>
       </form>
@@ -178,14 +203,42 @@ async function submitOrder(event) {
     whatsapp: data.whatsapp,
     mesa: data.mesa,
     observacoes: data.observacoes,
+    conversationId: data.conversationId,
+    sambahConversationId: data.sambahConversationId,
+    phone: data.phone,
+    origin: data.origin || whatsappContext.origin || "WHATSAPP_SAMBAH",
     items: parseItems(data.items),
     customer: { name: data.nome, phone: data.whatsapp, serviceType: data.mesa ? "mesa" : "retirada", paymentMethod: "a combinar" }
   };
   const isInsano = data.operation === "Insano";
   const pre = await postJson(isInsano ? "/api/site/insano/pedido" : "/api/site/precomanda", payload);
   const order = isInsano ? pre : await postJson("/api/site/pedido-rapido", { ...payload, message: data.items || data.observacoes });
+  await notifySambahMesaOrder({ data, payload, order, pre });
   result.innerHTML = `Salvo no CRM. Status: ${escapeHtml(pre.status || "novo")} ${pre.whatsappUrl ? `<a href="${pre.whatsappUrl}" data-whatsapp-url>Continuar no WhatsApp</a>` : ""}`;
   form.dataset.lastOrder = order.id || "";
+}
+
+function focusWhatsAppOrderFlow() {
+  if (whatsappContext.origem !== "whatsapp_sambah" && whatsappContext.origin !== "WHATSAPP_SAMBAH") return;
+  const result = document.querySelector("#orderResult");
+  if (result) result.textContent = "Tu chegou pela conversa do SamBah. Monta teu pedido aqui e envia.";
+  document.querySelector("#orderForm")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function notifySambahMesaOrder({ data = {}, payload = {}, order = {}, pre = {} } = {}) {
+  const conversationId = data.conversationId || whatsappContext.conversationId || whatsappContext.sambahConversationId;
+  if (!conversationId) return;
+  const mesaOrderId = order.id || order.pedidoId || pre.id || pre.pedidoId || "";
+  if (!mesaOrderId) return;
+  await postJson("/api/conversas/mesa-pedido", {
+    conversationId,
+    phone: data.phone || payload.phone || data.whatsapp || payload.whatsapp,
+    mesaOrderId,
+    customerName: data.nome || payload.nome,
+    mode: data.mesa ? "local" : "retirada",
+    total: payload.total || "",
+    origin: "WHATSAPP_SAMBAH"
+  });
 }
 
 function bindEventForm() {
@@ -270,6 +323,13 @@ function formatItems(items = []) {
 
 function escapeHtml(value = "") {
   return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+}
+
+function sanitizeReturnPath(value = "") {
+  const path = String(value || "").trim();
+  if (!path.startsWith("/") || path.startsWith("//")) return "";
+  if (path.includes("\\") || path.includes("\n") || path.includes("\r")) return "";
+  return path;
 }
 
 async function openExternalWhatsApp(url) {
