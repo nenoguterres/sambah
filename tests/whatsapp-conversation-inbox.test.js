@@ -184,6 +184,59 @@ test("WhatsApp pedido nao cria precomanda e aguarda Mesa Comanda", async () => {
   }
 });
 
+test("WhatsApp mantem contexto do pedido entre mensagens livres", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-conversation-context-"));
+  const filePath = join(dir, "conversas.json");
+  const service = new WhatsAppConversationService({
+    filePath,
+    now: () => new Date("2026-07-06T13:00:00.000Z")
+  });
+  try {
+    const hello = await service.recordIncoming({ from: "5551999999999", text: "Oi", messageId: "ctx-hello" });
+    const order = await service.recordIncoming({ from: "5551999999999", text: "Quero pedir", messageId: "ctx-order" });
+    const burger = await service.recordIncoming({ from: "5551999999999", text: "X-Burger", messageId: "ctx-burger" });
+    const coke = await service.recordIncoming({ from: "5551999999999", text: "Coca-Cola", messageId: "ctx-coke" });
+    const data = JSON.parse(await readFile(filePath, "utf8"));
+
+    assert.equal(data.conversas.length, 1);
+    assert.equal(hello.conversa.id, "wa_5551999999999");
+    assert.equal(order.conversa.id, hello.conversa.id);
+    assert.equal(burger.conversa.id, hello.conversa.id);
+    assert.equal(coke.conversa.id, hello.conversa.id);
+    assert.equal(order.conversa.atendimentoEstado, "AGUARDANDO_NOME");
+    assert.equal(order.aiDecision.conversationState, "AGUARDANDO_NOME");
+    assert.equal(burger.conversa.atendimentoEstado, "ENVIADO_PARA_MESA_COMANDA");
+    assert.equal(burger.aiDecision.previousConversationState, "AGUARDANDO_NOME");
+    assert.equal(burger.aiDecision.conversationState, "ENVIADO_PARA_MESA_COMANDA");
+    assert.equal(coke.conversa.atendimentoEstado, "AGUARDANDO_PEDIDO_MESA");
+    assert.equal(coke.aiDecision.previousConversationState, "ENVIADO_PARA_MESA_COMANDA");
+    assert.equal(coke.aiDecision.conversationState, "AGUARDANDO_PEDIDO_MESA");
+    assert.equal(coke.aiDecision.allowedAction, "SEND_MESA_LINK");
+    assert.doesNotMatch(coke.aiDecision.safeReply, /1 - Fazer pedido|Falar com atendente/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("WhatsApp nao recria conversa quando telefone vem com ou sem nono digito", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-conversation-phone-alias-"));
+  const filePath = join(dir, "conversas.json");
+  const service = new WhatsAppConversationService({ filePath });
+  try {
+    const first = await service.recordIncoming({ from: "555180413745", text: "Quero pedir", messageId: "alias-order" });
+    const second = await service.recordIncoming({ from: "5551980413745", text: "X-Burger", messageId: "alias-burger" });
+    const data = JSON.parse(await readFile(filePath, "utf8"));
+
+    assert.equal(data.conversas.length, 1);
+    assert.equal(second.conversa.id, first.conversa.id);
+    assert.equal(second.conversa.atendimentoEstado, "ENVIADO_PARA_MESA_COMANDA");
+    assert.equal(second.aiDecision.previousConversationState, "AGUARDANDO_NOME");
+    assert.equal(second.aiDecision.conversationState, "ENVIADO_PARA_MESA_COMANDA");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("Pedido Mesa criado com identificador correto vincula conversa e sem identificador nao vincula", async () => {
   const dir = await mkdtemp(join(tmpdir(), "sambha-conversation-link-"));
   const filePath = join(dir, "conversas.json");

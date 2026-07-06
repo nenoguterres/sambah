@@ -52,7 +52,7 @@ export class WhatsAppConversationService {
 
   async get(id) {
     const data = await this.#read();
-    const conversation = data.conversas.find((item) => item.id === id || item.telefone === normalizePhone(id));
+    const conversation = data.conversas.find((item) => item.id === id || phonesMatch(item.telefone, id));
     return conversation ? { ok: true, conversa: this.#withPriority(conversation) } : { ok: false, error: "Conversa nao encontrada" };
   }
 
@@ -61,7 +61,7 @@ export class WhatsAppConversationService {
     const now = this.now().toISOString();
     const data = await this.#read();
     const id = incoming.telefone ? `wa_${incoming.telefone}` : `wa_${crypto.randomUUID()}`;
-    const existing = data.conversas.find((item) => item.id === id || item.telefone === incoming.telefone);
+    const existing = data.conversas.find((item) => item.id === id || phonesMatch(item.telefone, incoming.telefone));
     const configStatus = computeConfigStatus(incoming, runtimeConfig);
     const message = {
       id: incoming.messageId || `msg_${crypto.randomUUID()}`,
@@ -93,11 +93,6 @@ export class WhatsAppConversationService {
       customerName: base.nome || "",
       previousIntent: base.aiDecision?.intent || base.intencao || ""
     });
-    const aiAudit = buildSambahAiAudit({
-      message: textForIntent,
-      conversationState: base,
-      previousIntent: base.aiDecision?.intent || base.intencao || ""
-    }, aiDecision);
     const intent = mapAiIntentToWhatsAppIntent(aiDecision.intent);
     const respostaSugerida = suggestedWhatsAppResponse(intent);
     const status = configStatus
@@ -108,6 +103,22 @@ export class WhatsAppConversationService {
           : "aguardando_equipe");
     const orderState = nextOrderState(base, incoming, intent);
     const paymentStatus = nextPaymentStatus(base, incoming);
+    const effectiveConversationState = orderState || base.atendimentoEstado || aiDecision.conversationState || "";
+    const persistedAiDecision = {
+      ...aiDecision,
+      previousConversationState: aiDecision.conversationState || aiDecision.state || "IDLE",
+      conversationState: effectiveConversationState || "IDLE",
+      state: effectiveConversationState || "IDLE"
+    };
+    const aiAudit = {
+      ...buildSambahAiAudit({
+        message: textForIntent,
+        conversationState: base,
+        previousIntent: base.aiDecision?.intent || base.intencao || ""
+      }, persistedAiDecision),
+      nextState: effectiveConversationState || "IDLE",
+      conversationState: persistedAiDecision.conversationState
+    };
     const updated = {
       ...base,
       nome: base.nome || incoming.nome || incoming.profileName || "Cliente WhatsApp",
@@ -121,7 +132,7 @@ export class WhatsAppConversationService {
       statusCobranca: paymentStatus || base.statusCobranca || "",
       status,
       respostaSugerida,
-      aiDecision,
+      aiDecision: persistedAiDecision,
       aiAuditTrail: [...(base.aiAuditTrail || []), {
         ...aiAudit,
         at: now
@@ -150,7 +161,7 @@ export class WhatsAppConversationService {
       conversa: this.#withPriority(updated),
       message,
       intent,
-      aiDecision,
+      aiDecision: persistedAiDecision,
       respostaSugerida,
       sendEnabled: runtimeConfig.whatsappBusiness?.sendEnabled === true,
       voiceReplyEnabled: runtimeConfig.ai?.voiceReplyEnabled === true
@@ -159,7 +170,7 @@ export class WhatsAppConversationService {
 
   async addOutgoing(id, body = {}, { runtimeConfig = {}, whatsappProvider = null } = {}) {
     const data = await this.#read();
-    const index = data.conversas.findIndex((item) => item.id === id || item.telefone === normalizePhone(id));
+    const index = data.conversas.findIndex((item) => item.id === id || phonesMatch(item.telefone, id));
     if (index === -1) return { ok: false, error: "Conversa nao encontrada" };
     const now = this.now().toISOString();
     const text = String(body.text || body.message || data.conversas[index].respostaSugerida || "").trim();
@@ -199,7 +210,7 @@ export class WhatsAppConversationService {
 
   async recordOutgoing(id, body = {}) {
     const data = await this.#read();
-    const index = data.conversas.findIndex((item) => item.id === id || item.telefone === normalizePhone(id));
+    const index = data.conversas.findIndex((item) => item.id === id || phonesMatch(item.telefone, id));
     if (index === -1) return { ok: false, error: "Conversa nao encontrada" };
     const now = this.now().toISOString();
     const text = String(body.text || body.message || "").trim();
@@ -240,7 +251,7 @@ export class WhatsAppConversationService {
 
     data.conversas = data.conversas.map((conversation) => {
       const messages = Array.isArray(conversation.mensagens) ? conversation.mensagens : [];
-      const hasPhoneMatch = recipientPhone && normalizePhone(conversation.telefone) === recipientPhone;
+      const hasPhoneMatch = recipientPhone && phonesMatch(conversation.telefone, recipientPhone);
       let conversationTouched = false;
       const nextMessages = messages.map((message) => {
         if (!matchesProviderMessageId(message, providerMessageId)) return message;
@@ -280,7 +291,7 @@ export class WhatsAppConversationService {
 
   async linkMesaOrder(id, order = {}) {
     const data = await this.#read();
-    const index = data.conversas.findIndex((item) => item.id === id || item.telefone === normalizePhone(id));
+    const index = data.conversas.findIndex((item) => item.id === id || phonesMatch(item.telefone, id));
     if (index === -1) return { ok: false, error: "Conversa nao encontrada" };
     const now = this.now().toISOString();
     const existingOrder = data.conversas[index].mesaPedido || null;
@@ -323,7 +334,7 @@ export class WhatsAppConversationService {
     if (!phone) return { ok: false, error: "conversation_reference_required" };
 
     const data = await this.#read();
-    const matches = data.conversas.filter((item) => item.telefone === phone);
+    const matches = data.conversas.filter((item) => phonesMatch(item.telefone, phone));
     if (matches.length !== 1) {
       return {
         ok: false,
@@ -336,7 +347,7 @@ export class WhatsAppConversationService {
 
   async recordSambahPayCharge(id, payment = {}) {
     const data = await this.#read();
-    const index = data.conversas.findIndex((item) => item.id === id || item.telefone === normalizePhone(id));
+    const index = data.conversas.findIndex((item) => item.id === id || phonesMatch(item.telefone, id));
     if (index === -1) return { ok: false, error: "Conversa nao encontrada" };
     const now = this.now().toISOString();
     const updated = {
@@ -360,7 +371,7 @@ export class WhatsAppConversationService {
 
   async markPaymentConfirmed(id, payment = {}) {
     const data = await this.#read();
-    const index = data.conversas.findIndex((item) => item.id === id || item.telefone === normalizePhone(id));
+    const index = data.conversas.findIndex((item) => item.id === id || phonesMatch(item.telefone, id));
     if (index === -1) return { ok: false, error: "Conversa nao encontrada" };
     const now = this.now().toISOString();
     const updated = {
@@ -384,7 +395,7 @@ export class WhatsAppConversationService {
 
   async #updateStatus(id, status) {
     const data = await this.#read();
-    const index = data.conversas.findIndex((item) => item.id === id || item.telefone === normalizePhone(id));
+    const index = data.conversas.findIndex((item) => item.id === id || phonesMatch(item.telefone, id));
     if (index === -1) return { ok: false, error: "Conversa nao encontrada" };
     const now = this.now().toISOString();
     data.conversas[index] = { ...data.conversas[index], status, updatedAt: now };
@@ -579,6 +590,27 @@ function normalizePhone(value = "") {
   if (!digits) return "";
   if (digits.startsWith("55")) return digits;
   return digits.length >= 10 ? `55${digits}` : digits;
+}
+
+function phonesMatch(left = "", right = "") {
+  const leftAliases = phoneAliases(left);
+  const rightAliases = phoneAliases(right);
+  if (!leftAliases.size || !rightAliases.size) return false;
+  return [...leftAliases].some((phone) => rightAliases.has(phone));
+}
+
+function phoneAliases(value = "") {
+  const phone = normalizePhone(value);
+  const aliases = new Set();
+  if (!phone) return aliases;
+  aliases.add(phone);
+  if (phone.startsWith("55") && phone.length === 12) {
+    aliases.add(`${phone.slice(0, 4)}9${phone.slice(4)}`);
+  }
+  if (phone.startsWith("55") && phone.length === 13 && phone[4] === "9") {
+    aliases.add(`${phone.slice(0, 4)}${phone.slice(5)}`);
+  }
+  return aliases;
 }
 
 function hasAny(text, terms) {
