@@ -92,6 +92,9 @@ test("Central de Conversas page keeps the message list scrollable", async () => 
   assert.match(js, /function renderOrderPanel/);
   assert.match(js, /loadCatalogIntoPanel/);
   assert.match(js, /\/api\/sambah\/cardapio/);
+  assert.match(js, /\/api\/sambah\/cardapio\/sync-mesa/);
+  assert.match(js, /Fonte: Mesa/);
+  assert.match(js, /function syncMesaCatalog/);
   assert.match(js, /scrollTop\s*=\s*list\.scrollHeight/);
   assert.match(js, /window\.scrollTo/);
   assert.match(js, /REFRESH_INTERVAL_MS\s*=\s*5000/);

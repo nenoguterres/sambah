@@ -39,7 +39,7 @@ const mesa = new MesaIntegrationService({ queueFile: dataFile("mesa-queue.json")
 const mesaConnector = new MesaConnectorService({ integrationService: mesa });
 const menu = new MenuSyncService({ cacheFile: dataFile("menu-cache.json") });
 const conversation = new SambahConversationService({ scriptsFile: dataFile("sambah-scripts.json") });
-const whatsappCatalog = new WhatsAppCatalogService({ filePath: dataFile("whatsapp-catalog.json") });
+const whatsappCatalog = new WhatsAppCatalogService({ filePath: dataFile("whatsapp-catalog.json"), menuService: menu });
 const whatsappOrders = new WhatsAppOrderService({ filePath: dataFile("whatsapp-orders.json") });
 const whatsappConversations = new WhatsAppConversationService({ filePath: dataFile("whatsapp-conversas.json"), orderService: whatsappOrders });
 const drafts = new OrderDraftService({ draftsFile: dataFile("order-drafts.json"), rulesFile: dataFile("sambah-menu-rules.json") });
@@ -652,6 +652,18 @@ export function createApp({
           context: { count: result.products?.length || 0, error: result.error || "" }
         });
         return sendJson(res, result.ok ? 200 : 400, result);
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/sambah/cardapio/sync-mesa") {
+        const result = await whatsappCatalogService.syncFromMesaMenu();
+        await safeAuditRecord(auditService, {
+          type: "sambah_catalog_synced_from_mesa",
+          status: result.ok ? "success" : "warning",
+          source: "mesa_menu",
+          message: result.ok ? "Cardapio WhatsApp sincronizado pelo Mesa" : "Falha ao sincronizar cardapio WhatsApp pelo Mesa",
+          context: { count: result.products?.length || 0, error: result.error || "" }
+        });
+        return sendJson(res, result.ok ? 200 : 502, result);
       }
 
       const conversaMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)$/);

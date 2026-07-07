@@ -185,7 +185,9 @@ function renderOrderPanel(conversa) {
         </article>
         <article class="catalog-box">
           <span>Cardapio na tela</span>
+          <div class="catalog-status" id="catalogStatus">Fonte: conferindo Mesa...</div>
           <div id="catalogPanel">Carregando cardapio...</div>
+          <button class="catalog-sync" type="button" id="syncMesaCatalogButton">Sincronizar Mesa</button>
         </article>
       </div>
     </section>
@@ -292,13 +294,22 @@ async function postAction(id, action) {
 
 async function loadCatalogIntoPanel() {
   const panel = chatEl.querySelector("#catalogPanel");
+  const status = chatEl.querySelector("#catalogStatus");
+  const syncButton = chatEl.querySelector("#syncMesaCatalogButton");
   if (!panel) return;
+  syncButton?.addEventListener("click", syncMesaCatalog);
   try {
     if (!catalogCache) {
       const response = await fetch("/api/sambah/cardapio", { cache: "no-store" });
       catalogCache = await response.json();
     }
     const products = catalogCache.products || [];
+    if (status) {
+      status.textContent = catalogCache.synced
+        ? `Fonte: Mesa sincronizado${catalogCache.lastSyncAt ? ` em ${formatTime(catalogCache.lastSyncAt)}` : ""}`
+        : "Fonte: Mesa pendente. Sincronize antes de orientar pedido.";
+      status.className = `catalog-status ${catalogCache.synced ? "ok" : "attention"}`;
+    }
     panel.innerHTML = products.length
       ? products.slice(0, 12).map((item) => `<button type="button" data-catalog-item="${escapeAttr(item.name)}">${escapeHtml(item.name)}</button>`).join("")
       : "Sem itens cadastrados.";
@@ -311,6 +322,29 @@ async function loadCatalogIntoPanel() {
     });
   } catch {
     panel.textContent = "Nao foi possivel carregar o cardapio agora.";
+  }
+}
+
+async function syncMesaCatalog() {
+  const panel = chatEl.querySelector("#catalogPanel");
+  const status = chatEl.querySelector("#catalogStatus");
+  const syncButton = chatEl.querySelector("#syncMesaCatalogButton");
+  syncButton.disabled = true;
+  if (status) status.textContent = "Sincronizando cardapio oficial do Mesa...";
+  try {
+    const response = await fetch("/api/sambah/cardapio/sync-mesa", { method: "POST", cache: "no-store" });
+    const data = await response.json();
+    if (!data.ok) throw new Error(data.error || "Falha ao sincronizar Mesa");
+    catalogCache = data;
+    await loadCatalogIntoPanel();
+  } catch (error) {
+    if (panel) panel.textContent = error.message || "Nao foi possivel sincronizar o Mesa agora.";
+    if (status) {
+      status.textContent = "Fonte: Mesa nao sincronizado.";
+      status.className = "catalog-status attention";
+    }
+  } finally {
+    syncButton.disabled = false;
   }
 }
 
