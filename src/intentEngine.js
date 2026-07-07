@@ -23,6 +23,7 @@ const SAFE_REPLIES = {
   ask_name_again: "Pra seguir com seguranca, preciso do teu nome antes de te levar para a Comanda Mesa.",
   start_order_draft: "Fechado. Vou montar tua comanda por aqui. Me manda os itens do pedido, um por mensagem, que eu vou anotando.",
   item_added: "Anotei esse item na comanda. Pode mandar mais itens ou dizer que esta pronto.",
+  ask_order_item: "Seguimos com tua comanda por aqui. Me manda o item do pedido, com quantidade se souber, que eu vou anotando.",
   order_name_received: "Perfeito, ja peguei teu nome. Para montar o pedido com itens, adicionais, entrega ou retirada, segue pela Comanda Mesa: {MESA_COMANDA_URL}",
   send_mesa_link: "Esse pedido segue pela Comanda Mesa, vivente. Usa este link para montar ou continuar teu pedido: {MESA_COMANDA_URL}",
   ask_payment: "Boa, teu pedido ja chegou pela Mesa. Me diz a forma de pagamento: Pix, cartao, dinheiro ou a cobrar.",
@@ -100,8 +101,11 @@ function decideByState({ detected, normalized, state }) {
   if (ORDER_DRAFT_STATES.has(state)) {
     if (detected.intent === "humano") return decision("humano", detected.confidence, "HANDOFF_HUMAN", "human_support", "Cliente pediu atendimento humano durante pedido", true);
     if (detected.intent === "cancelar") return decision("cancelar", detected.confidence, "CANCEL_FLOW", "cancel_flow", "Cliente pediu cancelamento durante pedido");
+    if (isOrderDraftControlMessage(normalized, detected.intent)) {
+      return decision("pedido", Math.max(detected.confidence, 0.65), "ANSWER_INFO", "ask_order_item", "Mensagem nao e item de pedido; manter comanda sem anotar item");
+    }
     if (normalized) return decision(detected.intent, Math.max(detected.confidence, 0.65), "ADD_ORDER_ITEM", "item_added", "Item recebido; manter comanda interna vinculada");
-    return decision("pedido", 0.5, "ADD_ORDER_ITEM", "item_added", "Fluxo de comanda ativo");
+    return decision("pedido", 0.5, "ANSWER_INFO", "ask_order_item", "Fluxo de comanda ativo sem item reconhecido");
   }
   if (ORDER_WAITING_STATES.has(state)) {
     if (detected.intent === "humano") return decision("humano", detected.confidence, "HANDOFF_HUMAN", "human_support", "Cliente pediu atendimento humano durante pedido", true);
@@ -252,6 +256,14 @@ function hasAny(text = "", terms = []) {
 function isGreeting(normalized = "") {
   if (["oi", "ola", "buenas", "bom dia", "boa tarde", "boa noite", "hello", "hy", "hi"].includes(normalized)) return true;
   return /^(oi|ola|buenas|bom dia|boa tarde|boa noite)\b/.test(normalized);
+}
+
+function isOrderDraftControlMessage(normalized = "", intent = "") {
+  if (!normalized) return true;
+  if (intent === "saudacao") return true;
+  if (["1", "01", "2", "02", "3", "03", "4", "04", "5", "05", "6", "06"].includes(normalized)) return true;
+  if (["quero pedir", "pedido", "fazer pedido", "quero fazer pedido"].includes(normalized)) return true;
+  return false;
 }
 
 function normalizeText(value = "") {

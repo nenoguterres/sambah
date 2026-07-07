@@ -36,6 +36,8 @@ const ORDER_STATES = new Set([
   "CANCELADO",
   "HUMANO"
 ]);
+const ORDER_CONTEXT_TTL_MS = 2 * 60 * 60 * 1000;
+const EXPIRABLE_ORDER_STATES = new Set(["AGUARDANDO_NOME", "COMANDA_EM_ANDAMENTO", "COMANDA_PRONTA", "ENVIADO_PARA_MESA_COMANDA", "AGUARDANDO_PEDIDO_MESA"]);
 
 export class WhatsAppConversationService {
   constructor({ filePath, now = () => new Date(), orderService = null } = {}) {
@@ -87,35 +89,39 @@ export class WhatsAppConversationService {
       mensagens: [],
       createdAt: now
     };
+    const contextBase = resetStaleOrderContext(base, now);
+    if (contextBase.orderContextExpired && this.orderService) {
+      await this.orderService.cancelOrder(base.id, "Contexto de pedido expirado por inatividade").catch(() => null);
+    }
     const textForIntent = incoming.text || incoming.transcricao || incoming.caption || "";
     const aiDecision = classifySambahIntent({
       message: textForIntent,
-      conversationState: base,
-      orderContext: base.mesaPedido || null,
-      mesaOrderId: base.mesaPedido?.id || "",
-      paymentStatus: base.statusCobranca || "",
-      customerName: base.nome || "",
-      previousIntent: base.aiDecision?.intent || base.intencao || ""
+      conversationState: contextBase,
+      orderContext: contextBase.mesaPedido || null,
+      mesaOrderId: contextBase.mesaPedido?.id || "",
+      paymentStatus: contextBase.statusCobranca || "",
+      customerName: contextBase.nome || "",
+      previousIntent: contextBase.aiDecision?.intent || contextBase.intencao || ""
     });
     const intent = mapAiIntentToWhatsAppIntent(aiDecision.intent);
     const respostaSugerida = suggestedWhatsAppResponse(intent);
     const status = configStatus
       || (aiDecision.allowedAction === "NO_ACTION"
-        ? (base.status || "aguardando_equipe")
+        ? (contextBase.status || "aguardando_equipe")
         : HUMAN_INTENTS.has(intent) || aiDecision.allowedAction === "HANDOFF_HUMAN"
           ? "humano"
           : "aguardando_equipe");
-    const orderState = nextOrderState(base, incoming, intent);
+    const orderState = nextOrderState(contextBase, incoming, intent);
     const orderSync = await syncWhatsappOrderFromIncoming({
       orderService: this.orderService,
-      conversation: base,
+      conversation: contextBase,
       incoming,
       intent,
       orderState
     });
-    const whatsappOrder = orderSync.order ? summarizeWhatsappOrder(orderSync.order) : base.whatsappOrder || null;
-    const paymentStatus = nextPaymentStatus(base, incoming);
-    const effectiveConversationState = orderState || base.atendimentoEstado || aiDecision.conversationState || "";
+    const whatsappOrder = orderSync.order ? summarizeWhatsappOrder(orderSync.order) : contextBase.whatsappOrder || null;
+    const paymentStatus = nextPaymentStatus(contextBase, incoming);
+    const effectiveConversationState = orderState || contextBase.atendimentoEstado || aiDecision.conversationState || "";
     const persistedAiDecision = {
       ...aiDecision,
       previousConversationState: aiDecision.conversationState || aiDecision.state || "IDLE",
@@ -125,28 +131,30 @@ export class WhatsAppConversationService {
     const aiAudit = {
       ...buildSambahAiAudit({
         message: textForIntent,
-        conversationState: base,
-        previousIntent: base.aiDecision?.intent || base.intencao || ""
+        conversationState: contextBase,
+        previousIntent: contextBase.aiDecision?.intent || contextBase.intencao || ""
       }, persistedAiDecision),
       nextState: effectiveConversationState || "IDLE",
       conversationState: persistedAiDecision.conversationState
     };
     const updated = {
-      ...base,
-      nome: base.nome || incoming.nome || incoming.profileName || "Cliente WhatsApp",
-      telefone: base.telefone || incoming.telefone,
+      ...contextBase,
+      nome: contextBase.nome || incoming.nome || incoming.profileName || "Cliente WhatsApp",
+      telefone: contextBase.telefone || incoming.telefone,
       ultimaMensagem: incoming.text || incoming.transcricao || describeMessageType(incoming.tipo),
       ultimaInteracao: now,
       updatedAt: now,
       intencao: intent,
-      atendimentoEstado: orderState || base.atendimentoEstado || "",
+      atendimentoEstado: orderState || contextBase.atendimentoEstado || "",
       whatsappOrder,
-      mesaPedido: base.mesaPedido || null,
-      statusCobranca: paymentStatus || base.statusCobranca || "",
+      mesaPedido: contextBase.mesaPedido || null,
+      statusCobranca: paymentStatus || contextBase.statusCobranca || "",
       status,
       respostaSugerida,
+      lastOrderContextResetAt: contextBase.orderContextExpired ? now : contextBase.lastOrderContextResetAt || "",
+      orderContextExpired: undefined,
       aiDecision: persistedAiDecision,
-      aiAuditTrail: [...(base.aiAuditTrail || []), {
+      aiAuditTrail: [...(contextBase.aiAuditTrail || []), {
         ...aiAudit,
         at: now
       }].slice(-20),
@@ -155,8 +163,8 @@ export class WhatsAppConversationService {
         mediaId: incoming.mediaId,
         transcricao: incoming.transcricao || "",
         status: configStatus || "transcricao_pendente"
-      } : base.audio || null,
-      mensagens: [...(base.mensagens || []), message].slice(-60)
+      } : contextBase.audio || null,
+      mensagens: [...(contextBase.mensagens || []), message].slice(-60)
     };
     if (existing) {
       data.conversas = data.conversas.map((item) => (item.id === existing.id ? updated : item));
@@ -599,6 +607,29 @@ function nextOrderState(conversation = {}, incoming = {}, intent = "") {
   }
   if (intent === "pedido" || text === "1") return "COMANDA_EM_ANDAMENTO";
   return current;
+}
+
+function resetStaleOrderContext(conversation = {}, nowIso = new Date().toISOString()) {
+  if (!isStaleOrderContext(conversation, nowIso)) return conversation;
+  return {
+    ...conversation,
+    atendimentoEstado: "",
+    whatsappOrder: null,
+    statusCobranca: "",
+    respostaSugerida: "",
+    aiDecision: null,
+    orderContextExpired: true
+  };
+}
+
+function isStaleOrderContext(conversation = {}, nowIso = "") {
+  const state = String(conversation.atendimentoEstado || "").toUpperCase();
+  if (!EXPIRABLE_ORDER_STATES.has(state)) return false;
+  if (conversation.mesaPedido?.id || conversation.statusCobranca) return false;
+  const lastInteraction = Date.parse(conversation.ultimaInteracao || conversation.updatedAt || conversation.createdAt || "");
+  const nowTime = Date.parse(nowIso);
+  if (!Number.isFinite(lastInteraction) || !Number.isFinite(nowTime)) return false;
+  return nowTime - lastInteraction > ORDER_CONTEXT_TTL_MS;
 }
 
 async function syncWhatsappOrderFromIncoming({ orderService, conversation = {}, incoming = {}, intent = "", orderState = "" } = {}) {

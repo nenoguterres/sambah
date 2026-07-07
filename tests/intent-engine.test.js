@@ -134,3 +134,12 @@ test("Atendimento Natural Controlado preserva Mesa e humano", () => {
   assert.equal(human.allowedAction, "HANDOFF_HUMAN");
   assert.equal(human.requiresHuman, true);
 });
+
+test("AI Core nao transforma saudacao em item durante comanda ativa", () => {
+  for (const message of ["Oi", "bom dia", "1"]) {
+    const result = classifySambahIntent({ message, conversationState: "COMANDA_EM_ANDAMENTO" });
+    assert.equal(result.allowedAction, "ANSWER_INFO", message);
+    assert.equal(result.replyKey, "ask_order_item", message);
+    assert.doesNotMatch(result.safeReply, /Anotei esse item/i);
+  }
+});

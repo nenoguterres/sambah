@@ -234,6 +234,83 @@ test("WhatsApp mantem contexto do pedido entre mensagens livres", async () => {
   }
 });
 
+test("WhatsApp nao anota saudacao como item em comanda ativa", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-conversation-greeting-item-"));
+  const filePath = join(dir, "conversas.json");
+  const orderService = new WhatsAppOrderService({ filePath: join(dir, "orders.json"), now: () => new Date("2026-07-07T19:05:00.000Z") });
+  const service = new WhatsAppConversationService({
+    filePath,
+    orderService,
+    now: () => new Date("2026-07-07T19:05:00.000Z")
+  });
+  try {
+    await service.recordIncoming({ from: "5551999999999", text: "Quero pedir", messageId: "greeting-item-1" });
+    const helloAgain = await service.recordIncoming({ from: "5551999999999", text: "Oi", messageId: "greeting-item-2" });
+
+    assert.equal(helloAgain.conversa.atendimentoEstado, "COMANDA_EM_ANDAMENTO");
+    assert.equal(helloAgain.aiDecision.allowedAction, "ANSWER_INFO");
+    assert.doesNotMatch(helloAgain.aiDecision.safeReply, /Anotei esse item/i);
+    assert.match(helloAgain.aiDecision.safeReply, /Me manda o item do pedido/i);
+    assert.equal(helloAgain.conversa.whatsappOrder.items.length, 0);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("WhatsApp expira comanda antiga antes de interpretar nova mensagem", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-conversation-expired-order-"));
+  const filePath = join(dir, "conversas.json");
+  let currentTime = new Date("2026-07-07T11:49:00.000Z");
+  const orderService = new WhatsAppOrderService({ filePath: join(dir, "orders.json"), now: () => currentTime });
+  const service = new WhatsAppConversationService({
+    filePath,
+    orderService,
+    now: () => currentTime
+  });
+  try {
+    const started = await service.recordIncoming({ from: "5551999999999", text: "1", messageId: "expired-order-1" });
+    assert.equal(started.conversa.atendimentoEstado, "COMANDA_EM_ANDAMENTO");
+
+    currentTime = new Date("2026-07-07T19:05:00.000Z");
+    const reopened = await service.recordIncoming({ from: "5551999999999", text: "Oi", messageId: "expired-order-2" });
+    const order = await orderService.getOrderByConversation(reopened.conversa.id);
+
+    assert.equal(reopened.conversa.atendimentoEstado, "");
+    assert.equal(reopened.conversa.whatsappOrder, null);
+    assert.equal(reopened.conversa.lastOrderContextResetAt, "2026-07-07T19:05:00.000Z");
+    assert.equal(reopened.aiDecision.intent, "saudacao");
+    assert.equal(reopened.aiDecision.allowedAction, "ANSWER_INFO");
+    assert.doesNotMatch(reopened.aiDecision.safeReply, /Anotei esse item/i);
+    assert.equal(order.order.status, "cancelled");
+    assert.equal(order.order.items.length, 0);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("WhatsApp segue anotando item real depois de saudacao ignorada", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-conversation-item-after-greeting-"));
+  const filePath = join(dir, "conversas.json");
+  const orderService = new WhatsAppOrderService({ filePath: join(dir, "orders.json"), now: () => new Date("2026-07-07T19:06:00.000Z") });
+  const service = new WhatsAppConversationService({
+    filePath,
+    orderService,
+    now: () => new Date("2026-07-07T19:06:00.000Z")
+  });
+  try {
+    await service.recordIncoming({ from: "5551999999999", text: "Quero pedir", messageId: "item-after-greeting-1" });
+    await service.recordIncoming({ from: "5551999999999", text: "Oi", messageId: "item-after-greeting-2" });
+    const item = await service.recordIncoming({ from: "5551999999999", text: "2 x burger", messageId: "item-after-greeting-3" });
+
+    assert.equal(item.aiDecision.allowedAction, "ADD_ORDER_ITEM");
+    assert.equal(item.conversa.whatsappOrder.items.length, 1);
+    assert.equal(item.conversa.whatsappOrder.items[0].name, "burger");
+    assert.equal(item.conversa.whatsappOrder.items[0].quantity, 2);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("Comanda WhatsApp envia pedido estruturado ao Mesa sem link publico", async () => {
   const dir = await mkdtemp(join(tmpdir(), "sambha-whatsapp-order-mesa-"));
   const conversationFile = join(dir, "conversas.json");
