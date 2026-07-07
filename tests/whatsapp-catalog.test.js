@@ -112,3 +112,36 @@ test("Endpoint sincroniza cardapio WhatsApp a partir do Mesa sem rota solta", as
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("Endpoint de sincronizacao retorna erro controlado quando Mesa falha", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambah-whatsapp-catalog-route-error-"));
+  const auditService = new AuditService({ filePath: join(dir, "audit.json") });
+  const menuService = {
+    syncMenu: async () => {
+      throw new Error("Mesa respondeu HTTP 503 ao sincronizar cardapio");
+    },
+    cacheSnapshot: async () => ({ ok: true, items: [] })
+  };
+  const whatsappCatalogService = new WhatsAppCatalogService({
+    filePath: join(dir, "whatsapp-catalog.json"),
+    menuService,
+    now: () => new Date("2026-07-07T12:20:00.000Z")
+  });
+  const server = createApp({ auditService, menuService, whatsappCatalogService });
+  try {
+    await new Promise((resolve) => server.listen(0, resolve));
+    const base = `http://127.0.0.1:${server.address().port}`;
+
+    const syncResponse = await fetch(`${base}/api/sambah/cardapio/sync-mesa`, { method: "POST" });
+    const sync = await syncResponse.json();
+
+    assert.equal(syncResponse.status, 502);
+    assert.equal(sync.ok, false);
+    assert.equal(sync.error, "mesa_sync_failed");
+    assert.equal(sync.synced, false);
+    assert.match(sync.message, /Mesa respondeu HTTP 503/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    await rm(dir, { recursive: true, force: true });
+  }
+});

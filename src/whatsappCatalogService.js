@@ -57,20 +57,30 @@ export class WhatsAppCatalogService {
 
   async syncFromMesaMenu() {
     if (!this.menuService?.syncMenu) return { ok: false, error: "mesa_menu_service_unavailable" };
-    const menu = await this.menuService.syncMenu();
-    const products = normalizeMesaProducts(menu);
-    if (!products.length) return { ok: false, error: "mesa_menu_empty" };
-    const now = this.now().toISOString();
-    const data = {
-      source: "mesa_menu_cache",
-      synced: true,
-      updatedAt: menu.updatedAt || now,
-      lastSyncAt: menu.lastSyncAt || now,
-      products,
-      audit: [{ type: "catalog_synced_from_mesa_menu", at: now, count: products.length }]
-    };
-    await this.#write(data);
-    return { ok: true, source: "mesa_menu_cache", synced: true, products, updatedAt: data.updatedAt, lastSyncAt: data.lastSyncAt };
+    try {
+      const menu = await this.menuService.syncMenu();
+      const products = normalizeMesaProducts(menu);
+      if (!products.length) return { ok: false, error: "mesa_menu_empty" };
+      const now = this.now().toISOString();
+      const data = {
+        source: "mesa_menu_cache",
+        synced: true,
+        updatedAt: menu.updatedAt || now,
+        lastSyncAt: menu.lastSyncAt || now,
+        products,
+        audit: [{ type: "catalog_synced_from_mesa_menu", at: now, count: products.length }]
+      };
+      await this.#write(data);
+      return { ok: true, source: "mesa_menu_cache", synced: true, products, updatedAt: data.updatedAt, lastSyncAt: data.lastSyncAt };
+    } catch (error) {
+      return {
+        ok: false,
+        source: "mesa_menu",
+        synced: false,
+        error: "mesa_sync_failed",
+        message: sanitizeMessage(error?.message || "Nao foi possivel sincronizar cardapio do Mesa")
+      };
+    }
   }
 
   async formatForWhatsApp() {
@@ -150,4 +160,8 @@ function normalizeMesaProducts(input = {}) {
 
 function stripBom(value = "") {
   return value.charCodeAt(0) === 0xfeff ? value.slice(1) : value;
+}
+
+function sanitizeMessage(value = "") {
+  return String(value).replace(/Bearer\s+\S+/gi, "Bearer [masked]").slice(0, 300);
 }
