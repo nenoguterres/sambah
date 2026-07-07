@@ -2,12 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildSambahAiAudit, classifySambahIntent } from "../src/intentEngine.js";
 
-test("AI Core classifica pedido em IDLE sem criar pedido", () => {
+test("AI Core classifica pedido em IDLE criando comanda controlada", () => {
   const result = classifySambahIntent({ message: "quero pedir", conversationState: "IDLE" });
   assert.equal(result.intent, "pedido");
-  assert.equal(result.allowedAction, "ASK_NAME");
+  assert.equal(result.allowedAction, "CREATE_ORDER_DRAFT");
   assert.equal(result.state, "IDLE");
-  assert.equal(result.replyKey, "ask_name");
+  assert.equal(result.replyKey, "start_order_draft");
   assert.notEqual(result.allowedAction, "CREATE_PRECOMANDA");
 });
 
@@ -72,9 +72,9 @@ test("AI Core gera trilha de auditoria estruturada", () => {
   const decision = classifySambahIntent(input);
   const audit = buildSambahAiAudit(input, decision);
   assert.equal(audit.intent, "pedido");
-  assert.equal(audit.allowedAction, "ASK_NAME");
+  assert.equal(audit.allowedAction, "CREATE_ORDER_DRAFT");
   assert.equal(audit.previousState, "IDLE");
-  assert.equal(audit.nextState, "AGUARDANDO_NOME");
+  assert.equal(audit.nextState, "COMANDA_EM_ANDAMENTO");
   assert.match(audit.messageReceived, /quero pedir/);
 });
 
@@ -93,8 +93,8 @@ test("Atendimento Natural Controlado cobre frases reais sem acao operacional pro
   const samples = [
     ["tem cardapio?", "cardapio", "ANSWER_INFO"],
     ["quanto ta o xis?", "preco", "ANSWER_INFO"],
-    ["faz entrega?", "pedido", "ASK_NAME"],
-    ["posso retirar ai?", "pedido", "ASK_NAME"],
+    ["faz entrega?", "pedido", "CREATE_ORDER_DRAFT"],
+    ["posso retirar ai?", "pedido", "CREATE_ORDER_DRAFT"],
     ["quero orcamento para evento", "evento", "ANSWER_INFO"],
     ["voces atendem empresa?", "evento", "ANSWER_INFO"],
     ["onde fica?", "localizacao", "ANSWER_INFO"],

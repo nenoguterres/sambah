@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MesaIntegrationService } from "../src/mesaIntegrationService.js";
 import { WhatsAppConversationService } from "../src/whatsappConversationService.js";
+import { WhatsAppOrderService } from "../src/whatsappOrderService.js";
 
 test("Central de Conversas envia resposta manual pelo provider WhatsApp configurado", async () => {
   const dir = await mkdtemp(join(tmpdir(), "sambha-conversation-inbox-"));
@@ -79,12 +80,18 @@ test("Central de Conversas registra resposta automatica ja enviada sem reenviar"
 });
 
 test("Central de Conversas page keeps the message list scrollable", async () => {
+  const html = await readFile(new URL("../public/conversas.html", import.meta.url), "utf8");
   const css = await readFile(new URL("../public/conversas.css", import.meta.url), "utf8");
   const js = await readFile(new URL("../public/conversas.js", import.meta.url), "utf8");
+  assert.doesNotMatch(html, /sambah-shell\.js|renderSambahShell|sambah-shell\.css/);
   assert.match(css, /body\s*{[^}]*overflow-y:\s*auto/s);
   assert.match(css, /body\.sambah-shell-mounted \.app\s*{[^}]*overflow:\s*visible/s);
   assert.match(css, /\.message-list\s*{[^}]*overflow:\s*visible/s);
+  assert.match(css, /\.order-panel\s*{/);
   assert.match(js, /function scrollMessagesToBottom/);
+  assert.match(js, /function renderOrderPanel/);
+  assert.match(js, /loadCatalogIntoPanel/);
+  assert.match(js, /\/api\/sambah\/cardapio/);
   assert.match(js, /scrollTop\s*=\s*list\.scrollHeight/);
   assert.match(js, /window\.scrollTo/);
   assert.match(js, /REFRESH_INTERVAL_MS\s*=\s*5000/);
@@ -133,10 +140,10 @@ test("WhatsApp pedido nao cria precomanda e aguarda Mesa Comanda", async () => {
     const itemText = await service.recordIncoming({ from: "5551999999999", text: "Farofa", messageId: "in-item" }, { crmService });
     const deliveryText = await service.recordIncoming({ from: "5551999999999", text: "Delivery", messageId: "in-service" }, { crmService });
 
-    assert.equal(start.conversa.atendimentoEstado, "AGUARDANDO_NOME");
-    assert.equal(named.conversa.atendimentoEstado, "ENVIADO_PARA_MESA_COMANDA");
-    assert.equal(itemText.conversa.atendimentoEstado, "AGUARDANDO_PEDIDO_MESA");
-    assert.equal(deliveryText.conversa.atendimentoEstado, "AGUARDANDO_PEDIDO_MESA");
+    assert.equal(start.conversa.atendimentoEstado, "COMANDA_EM_ANDAMENTO");
+    assert.equal(named.conversa.atendimentoEstado, "COMANDA_EM_ANDAMENTO");
+    assert.equal(itemText.conversa.atendimentoEstado, "COMANDA_EM_ANDAMENTO");
+    assert.equal(deliveryText.conversa.atendimentoEstado, "COMANDA_EM_ANDAMENTO");
     assert.equal(savedOrders.length, 0);
     assert.equal(commercialRecords.length, 0);
 
@@ -187,8 +194,10 @@ test("WhatsApp pedido nao cria precomanda e aguarda Mesa Comanda", async () => {
 test("WhatsApp mantem contexto do pedido entre mensagens livres", async () => {
   const dir = await mkdtemp(join(tmpdir(), "sambha-conversation-context-"));
   const filePath = join(dir, "conversas.json");
+  const orderService = new WhatsAppOrderService({ filePath: join(dir, "orders.json"), now: () => new Date("2026-07-06T13:00:00.000Z") });
   const service = new WhatsAppConversationService({
     filePath,
+    orderService,
     now: () => new Date("2026-07-06T13:00:00.000Z")
   });
   try {
@@ -203,16 +212,55 @@ test("WhatsApp mantem contexto do pedido entre mensagens livres", async () => {
     assert.equal(order.conversa.id, hello.conversa.id);
     assert.equal(burger.conversa.id, hello.conversa.id);
     assert.equal(coke.conversa.id, hello.conversa.id);
-    assert.equal(order.conversa.atendimentoEstado, "AGUARDANDO_NOME");
-    assert.equal(order.aiDecision.conversationState, "AGUARDANDO_NOME");
-    assert.equal(burger.conversa.atendimentoEstado, "ENVIADO_PARA_MESA_COMANDA");
-    assert.equal(burger.aiDecision.previousConversationState, "AGUARDANDO_NOME");
-    assert.equal(burger.aiDecision.conversationState, "ENVIADO_PARA_MESA_COMANDA");
-    assert.equal(coke.conversa.atendimentoEstado, "AGUARDANDO_PEDIDO_MESA");
-    assert.equal(coke.aiDecision.previousConversationState, "ENVIADO_PARA_MESA_COMANDA");
-    assert.equal(coke.aiDecision.conversationState, "AGUARDANDO_PEDIDO_MESA");
-    assert.equal(coke.aiDecision.allowedAction, "SEND_MESA_LINK");
+    assert.equal(order.conversa.atendimentoEstado, "COMANDA_EM_ANDAMENTO");
+    assert.equal(order.aiDecision.conversationState, "COMANDA_EM_ANDAMENTO");
+    assert.equal(burger.conversa.atendimentoEstado, "COMANDA_EM_ANDAMENTO");
+    assert.equal(burger.aiDecision.previousConversationState, "COMANDA_EM_ANDAMENTO");
+    assert.equal(burger.aiDecision.conversationState, "COMANDA_EM_ANDAMENTO");
+    assert.equal(coke.conversa.atendimentoEstado, "COMANDA_EM_ANDAMENTO");
+    assert.equal(coke.aiDecision.previousConversationState, "COMANDA_EM_ANDAMENTO");
+    assert.equal(coke.aiDecision.conversationState, "COMANDA_EM_ANDAMENTO");
+    assert.equal(coke.aiDecision.allowedAction, "ADD_ORDER_ITEM");
+    assert.equal(coke.conversa.whatsappOrder.items.length, 2);
+    assert.equal(coke.conversa.whatsappOrder.items[0].name, "X-Burger");
+    assert.equal(coke.conversa.whatsappOrder.items[1].name, "Coca-Cola");
     assert.doesNotMatch(coke.aiDecision.safeReply, /1 - Fazer pedido|Falar com atendente/);
+    assert.doesNotMatch(coke.aiDecision.safeReply, /\/sambah|\/pedir|MESA_COMANDA_URL/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Comanda WhatsApp envia pedido estruturado ao Mesa sem link publico", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-whatsapp-order-mesa-"));
+  const conversationFile = join(dir, "conversas.json");
+  const orderService = new WhatsAppOrderService({ filePath: join(dir, "orders.json"), now: () => new Date("2026-07-07T10:00:00.000Z") });
+  const conversationService = new WhatsAppConversationService({
+    filePath: conversationFile,
+    orderService,
+    now: () => new Date("2026-07-07T10:00:00.000Z")
+  });
+  const sentOrders = [];
+  const mesaConnector = {
+    createOrder: async (order) => {
+      sentOrders.push(order);
+      return { ok: true, mesaOrderId: "mesa-wa-1", status: "accepted", httpStatus: 200 };
+    }
+  };
+  try {
+    await conversationService.recordIncoming({ from: "5551999999999", text: "quero pedir", messageId: "mesa-flow-1" });
+    const item = await conversationService.recordIncoming({ from: "5551999999999", text: "2 espetinhos de carne", messageId: "mesa-flow-2" });
+    const sent = await orderService.sendOrderToMesa(item.conversa.id, { mesaConnector });
+    const attached = await conversationService.attachWhatsappOrder(item.conversa.id, sent.order);
+
+    assert.equal(sent.ok, true);
+    assert.equal(sent.sent, true);
+    assert.equal(sentOrders.length, 1);
+    assert.equal(sentOrders[0].source, "whatsapp_sambah");
+    assert.equal(sentOrders[0].metadata.conversationId, item.conversa.id);
+    assert.equal(sentOrders[0].order.items[0].name, "espetinhos de carne");
+    assert.equal(attached.conversa.atendimentoEstado, "PEDIDO_MESA_RECEBIDO");
+    assert.equal(attached.conversa.mesaPedido.id, "mesa-wa-1");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -290,9 +338,9 @@ test("WhatsApp nao recria conversa quando telefone vem com ou sem nono digito", 
 
     assert.equal(data.conversas.length, 1);
     assert.equal(second.conversa.id, first.conversa.id);
-    assert.equal(second.conversa.atendimentoEstado, "ENVIADO_PARA_MESA_COMANDA");
-    assert.equal(second.aiDecision.previousConversationState, "AGUARDANDO_NOME");
-    assert.equal(second.aiDecision.conversationState, "ENVIADO_PARA_MESA_COMANDA");
+    assert.equal(second.conversa.atendimentoEstado, "COMANDA_EM_ANDAMENTO");
+    assert.equal(second.aiDecision.previousConversationState, "COMANDA_EM_ANDAMENTO");
+    assert.equal(second.aiDecision.conversationState, "COMANDA_EM_ANDAMENTO");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

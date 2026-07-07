@@ -1,4 +1,6 @@
 const ALLOWED_ACTIONS = new Set([
+  "CREATE_ORDER_DRAFT",
+  "ADD_ORDER_ITEM",
   "SEND_MESA_LINK",
   "ASK_NAME",
   "WAIT_MESA_ORDER",
@@ -12,12 +14,15 @@ const ALLOWED_ACTIONS = new Set([
 ]);
 
 const ORDER_WAITING_STATES = new Set(["ENVIADO_PARA_MESA_COMANDA", "AGUARDANDO_PEDIDO_MESA"]);
+const ORDER_DRAFT_STATES = new Set(["COMANDA_EM_ANDAMENTO", "COMANDA_PRONTA"]);
 const PAYMENT_STATES = new Set(["PEDIDO_MESA_RECEBIDO", "AGUARDANDO_FORMA_PAGAMENTO"]);
 
 const SAFE_REPLIES = {
   greeting_short: "Buenas! Aqui e o SamBah, atendimento do Portal Insano. Me diz em poucas palavras o que tu precisa que eu te levo pelo caminho certo.",
   ask_name: "Buenas! Te ajudo com o pedido. Primeiro me manda teu nome, por favor.",
   ask_name_again: "Pra seguir com seguranca, preciso do teu nome antes de te levar para a Comanda Mesa.",
+  start_order_draft: "Fechado. Vou montar tua comanda por aqui. Me manda os itens do pedido, um por mensagem, que eu vou anotando.",
+  item_added: "Anotei esse item na comanda. Pode mandar mais itens ou dizer que esta pronto.",
   order_name_received: "Perfeito, ja peguei teu nome. Para montar o pedido com itens, adicionais, entrega ou retirada, segue pela Comanda Mesa: {MESA_COMANDA_URL}",
   send_mesa_link: "Esse pedido segue pela Comanda Mesa, vivente. Usa este link para montar ou continuar teu pedido: {MESA_COMANDA_URL}",
   ask_payment: "Boa, teu pedido ja chegou pela Mesa. Me diz a forma de pagamento: Pix, cartao, dinheiro ou a cobrar.",
@@ -27,7 +32,7 @@ const SAFE_REPLIES = {
   payment_review: "Recebi tua mensagem sobre pagamento. Eu nao confirmo pagamento sozinho; vou deixar para conferencia da equipe.",
   human_support: "Sem problema. Vou colocar tua conversa para atendimento humano. Enquanto isso, se quiser, posso ir adiantando as informacoes contigo.",
   complaint_handoff: "Entendi. Vou chamar alguem da equipe para olhar isso com atencao.",
-  menu_info: "Te ajudo com o cardapio pelo caminho oficial, sem inventar produto nem valor. Se tu quiser pedir, eu te levo para a Comanda Mesa.",
+  menu_info: "{SAMBAH_CARDAPIO}",
   price_info: "Pra nao te passar valor errado, consulta o cardapio oficial ou segue pela Comanda Mesa. Eu nao invento preco por aqui.",
   stock_info: "Pra disponibilidade eu preciso seguir a fonte oficial. Posso te levar para a Comanda Mesa ou chamar a equipe.",
   delivery_info: "Temos fluxo para entrega ou retirada pela Comanda Mesa. Se quiser pedir, me manda teu nome e eu te encaminho.",
@@ -89,8 +94,14 @@ function decideByState({ detected, normalized, state }) {
   if (state === "AGUARDANDO_NOME") {
     if (detected.intent === "humano") return decision("humano", detected.confidence, "HANDOFF_HUMAN", "human_support", "Cliente pediu atendimento humano", true);
     if (detected.intent === "cancelar") return decision("cancelar", detected.confidence, "CANCEL_FLOW", "cancel_flow", "Cliente pediu cancelamento");
-    if (normalized) return decision("pedido", 0.72, "SEND_MESA_LINK", "order_name_received", "Nome recebido; enviar link da Mesa Comanda");
+    if (normalized) return decision("pedido", 0.72, "ADD_ORDER_ITEM", "item_added", "Primeiro item recebido; manter comanda interna");
     return decision("unknown", 0.2, "ASK_NAME", "ask_name_again", "Estado aguarda nome e mensagem nao trouxe nome claro");
+  }
+  if (ORDER_DRAFT_STATES.has(state)) {
+    if (detected.intent === "humano") return decision("humano", detected.confidence, "HANDOFF_HUMAN", "human_support", "Cliente pediu atendimento humano durante pedido", true);
+    if (detected.intent === "cancelar") return decision("cancelar", detected.confidence, "CANCEL_FLOW", "cancel_flow", "Cliente pediu cancelamento durante pedido");
+    if (normalized) return decision(detected.intent, Math.max(detected.confidence, 0.65), "ADD_ORDER_ITEM", "item_added", "Item recebido; manter comanda interna vinculada");
+    return decision("pedido", 0.5, "ADD_ORDER_ITEM", "item_added", "Fluxo de comanda ativo");
   }
   if (ORDER_WAITING_STATES.has(state)) {
     if (detected.intent === "humano") return decision("humano", detected.confidence, "HANDOFF_HUMAN", "human_support", "Cliente pediu atendimento humano durante pedido", true);
@@ -115,8 +126,8 @@ function decideByState({ detected, normalized, state }) {
   if (detected.intent === "reclamar") return decision("reclamar", detected.confidence, "HANDOFF_HUMAN", "complaint_handoff", "Reclamacao deve ir para humano", true);
   if (detected.intent === "pagamento_comprovante") return decision("pagamento", detected.confidence, "HANDOFF_HUMAN", "payment_review", "Mensagem de pagamento precisa de conferencia humana", true);
   if (detected.intent === "cancelar") return decision("cancelar", detected.confidence, "CANCEL_FLOW", "cancel_flow", "Cliente pediu cancelamento");
-  if (detected.intent === "pedido") return decision("pedido", detected.confidence, "ASK_NAME", "ask_name", "Intencao de pedido em estado livre");
-  if (detected.intent === "delivery" || detected.intent === "retirada") return decision("pedido", detected.confidence, "ASK_NAME", "delivery_info", "Entrega ou retirada deve seguir fluxo Mesa");
+  if (detected.intent === "pedido") return decision("pedido", detected.confidence, "CREATE_ORDER_DRAFT", "start_order_draft", "Intencao de pedido cria comanda interna");
+  if (detected.intent === "delivery" || detected.intent === "retirada") return decision("pedido", detected.confidence, "CREATE_ORDER_DRAFT", "start_order_draft", "Entrega ou retirada inicia comanda interna");
   if (detected.intent === "cardapio") return decision("cardapio", detected.confidence, "ANSWER_INFO", "menu_info", "Cliente pediu cardapio; IA nao inventa itens nem precos");
   if (detected.intent === "preco") return decision("preco", detected.confidence, "ANSWER_INFO", "price_info", "Cliente pediu preco; IA nao inventa valores");
   if (detected.intent === "estoque") return decision("estoque", detected.confidence, "ANSWER_INFO", "stock_info", "Cliente pediu disponibilidade; IA nao confirma estoque");
@@ -189,6 +200,7 @@ function decision(intent, confidence, allowedAction, replyKey, reason, requiresH
 }
 
 function deriveNextState(previousState = "IDLE", allowedAction = "NO_ACTION") {
+  if (allowedAction === "CREATE_ORDER_DRAFT" || allowedAction === "ADD_ORDER_ITEM") return "COMANDA_EM_ANDAMENTO";
   if (allowedAction === "ASK_NAME") return "AGUARDANDO_NOME";
   if (allowedAction === "SEND_MESA_LINK") return "AGUARDANDO_PEDIDO_MESA";
   if (allowedAction === "ASK_PAYMENT") return "AGUARDANDO_FORMA_PAGAMENTO";
@@ -201,6 +213,7 @@ function deriveNextState(previousState = "IDLE", allowedAction = "NO_ACTION") {
 
 function responseStyleFor(allowedAction = "", replyKey = "") {
   if (allowedAction === "HANDOFF_HUMAN") return "human_handoff";
+  if (allowedAction === "CREATE_ORDER_DRAFT" || allowedAction === "ADD_ORDER_ITEM") return "order_draft";
   if (allowedAction === "SEND_MESA_LINK") return "mesa_guidance";
   if (allowedAction === "ASK_PAYMENT" || allowedAction === "SEND_PAYMENT_LINK" || allowedAction === "MARK_A_COBRAR") return "payment_safe";
   if (replyKey === "greeting_short") return "natural_short";

@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import crypto from "node:crypto";
 import { buildSambahAiAudit, classifySambahIntent } from "./intentEngine.js";
 import { extractWhatsAppMessageText } from "./whatsapp/whatsappWebhookParser.js";
+import { shouldCollectWhatsappOrderItem, summarizeWhatsappOrder } from "./whatsappOrderService.js";
 
 const INTENT_RESPONSES = {
   pedido: "Perfeito. Tu quer delivery, retirada ou esta no local?",
@@ -23,6 +24,8 @@ const HUMAN_INTENTS = new Set(["humano", "reclamacao"]);
 const OPPORTUNITY_INTENTS = new Set(["evento", "food_truck", "corporativo", "xeriffe", "reserva", "festa"]);
 const ORDER_STATES = new Set([
   "AGUARDANDO_NOME",
+  "COMANDA_EM_ANDAMENTO",
+  "COMANDA_PRONTA",
   "ENVIADO_PARA_MESA_COMANDA",
   "AGUARDANDO_PEDIDO_MESA",
   "PEDIDO_MESA_RECEBIDO",
@@ -35,9 +38,10 @@ const ORDER_STATES = new Set([
 ]);
 
 export class WhatsAppConversationService {
-  constructor({ filePath, now = () => new Date() } = {}) {
+  constructor({ filePath, now = () => new Date(), orderService = null } = {}) {
     this.filePath = filePath;
     this.now = now;
+    this.orderService = orderService;
   }
 
   async list() {
@@ -102,6 +106,14 @@ export class WhatsAppConversationService {
           ? "humano"
           : "aguardando_equipe");
     const orderState = nextOrderState(base, incoming, intent);
+    const orderSync = await syncWhatsappOrderFromIncoming({
+      orderService: this.orderService,
+      conversation: base,
+      incoming,
+      intent,
+      orderState
+    });
+    const whatsappOrder = orderSync.order ? summarizeWhatsappOrder(orderSync.order) : base.whatsappOrder || null;
     const paymentStatus = nextPaymentStatus(base, incoming);
     const effectiveConversationState = orderState || base.atendimentoEstado || aiDecision.conversationState || "";
     const persistedAiDecision = {
@@ -128,6 +140,7 @@ export class WhatsAppConversationService {
       updatedAt: now,
       intencao: intent,
       atendimentoEstado: orderState || base.atendimentoEstado || "",
+      whatsappOrder,
       mesaPedido: base.mesaPedido || null,
       statusCobranca: paymentStatus || base.statusCobranca || "",
       status,
@@ -287,6 +300,43 @@ export class WhatsAppConversationService {
 
   async markResolved(id) {
     return this.#updateStatus(id, "resolvido");
+  }
+
+  async attachWhatsappOrder(id, order = {}) {
+    const data = await this.#read();
+    const index = data.conversas.findIndex((item) => item.id === id || phonesMatch(item.telefone, id));
+    if (index === -1) return { ok: false, error: "Conversa nao encontrada" };
+    const now = this.now().toISOString();
+    const summary = summarizeWhatsappOrder(order);
+    const nextState = summary?.status === "sent_to_mesa" || summary?.status === "mesa_pending"
+      ? "PEDIDO_MESA_RECEBIDO"
+      : summary?.status === "cancelled"
+        ? "CANCELADO"
+        : "COMANDA_EM_ANDAMENTO";
+    const mesaPedido = summary?.mesaOrderId ? {
+      id: summary.mesaOrderId,
+      nome: summary.customerName || data.conversas[index].nome || "Cliente WhatsApp",
+      telefone: summary.phone || data.conversas[index].telefone || "",
+      origem: "WHATSAPP_SAMBAH",
+      statusFinanceiro: "A_COBRAR",
+      correlationId: summary.conversationId || data.conversas[index].id,
+      linkedAt: now
+    } : data.conversas[index].mesaPedido || null;
+    const updated = {
+      ...data.conversas[index],
+      whatsappOrder: summary,
+      atendimentoEstado: nextState,
+      mesaPedido,
+      statusCobranca: mesaPedido ? "A_COBRAR" : data.conversas[index].statusCobranca || "",
+      respostaSugerida: mesaPedido
+        ? "Pedido enviado para a Mesa. Agora me diz a forma de pagamento: Pix, cartao, dinheiro ou a cobrar."
+        : data.conversas[index].respostaSugerida,
+      updatedAt: now,
+      ultimaInteracao: now
+    };
+    data.conversas[index] = updated;
+    await this.#write(data);
+    return { ok: true, conversa: this.#withPriority(updated) };
   }
 
   async linkMesaOrder(id, order = {}) {
@@ -534,6 +584,7 @@ function nextOrderState(conversation = {}, incoming = {}, intent = "") {
   const text = normalizeText(incoming.text || incoming.transcricao || "");
   if (isCancelIntent(text)) return "CANCELADO";
   if (HUMAN_INTENTS.has(intent)) return "HUMANO";
+  if (["COMANDA_EM_ANDAMENTO", "COMANDA_PRONTA"].includes(current)) return "COMANDA_EM_ANDAMENTO";
   if (current === "AGUARDANDO_NOME" && text) return "ENVIADO_PARA_MESA_COMANDA";
   if (["ENVIADO_PARA_MESA_COMANDA", "AGUARDANDO_PEDIDO_MESA"].includes(current)) return "AGUARDANDO_PEDIDO_MESA";
   if (current === "PEDIDO_MESA_RECEBIDO") {
@@ -546,8 +597,25 @@ function nextOrderState(conversation = {}, incoming = {}, intent = "") {
     if (isManualPaymentText(text)) return "A_COBRAR";
     return current;
   }
-  if (intent === "pedido" || text === "1") return "AGUARDANDO_NOME";
+  if (intent === "pedido" || text === "1") return "COMANDA_EM_ANDAMENTO";
   return current;
+}
+
+async function syncWhatsappOrderFromIncoming({ orderService, conversation = {}, incoming = {}, intent = "", orderState = "" } = {}) {
+  if (!orderService || !conversation?.id) return { ok: false, skipped: true };
+  const text = incoming.text || incoming.transcricao || "";
+  const normalized = normalizeText(text);
+  if (!normalized || HUMAN_INTENTS.has(intent) || isCancelIntent(normalized)) return { ok: false, skipped: true };
+  const isOrderFlow = intent === "pedido" || ["COMANDA_EM_ANDAMENTO", "COMANDA_PRONTA"].includes(orderState || conversation.atendimentoEstado || "");
+  if (!isOrderFlow) return { ok: false, skipped: true };
+
+  const draft = await orderService.createDraftOrderFromConversation(conversation, {
+    customerName: conversation.nome || incoming.nome || incoming.profileName || "Cliente WhatsApp",
+    phone: conversation.telefone || incoming.telefone || ""
+  });
+  if (!draft.ok) return draft;
+  if (!shouldCollectWhatsappOrderItem(text)) return { ok: true, order: draft.order, created: draft.created };
+  return orderService.addItemToOrder(conversation.id, { text });
 }
 
 function nextPaymentStatus(conversation = {}, incoming = {}) {

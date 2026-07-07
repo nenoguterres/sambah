@@ -9,6 +9,7 @@ import { EventScheduleService } from "./eventScheduleService.js";
 import { InsanoWorkhubController } from "./insanoWorkhubController.js";
 import { InsanoWorkhubService } from "./insanoWorkhubService.js";
 import { buildMesaOrder, MesaIntegrationService } from "./mesaIntegrationService.js";
+import { MesaConnectorService } from "./mesaConnectorService.js";
 import { MenuSyncService } from "./menuSyncService.js";
 import { OrderDraftService } from "./orderDraftService.js";
 import { OrderTrackingService } from "./orderTrackingService.js";
@@ -18,6 +19,8 @@ import { PayPerolaBridgeService } from "./payPerolaBridgeService.js";
 import { SambahPerolaBridgeService } from "./sambahPerolaBridgeService.js";
 import { SambahConversationService } from "./sambahConversationService.js";
 import { WhatsAppConversationService } from "./whatsappConversationService.js";
+import { WhatsAppCatalogService } from "./whatsappCatalogService.js";
+import { WhatsAppOrderService } from "./whatsappOrderService.js";
 import { getPublicConfig, getRuntimeConfig, isAllowedCorsOrigin } from "./config.js";
 import { createSambahPayModule } from "./sambahPay/index.js";
 import { PayPerolaBridgeController } from "./sambahPay/controllers/payPerolaBridgeController.js";
@@ -33,9 +36,12 @@ const runtimeConfig = getRuntimeConfig();
 const dataFile = (name) => join(runtimeConfig.dataDir, name);
 const audit = new AuditService({ filePath: dataFile("audit-logs.json") });
 const mesa = new MesaIntegrationService({ queueFile: dataFile("mesa-queue.json") });
+const mesaConnector = new MesaConnectorService({ integrationService: mesa });
 const menu = new MenuSyncService({ cacheFile: dataFile("menu-cache.json") });
 const conversation = new SambahConversationService({ scriptsFile: dataFile("sambah-scripts.json") });
-const whatsappConversations = new WhatsAppConversationService({ filePath: dataFile("whatsapp-conversas.json") });
+const whatsappCatalog = new WhatsAppCatalogService({ filePath: dataFile("whatsapp-catalog.json") });
+const whatsappOrders = new WhatsAppOrderService({ filePath: dataFile("whatsapp-orders.json") });
+const whatsappConversations = new WhatsAppConversationService({ filePath: dataFile("whatsapp-conversas.json"), orderService: whatsappOrders });
 const drafts = new OrderDraftService({ draftsFile: dataFile("order-drafts.json"), rulesFile: dataFile("sambah-menu-rules.json") });
 const events = new EventScheduleService({ leadsFile: dataFile("event-leads.json"), servicesFile: dataFile("insano-services.json") });
 const tracking = new OrderTrackingService({ filePath: dataFile("order-tracking.json") });
@@ -86,9 +92,12 @@ const MIME_TYPES = {
 export function createApp({
   auditService = audit,
   mesaService = mesa,
+  mesaConnectorService = mesaConnector,
   menuService = menu,
   conversationService = conversation,
+  whatsappCatalogService = whatsappCatalog,
   whatsappConversationService = whatsappConversations,
+  whatsappOrderService = whatsappOrders,
   draftService = drafts,
   eventService = events,
   trackingService = tracking,
@@ -628,6 +637,23 @@ export function createApp({
         return sendJson(res, 200, await whatsappConversationService.list());
       }
 
+      if (req.method === "GET" && url.pathname === "/api/sambah/cardapio") {
+        return sendJson(res, 200, await whatsappCatalogService.list());
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/sambah/cardapio/mesa") {
+        const body = await readJson(req, { requireBody: true });
+        const result = await whatsappCatalogService.upsertFromMesaStock(body);
+        await safeAuditRecord(auditService, {
+          type: "sambah_catalog_updated",
+          status: result.ok ? "success" : "warning",
+          source: "mesa_stock",
+          message: "Cardapio SamBah atualizado pelo Mesa",
+          context: { count: result.products?.length || 0, error: result.error || "" }
+        });
+        return sendJson(res, result.ok ? 200 : 400, result);
+      }
+
       const conversaMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)$/);
       if (req.method === "GET" && conversaMatch) {
         const result = await whatsappConversationService.get(decodeURIComponent(conversaMatch[1]));
@@ -654,6 +680,60 @@ export function createApp({
       if (req.method === "POST" && conversaResolvidoMatch) {
         const result = await whatsappConversationService.markResolved(decodeURIComponent(conversaResolvidoMatch[1]));
         return sendJson(res, result.ok ? 200 : 404, result);
+      }
+
+      const conversaOrderItemMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/pedido\/item$/);
+      if (req.method === "POST" && conversaOrderItemMatch) {
+        const id = decodeURIComponent(conversaOrderItemMatch[1]);
+        const conversationResult = await whatsappConversationService.get(id);
+        if (!conversationResult.ok) return sendJson(res, 404, conversationResult);
+        const draft = await whatsappOrderService.createDraftOrderFromConversation(conversationResult.conversa);
+        const body = await readJson(req, { requireBody: true });
+        const result = draft.ok ? await whatsappOrderService.addItemToOrder(id, body) : draft;
+        if (result.ok) await whatsappConversationService.attachWhatsappOrder(id, result.order);
+        await safeAuditRecord(auditService, {
+          type: "item_added",
+          status: result.ok ? "info" : "warning",
+          source: "whatsapp_sambah",
+          message: "Item adicionado a comanda WhatsApp",
+          context: { conversationId: id, error: result.error || "" }
+        });
+        return sendJson(res, result.ok ? 200 : 400, result);
+      }
+
+      const conversaOrderSendMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/pedido\/enviar-mesa$/);
+      if (req.method === "POST" && conversaOrderSendMatch) {
+        const id = decodeURIComponent(conversaOrderSendMatch[1]);
+        const result = await whatsappOrderService.sendOrderToMesa(id, {
+          mesaConnector: mesaConnectorService,
+          mesaService
+        });
+        let conversationResult = null;
+        if (result.ok) conversationResult = await whatsappConversationService.attachWhatsappOrder(id, result.order);
+        await safeAuditRecord(auditService, {
+          type: "sent_to_mesa",
+          status: result.sent ? "success" : "warning",
+          source: "whatsapp_sambah",
+          message: result.sent ? "Comanda WhatsApp enviada ao Mesa" : "Comanda WhatsApp mantida pendente para Mesa",
+          context: { conversationId: id, mesaOrderId: result.order?.mesaOrderId || "", error: result.error || result.mesa?.error || "" }
+        });
+        return sendJson(res, result.ok ? 200 : 400, { ...result, conversa: conversationResult?.conversa || null });
+      }
+
+      const conversaOrderCancelMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/pedido\/cancelar$/);
+      if (req.method === "POST" && conversaOrderCancelMatch) {
+        const id = decodeURIComponent(conversaOrderCancelMatch[1]);
+        const body = await readJson(req, { requireBody: false });
+        const result = await whatsappOrderService.cancelOrder(id, body.reason || body.motivo || "Cancelado pelo atendimento");
+        if (result.ok) await whatsappConversationService.attachWhatsappOrder(id, result.order);
+        await safeAuditRecord(auditService, {
+          type: "order_cancelled",
+          status: result.ok ? "info" : "warning",
+          source: "whatsapp_sambah",
+          message: "Comanda WhatsApp cancelada",
+          context: { conversationId: id, error: result.error || "" }
+        });
+        return sendJson(res, result.ok ? 200 : 400, result);
       }
 
       if (req.method === "POST" && url.pathname === "/api/conversas/mesa-pedido") {
@@ -1202,7 +1282,7 @@ export function createApp({
       }
 
       if (req.method === "POST" && ["/webhook/whatsapp", "/webhook/site"].includes(url.pathname)) {
-        return handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappMessageService, whatsappSendFetch, sambahPayModule);
+        return handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappMessageService, whatsappSendFetch, sambahPayModule, whatsappCatalogService);
       }
 
       if (req.method === "POST" && url.pathname === "/webhooks/meta") {
@@ -1290,7 +1370,7 @@ function summarizeMetaWebhookPayload(payload = {}) {
   };
 }
 
-async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappMessageService, whatsappSendFetch = globalThis.fetch, sambahPayModule = null) {
+async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappMessageService, whatsappSendFetch = globalThis.fetch, sambahPayModule = null, whatsappCatalogService = null) {
   let body = {};
   try {
     body = await readJson(req, { requireBody: true });
@@ -1397,7 +1477,8 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
         fetchImpl: whatsappSendFetch,
         auditService,
         conversation: conversationResult.conversa,
-        mesaComandaUrl: getRuntimeConfig().mesaComandaUrl
+        mesaComandaUrl: getRuntimeConfig().mesaComandaUrl,
+        whatsappCatalogService
       });
       if (directAutoReply.sent || directAutoReply.status === "meta_error" || directAutoReply.status === "request_failed") {
         await recordDirectWhatsAppAutoReply(whatsappMessageService, body, directAutoReply);
@@ -1789,7 +1870,7 @@ async function syncWhatsAppOrderPaymentState({ conversationResult, whatsappConve
   return whatsappConversationService.recordSambahPayCharge(conversa.id, payment);
 }
 
-async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRuntimeConfig(), fetchImpl = globalThis.fetch, auditService = null, conversation = null, mesaComandaUrl = "" } = {}) {
+async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRuntimeConfig(), fetchImpl = globalThis.fetch, auditService = null, conversation = null, mesaComandaUrl = "", whatsappCatalogService = null } = {}) {
   const summary = summarizeWhatsAppPostPayload(payload);
   const config = runtimeConfig.whatsappBusiness || {};
   if (config.sendEnabled !== true) {
@@ -1807,9 +1888,10 @@ async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRun
   }
 
   const endpoint = `https://graph.facebook.com/v25.0/${encodeURIComponent(sendPhoneNumberId)}/messages`;
-  const autoReplyText = resolveControlledWhatsAppReply(summary.textBody, {
+  const autoReplyText = await resolveControlledWhatsAppReply(summary.textBody, {
     conversation,
-    mesaComandaUrl: mesaComandaUrl || runtimeConfig.mesaComandaUrl
+    mesaComandaUrl: mesaComandaUrl || runtimeConfig.mesaComandaUrl,
+    whatsappCatalogService
   });
   const baseRequestBody = {
     messaging_product: "whatsapp",
@@ -1888,10 +1970,13 @@ async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRun
   }
 }
 
-function resolveControlledWhatsAppReply(text = "", { conversation = null, mesaComandaUrl = "" } = {}) {
+async function resolveControlledWhatsAppReply(text = "", { conversation = null, mesaComandaUrl = "", whatsappCatalogService = null } = {}) {
   const aiSafeReply = String(conversation?.aiDecision?.safeReply || "").trim();
   if (!aiSafeReply) {
     return buildSambahAutoReply(text, { conversation, mesaComandaUrl });
+  }
+  if (aiSafeReply.includes("{SAMBAH_CARDAPIO}") && whatsappCatalogService?.formatForWhatsApp) {
+    return aiSafeReply.replaceAll("{SAMBAH_CARDAPIO}", await whatsappCatalogService.formatForWhatsApp());
   }
   const mesaUrl = buildMesaComandaUrl(mesaComandaUrl, conversation);
   return aiSafeReply.replaceAll("{MESA_COMANDA_URL}", mesaUrl);

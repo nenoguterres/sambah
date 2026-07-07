@@ -321,6 +321,91 @@ body.sambah-shell-mounted .app {
   text-align: right;
 }
 
+.order-panel {
+  margin: 0 clamp(14px, 3vw, 54px) 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #111b21;
+}
+
+.order-panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.order-panel header strong,
+.order-panel header span,
+.order-grid span {
+  display: block;
+}
+
+.order-panel header span,
+.order-grid span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.order-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.order-actions button,
+#catalogPanel button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 10px;
+  background: #2a3942;
+  color: var(--text);
+}
+
+.order-actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.order-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(160px, 0.7fr) minmax(220px, 1fr);
+  gap: 10px;
+  padding: 12px;
+}
+
+.order-grid article {
+  min-width: 0;
+  border-radius: 8px;
+  padding: 10px;
+  background: #172229;
+}
+
+.order-grid p,
+.order-grid ul {
+  margin: 8px 0 0;
+}
+
+.order-grid ul {
+  padding-left: 18px;
+}
+
+#catalogPanel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+#catalogPanel button:hover,
+.order-actions button:hover:not(:disabled) {
+  background: #0a332c;
+  color: #d9fdd3;
+}
+
 .day-marker {
   align-self: center;
   border-radius: 8px;
@@ -411,6 +496,10 @@ body.sambah-shell-mounted .app {
   }
 
   .reply-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .order-grid {
     grid-template-columns: 1fr;
   }
 
