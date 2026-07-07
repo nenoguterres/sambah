@@ -161,7 +161,7 @@ export class MenuSyncService {
 }
 
 export function normalizeMenuPayload(payload = {}) {
-  const rawItems = Array.isArray(payload.items) ? payload.items : [];
+  const rawItems = Array.isArray(payload.items) ? payload.items : Array.isArray(payload.produtos) ? payload.produtos : [];
   const items = rawItems.map((item) => ({
     id: item.productId || item.id,
     productId: item.productId || item.id,
@@ -169,8 +169,8 @@ export function normalizeMenuPayload(payload = {}) {
     category: item.category || item.categoria || "",
     price: Number(item.price ?? item.preco ?? 0),
     description: item.description || item.descricao || "",
-    available: item.available ?? item.availability?.available ?? true,
-    availability: item.availability || { available: item.available ?? true },
+    available: item.available ?? item.disponivel ?? item.ativo ?? item.availability?.available ?? true,
+    availability: item.availability || { available: item.available ?? item.disponivel ?? item.ativo ?? true },
     serviceModes: Array.isArray(item.serviceModes) ? item.serviceModes : ["Mesa", "Levar"],
     addons: Array.isArray(item.addons) ? item.addons.map(normalizeAddon).filter((addon) => addon.id) : []
   })).filter((item) => item.productId);

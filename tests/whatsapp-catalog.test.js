@@ -43,6 +43,37 @@ test("Cardapio WhatsApp usa cache oficial do Mesa como fonte da verdade", async 
   }
 });
 
+test("Cardapio WhatsApp aceita formato publico produtos/ativo como fonte sincronizada", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambah-whatsapp-catalog-site-format-"));
+  const menuService = new MenuSyncService({ cacheFile: join(dir, "menu-cache.json") });
+  const catalog = new WhatsAppCatalogService({
+    filePath: join(dir, "whatsapp-catalog.json"),
+    menuService,
+    now: () => new Date("2026-07-07T12:05:00.000Z")
+  });
+  try {
+    await menuService.saveMenuCache({
+      ok: true,
+      origem: "site-insano",
+      produtos: [
+        { id: "burguer-insano", nome: "Burguer Insano", categoria: "Burgers", preco: null, ativo: true },
+        { id: "fora-de-linha", nome: "Fora de Linha", categoria: "Burgers", preco: null, ativo: false }
+      ]
+    });
+
+    const listed = await catalog.list();
+    const whatsappText = await catalog.formatForWhatsApp();
+
+    assert.equal(listed.source, "mesa_menu_cache");
+    assert.equal(listed.synced, true);
+    assert.equal(listed.products[0].name, "Burguer Insano");
+    assert.match(whatsappText, /Burguer Insano/);
+    assert.doesNotMatch(whatsappText, /Fora de Linha/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("Cardapio WhatsApp nao envia fallback como oficial sem Mesa sincronizado", async () => {
   const dir = await mkdtemp(join(tmpdir(), "sambah-whatsapp-catalog-fallback-"));
   const catalog = new WhatsAppCatalogService({
