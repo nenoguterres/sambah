@@ -675,9 +675,14 @@ export function createApp({
       const conversaResponderMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/responder$/);
       if (req.method === "POST" && conversaResponderMatch) {
         const body = await readJson(req, { requireBody: true });
+        const activeRuntimeConfig = getRuntimeConfig();
+        const activeWhatsappProvider = createWhatsAppProvider({
+          config: activeRuntimeConfig.whatsappBusiness,
+          fetchImpl: whatsappSendFetch
+        });
         const result = await whatsappConversationService.addOutgoing(decodeURIComponent(conversaResponderMatch[1]), body, {
-          runtimeConfig: getRuntimeConfig(),
-          whatsappProvider
+          runtimeConfig: activeRuntimeConfig,
+          whatsappProvider: activeWhatsappProvider
         });
         return sendJson(res, result.ok ? 200 : 404, result);
       }

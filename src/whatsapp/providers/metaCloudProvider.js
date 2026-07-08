@@ -90,9 +90,11 @@ async function sendMetaText(fetchImpl, endpoint, accessToken, { to, text }) {
 
 function metaBrazilianAllowedListRetryNumber(phone = "", responseBody = {}) {
   const digits = String(phone || "").replace(/\D/g, "");
-  if (!digits.startsWith("55") || digits.length !== 12) return "";
   if (responseBody?.error?.code !== 131030) return "";
-  return `${digits.slice(0, 4)}9${digits.slice(4)}`;
+  if (!digits.startsWith("55")) return "";
+  if (digits.length === 12) return `${digits.slice(0, 4)}9${digits.slice(4)}`;
+  if (digits.length === 13 && digits[4] === "9") return `${digits.slice(0, 4)}${digits.slice(5)}`;
+  return "";
 }
 
 async function readBody(response) {

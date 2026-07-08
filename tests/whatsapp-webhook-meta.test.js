@@ -338,6 +338,101 @@ test("POST /webhook/whatsapp em HUMANO envia uma espera controlada e nao repete"
   }
 });
 
+test("manual reply in HUMANO state uses Meta provider and succeeds", async () => {
+  const previousSendEnabled = process.env.WHATSAPP_SEND_ENABLED;
+  const previousAccessToken = process.env.META_ACCESS_TOKEN;
+  const previousPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  process.env.WHATSAPP_SEND_ENABLED = "true";
+  process.env.META_ACCESS_TOKEN = "meta-token-teste";
+  process.env.WHATSAPP_PHONE_NUMBER_ID = "1234567890";
+
+  const graphCalls = [];
+  const { server, base, cleanup, conversationsFile } = await createTestServer({
+    whatsappSendFetch: async (url, options) => {
+      const body = JSON.parse(options.body);
+      graphCalls.push({ url, body, authorization: options.headers.authorization });
+      if (graphCalls.length === 1) {
+        return new Response(JSON.stringify({
+          error: {
+            message: "(#131030) Recipient phone number not in allowed list",
+            code: 131030
+          }
+        }), {
+          status: 400,
+          headers: { "content-type": "application/json" }
+        });
+      }
+      return new Response(JSON.stringify({
+        messaging_product: "whatsapp",
+        contacts: [{ input: body.to, wa_id: body.to }],
+        messages: [{ id: "wamid-manual-human-ok" }]
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+  });
+  try {
+    await writeFile(conversationsFile, JSON.stringify({
+      conversas: [{
+        id: "wa_5551981675115",
+        nome: "Teste SamBah",
+        telefone: "5551981675115",
+        status: "aguardando_humano",
+        atendimentoEstado: "HUMANO",
+        intencao: "humano",
+        humanHandoff: {
+          status: "pendente",
+          requestedAt: "2026-07-08T10:00:00.000Z",
+          lastCustomerMessageAt: "2026-07-08T10:00:00.000Z",
+          waitMessageSentAt: "",
+          pendingNoticeDue: false
+        },
+        mensagens: [{ id: "msg-in", direction: "in", type: "text", text: "humano", createdAt: "2026-07-08T10:00:00.000Z", status: "recebida" }],
+        createdAt: "2026-07-08T10:00:00.000Z",
+        updatedAt: "2026-07-08T10:00:00.000Z"
+      }]
+    }), "utf8");
+
+    const response = await fetch(`${base}/api/conversas/wa_5551981675115/responder`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "ola, teste humano" })
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.enviado, true);
+    assert.equal(body.message.status, "sent");
+    assert.equal(body.sendResult.retried, true);
+    assert.equal(body.sendResult.originalTo, "5551981675115");
+    assert.equal(body.sendResult.retryTo, "555181675115");
+    assert.equal(graphCalls.length, 2);
+    assert.equal(graphCalls[0].url, "https://graph.facebook.com/v25.0/1234567890/messages");
+    assert.equal(graphCalls[0].body.to, "5551981675115");
+    assert.equal(graphCalls[1].body.to, "555181675115");
+    assert.equal(graphCalls[1].body.text.body, "ola, teste humano");
+    assert.match(graphCalls[1].authorization, /^Bearer /);
+
+    const conversations = JSON.parse(await readFile(conversationsFile, "utf8"));
+    const sentMessage = conversations.conversas[0].mensagens.at(-1);
+    assert.equal(sentMessage.direction, "out");
+    assert.equal(sentMessage.status, "sent");
+    assert.equal(sentMessage.response.messages[0].id, "wamid-manual-human-ok");
+    assert.equal(conversations.conversas[0].humanHandoff.status, "em_atendimento");
+  } finally {
+    await close(server);
+    await cleanup();
+    if (previousSendEnabled === undefined) delete process.env.WHATSAPP_SEND_ENABLED;
+    else process.env.WHATSAPP_SEND_ENABLED = previousSendEnabled;
+    if (previousAccessToken === undefined) delete process.env.META_ACCESS_TOKEN;
+    else process.env.META_ACCESS_TOKEN = previousAccessToken;
+    if (previousPhoneNumberId === undefined) delete process.env.WHATSAPP_PHONE_NUMBER_ID;
+    else process.env.WHATSAPP_PHONE_NUMBER_ID = previousPhoneNumberId;
+  }
+});
+
 test("POST /webhook/whatsapp envia resposta quando payload Meta vem sem field explicito", async () => {
   const previousSendEnabled = process.env.WHATSAPP_SEND_ENABLED;
   const previousAccessToken = process.env.META_ACCESS_TOKEN;
