@@ -260,7 +260,7 @@ test("POST /webhook/whatsapp responde fluxo humano quando cliente pede atendente
   }
 });
 
-test("POST /webhook/whatsapp em HUMANO envia uma espera controlada e nao repete", async () => {
+test("POST /webhook/whatsapp cancela HUMANO e permite retomar sem repetir espera", async () => {
   const previousSendEnabled = process.env.WHATSAPP_SEND_ENABLED;
   const previousAccessToken = process.env.META_ACCESS_TOKEN;
   const previousPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
@@ -315,15 +315,18 @@ test("POST /webhook/whatsapp em HUMANO envia uma espera controlada e nao repete"
     });
 
     assert.equal(graphCalls.length, 2);
-    const waitBody = JSON.parse(graphCalls[1].options.body);
-    assert.match(waitBody.text.body, /Aguarda um instante/);
-    assert.doesNotMatch(waitBody.text.body, /Fazer pedido|Cardapio|Cardápio/);
+    const firstBody = JSON.parse(graphCalls[0].options.body);
+    assert.match(firstBody.text.body, /atendimento humano/);
+    const reopenedBody = JSON.parse(graphCalls[1].options.body);
+    assert.match(reopenedBody.text.body, /SamBah/);
+    assert.doesNotMatch(reopenedBody.text.body, /Aguarda um instante/);
 
     const conversations = JSON.parse(await readFile(conversationsFile, "utf8"));
     const conversa = conversations.conversas[0];
-    assert.equal(conversa.atendimentoEstado, "HUMANO");
-    assert.equal(conversa.status, "aguardando_humano");
-    assert.equal(conversa.humanHandoff.status, "pendente");
+    assert.equal(conversa.conversationState, "NORMAL");
+    assert.equal(conversa.atendimentoEstado, "");
+    assert.equal(conversa.status, "aguardando_cliente");
+    assert.equal(conversa.humanHandoff.status, "cancelado");
     assert.ok(conversa.humanHandoff.waitMessageSentAt);
     assert.equal(conversa.mensagens.filter((message) => message.direction === "in").length, 3);
   } finally {

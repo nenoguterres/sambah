@@ -2,6 +2,14 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import crypto from "node:crypto";
 import { buildSambahAiAudit, classifySambahIntent } from "./intentEngine.js";
+import {
+  CONVERSATION_STATES,
+  isHumanState,
+  normalizeConversationState,
+  resolveIncomingConversationState,
+  resolveOutgoingConversationState,
+  stateForManualMark
+} from "./conversationStateEngine.js";
 import { extractWhatsAppMessageText } from "./whatsapp/whatsappWebhookParser.js";
 import { shouldCollectWhatsappOrderItem, summarizeWhatsappOrder } from "./whatsappOrderService.js";
 
@@ -21,7 +29,7 @@ const INTENT_RESPONSES = {
 };
 
 const HUMAN_INTENTS = new Set(["humano", "reclamacao"]);
-const HUMAN_WAIT_MESSAGE = "Já te coloquei para atendimento humano. Aguarda um instante que vamos te responder por aqui.";
+const HUMAN_WAIT_MESSAGE = "Já te coloquei para atendimento humano e vou encaminhar tua conversa. Aguarda um instante que vamos te responder por aqui.";
 const OPPORTUNITY_INTENTS = new Set(["evento", "food_truck", "corporativo", "xeriffe", "reserva", "festa"]);
 const ORDER_STATES = new Set([
   "AGUARDANDO_NOME",
@@ -106,14 +114,20 @@ export class WhatsAppConversationService {
     });
     const intent = mapAiIntentToWhatsAppIntent(aiDecision.intent);
     const respostaSugerida = suggestedWhatsAppResponse(intent);
-    const isHumanHandoff = HUMAN_INTENTS.has(intent) || aiDecision.allowedAction === "HANDOFF_HUMAN" || contextBase.atendimentoEstado === "HUMANO";
-    const status = configStatus
-      || (isHumanHandoff
-        ? "aguardando_humano"
-        : aiDecision.allowedAction === "NO_ACTION"
-          ? (contextBase.status || "aguardando_equipe")
-          : "aguardando_equipe");
     const orderState = nextOrderState(contextBase, incoming, intent);
+    const stateDecision = resolveIncomingConversationState({
+      conversation: contextBase,
+      text: textForIntent,
+      intent,
+      aiDecision,
+      orderState
+    });
+    const isHumanHandoff = isHumanState(stateDecision.state);
+    const status = configStatus
+      || stateDecision.status
+      || (aiDecision.allowedAction === "NO_ACTION"
+        ? (contextBase.status || "aguardando_equipe")
+        : "aguardando_equipe");
     const orderSync = await syncWhatsappOrderFromIncoming({
       orderService: this.orderService,
       conversation: contextBase,
@@ -124,12 +138,15 @@ export class WhatsAppConversationService {
     });
     const whatsappOrder = orderSync.order ? summarizeWhatsappOrder(orderSync.order) : contextBase.whatsappOrder || null;
     const paymentStatus = nextPaymentStatus(contextBase, incoming);
-    const effectiveConversationState = orderState || contextBase.atendimentoEstado || aiDecision.conversationState || "";
+    const effectiveConversationState = stateDecision.state || normalizeConversationState(contextBase);
+    const legacyConversationState = stateDecision.atendimentoEstado || aiDecision.conversationState || aiDecision.state || "IDLE";
     const persistedAiDecision = {
       ...aiDecision,
       previousConversationState: aiDecision.conversationState || aiDecision.state || "IDLE",
-      conversationState: effectiveConversationState || "IDLE",
-      state: effectiveConversationState || "IDLE"
+      conversationState: legacyConversationState,
+      state: legacyConversationState,
+      stateEngineState: effectiveConversationState,
+      stateEngineReason: stateDecision.auditReason
     };
     const aiAudit = {
       ...buildSambahAiAudit({
@@ -137,8 +154,10 @@ export class WhatsAppConversationService {
         conversationState: contextBase,
         previousIntent: contextBase.aiDecision?.intent || contextBase.intencao || ""
       }, persistedAiDecision),
-      nextState: effectiveConversationState || "IDLE",
-      conversationState: persistedAiDecision.conversationState
+      nextState: legacyConversationState,
+      conversationState: persistedAiDecision.conversationState,
+      stateEngineState: effectiveConversationState,
+      stateEngineReason: stateDecision.auditReason
     };
     const updated = {
       ...contextBase,
@@ -148,17 +167,23 @@ export class WhatsAppConversationService {
       ultimaInteracao: now,
       updatedAt: now,
       intencao: intent,
-      atendimentoEstado: orderState || contextBase.atendimentoEstado || "",
+      conversationState: effectiveConversationState,
+      atendimentoEstado: stateDecision.atendimentoEstado,
       whatsappOrder,
       mesaPedido: contextBase.mesaPedido || null,
       statusCobranca: paymentStatus || contextBase.statusCobranca || "",
       status,
-      respostaSugerida: isHumanHandoff ? HUMAN_WAIT_MESSAGE : respostaSugerida,
+      respostaSugerida: stateDecision.state === CONVERSATION_STATES.FINALIZADO
+        ? ""
+        : isHumanHandoff
+          ? HUMAN_WAIT_MESSAGE
+          : respostaSugerida,
       humanHandoff: nextHumanHandoffState(contextBase, {
         now,
         intent,
         aiDecision,
-        messageId: message.id
+        messageId: message.id,
+        stateDecision
       }),
       lastOrderContextResetAt: contextBase.orderContextExpired ? now : contextBase.lastOrderContextResetAt || "",
       orderContextExpired: undefined,
@@ -192,7 +217,7 @@ export class WhatsAppConversationService {
       message,
       intent,
       aiDecision: persistedAiDecision,
-      respostaSugerida,
+      respostaSugerida: updated.respostaSugerida,
       sendEnabled: runtimeConfig.whatsappBusiness?.sendEnabled === true,
       voiceReplyEnabled: runtimeConfig.ai?.voiceReplyEnabled === true
     };
@@ -232,9 +257,15 @@ export class WhatsAppConversationService {
       retryTo: sendResult?.retryTo || "",
       attempts: Array.isArray(sendResult?.attempts) ? sendResult.attempts : []
     };
+    const nextOutgoingState = resolveOutgoingConversationState(data.conversas[index], {
+      manual: true,
+      sent: Boolean(sendResult?.sent)
+    });
     const updated = {
       ...data.conversas[index],
-      status: nextOutgoingStatus(data.conversas[index], sendResult, { manual: true }),
+      status: nextOutgoingState.status || nextOutgoingStatus(data.conversas[index], sendResult, { manual: true }),
+      conversationState: nextOutgoingState.state,
+      atendimentoEstado: nextOutgoingState.atendimentoEstado,
       humanHandoff: nextOutgoingHumanHandoff(data.conversas[index], sendResult, { manual: true, now }),
       ultimaInteracao: now,
       updatedAt: now,
@@ -350,6 +381,7 @@ export class WhatsAppConversationService {
     const updated = {
       ...data.conversas[index],
       whatsappOrder: summary,
+      conversationState: nextState === "CANCELADO" ? CONVERSATION_STATES.FINALIZADO : CONVERSATION_STATES.PEDIDO_INICIADO,
       atendimentoEstado: nextState,
       mesaPedido,
       statusCobranca: mesaPedido ? "A_COBRAR" : data.conversas[index].statusCobranca || "",
@@ -388,6 +420,7 @@ export class WhatsAppConversationService {
       ...data.conversas[index],
       nome: mesaPedido.nome || data.conversas[index].nome,
       telefone: data.conversas[index].telefone || mesaPedido.telefone,
+      conversationState: CONVERSATION_STATES.PEDIDO_INICIADO,
       atendimentoEstado: "PEDIDO_MESA_RECEBIDO",
       mesaPedido,
       statusCobranca: mesaPedido.statusFinanceiro,
@@ -427,6 +460,7 @@ export class WhatsAppConversationService {
     const now = this.now().toISOString();
     const updated = {
       ...data.conversas[index],
+      conversationState: CONVERSATION_STATES.PEDIDO_INICIADO,
       atendimentoEstado: "COBRANCA_ENVIADA",
       statusCobranca: "COBRANCA_ENVIADA",
       sambahPay: {
@@ -451,6 +485,7 @@ export class WhatsAppConversationService {
     const now = this.now().toISOString();
     const updated = {
       ...data.conversas[index],
+      conversationState: CONVERSATION_STATES.PEDIDO_INICIADO,
       atendimentoEstado: "PAGAMENTO_CONFIRMADO",
       statusCobranca: "PAGAMENTO_EFETUADO",
       sambahPay: {
@@ -473,16 +508,13 @@ export class WhatsAppConversationService {
     const index = data.conversas.findIndex((item) => item.id === id || phonesMatch(item.telefone, id));
     if (index === -1) return { ok: false, error: "Conversa nao encontrada" };
     const now = this.now().toISOString();
-    const atendimentoEstado = status === "humano"
-      ? "HUMANO"
-      : status === "resolvido" && data.conversas[index].atendimentoEstado === "HUMANO"
-        ? ""
-        : data.conversas[index].atendimentoEstado;
-    const nextStatus = status === "humano" ? "aguardando_humano" : status;
+    const markedState = stateForManualMark(status, data.conversas[index]);
+    const nextStatus = markedState.status || (status === "humano" ? "aguardando_humano" : status);
     data.conversas[index] = {
       ...data.conversas[index],
       status: nextStatus,
-      atendimentoEstado,
+      conversationState: markedState.state,
+      atendimentoEstado: markedState.atendimentoEstado,
       respostaSugerida: status === "humano" ? HUMAN_WAIT_MESSAGE : data.conversas[index].respostaSugerida,
       humanHandoff: status === "humano"
         ? nextHumanHandoffState(data.conversas[index], { now, intent: "humano", aiDecision: { allowedAction: "HANDOFF_HUMAN" }, messageId: "" })
@@ -619,7 +651,7 @@ async function updateCrmFromConversation(crmService, conversation, incoming, int
 function nextOrderState(conversation = {}, incoming = {}, intent = "") {
   const current = conversation.atendimentoEstado || "";
   const text = normalizeText(incoming.text || incoming.transcricao || "");
-  if (current === "HUMANO") return "HUMANO";
+  if (isHumanConversation(conversation)) return isCancelIntent(text) ? "" : "HUMANO";
   if (isCancelIntent(text)) return "CANCELADO";
   if (HUMAN_INTENTS.has(intent)) return "HUMANO";
   if (["COMANDA_EM_ANDAMENTO", "COMANDA_PRONTA"].includes(current)) return "COMANDA_EM_ANDAMENTO";
@@ -643,6 +675,7 @@ function resetStaleOrderContext(conversation = {}, nowIso = new Date().toISOStri
   if (!isStaleOrderContext(conversation, nowIso)) return conversation;
   return {
     ...conversation,
+    conversationState: CONVERSATION_STATES.NORMAL,
     atendimentoEstado: "",
     whatsappOrder: null,
     statusCobranca: "",
@@ -706,11 +739,23 @@ function nextOutgoingStatus(conversation = {}, sendResult = null, { manual = fal
   return "aguardando_cliente";
 }
 
-function nextHumanHandoffState(conversation = {}, { now = new Date().toISOString(), intent = "", aiDecision = {}, messageId = "" } = {}) {
+function nextHumanHandoffState(conversation = {}, { now = new Date().toISOString(), intent = "", aiDecision = {}, messageId = "", stateDecision = null } = {}) {
   const current = conversation.humanHandoff || null;
-  const isHuman = HUMAN_INTENTS.has(intent) || aiDecision.allowedAction === "HANDOFF_HUMAN" || (conversation.atendimentoEstado || "") === "HUMANO";
+  if (stateDecision?.humanHandoffStatus === "cancelado") {
+    return {
+      ...(current || {}),
+      status: "cancelado",
+      cancelledAt: now,
+      resolvedAt: now,
+      pendingNoticeDue: false
+    };
+  }
+  const isHuman = HUMAN_INTENTS.has(intent)
+    || aiDecision.allowedAction === "HANDOFF_HUMAN"
+    || isHumanConversation(conversation)
+    || isHumanState(stateDecision?.state || "");
   if (!isHuman) return current;
-  const alreadyWaitingHuman = Boolean(current?.requestedAt) || (conversation.atendimentoEstado || "") === "HUMANO";
+  const alreadyWaitingHuman = Boolean(current?.requestedAt) || isHumanConversation(conversation);
   const pendingNoticeDue = alreadyWaitingHuman && !current?.waitMessageSentAt && current?.status !== "em_atendimento";
   return {
     status: current?.status === "em_atendimento" ? "em_atendimento" : "pendente",
@@ -726,7 +771,7 @@ function nextHumanHandoffState(conversation = {}, { now = new Date().toISOString
 
 function nextOutgoingHumanHandoff(conversation = {}, sendResult = null, { manual = false, text = "", now = new Date().toISOString() } = {}) {
   const current = conversation.humanHandoff || null;
-  if (!current && (conversation.atendimentoEstado || "") !== "HUMANO") return current;
+  if (!current && !isHumanConversation(conversation)) return current;
   if (!sendResult?.sent) return current;
   if (manual) {
     return {
@@ -745,7 +790,20 @@ function nextOutgoingHumanHandoff(conversation = {}, sendResult = null, { manual
       pendingNoticeDue: false
     };
   }
+  if (isHumanConversation(conversation)) {
+    return {
+      ...(current || {}),
+      status: current?.status || "pendente",
+      waitMessageSentAt: current?.waitMessageSentAt || now,
+      pendingNoticeDue: false
+    };
+  }
   return current;
+}
+
+function isHumanConversation(conversation = {}) {
+  return (conversation.atendimentoEstado || "") === "HUMANO"
+    || isHumanState(normalizeConversationState(conversation));
 }
 
 function isPixPaymentText(text = "") {

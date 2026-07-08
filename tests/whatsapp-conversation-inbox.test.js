@@ -529,6 +529,7 @@ test("Atendente responde handoff humano e conversa continua sem automacao", asyn
     assert.equal(replied.ok, true);
     assert.equal(replied.enviado, true);
     assert.equal(replied.conversa.status, "aguardando_cliente");
+    assert.equal(replied.conversa.conversationState, "HUMANO_ASSUMIU");
     assert.equal(replied.conversa.atendimentoEstado, "HUMANO");
     assert.equal(replied.conversa.humanHandoff.status, "em_atendimento");
     assert.equal(replied.conversa.mensagens.at(-1).direction, "out");
@@ -537,6 +538,33 @@ test("Atendente responde handoff humano e conversa continua sem automacao", asyn
     assert.equal(after.aiDecision.allowedAction, "NO_ACTION");
     assert.equal(after.conversa.status, "aguardando_humano");
     assert.equal(after.conversa.mensagens.at(-1).text, "oi");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Conversation State Engine cancela handoff humano e permite retomar fluxo inicial", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-human-state-engine-"));
+  const filePath = join(dir, "conversas.json");
+  const service = new WhatsAppConversationService({ filePath });
+  try {
+    const handoff = await service.recordIncoming({ from: "5551999999999", text: "humano", messageId: "state-human-1" });
+    assert.equal(handoff.conversa.conversationState, "AGUARDANDO_HUMANO");
+    assert.equal(handoff.conversa.atendimentoEstado, "HUMANO");
+    assert.equal(handoff.conversa.status, "aguardando_humano");
+    assert.equal(handoff.conversa.humanHandoff.status, "pendente");
+
+    const cancelled = await service.recordIncoming({ from: "5551999999999", text: "cancelar", messageId: "state-human-2" });
+    assert.equal(cancelled.conversa.conversationState, "FINALIZADO");
+    assert.equal(cancelled.conversa.atendimentoEstado, "");
+    assert.equal(cancelled.conversa.status, "resolvido");
+    assert.equal(cancelled.conversa.humanHandoff.status, "cancelado");
+
+    const reopened = await service.recordIncoming({ from: "5551999999999", text: "oi", messageId: "state-human-3" });
+    assert.equal(reopened.conversa.conversationState, "NORMAL");
+    assert.equal(reopened.conversa.atendimentoEstado, "");
+    assert.notEqual(reopened.conversa.respostaSugerida, "Ja te coloquei para atendimento humano. Aguarda um instante que vamos te responder por aqui.");
+    assert.equal(reopened.conversa.mensagens.at(-1).text, "oi");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
