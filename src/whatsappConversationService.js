@@ -117,7 +117,8 @@ export class WhatsAppConversationService {
       conversation: contextBase,
       incoming,
       intent,
-      orderState
+      orderState,
+      aiDecision
     });
     const whatsappOrder = orderSync.order ? summarizeWhatsappOrder(orderSync.order) : contextBase.whatsappOrder || null;
     const paymentStatus = nextPaymentStatus(contextBase, incoming);
@@ -632,19 +633,24 @@ function isStaleOrderContext(conversation = {}, nowIso = "") {
   return nowTime - lastInteraction > ORDER_CONTEXT_TTL_MS;
 }
 
-async function syncWhatsappOrderFromIncoming({ orderService, conversation = {}, incoming = {}, intent = "", orderState = "" } = {}) {
+async function syncWhatsappOrderFromIncoming({ orderService, conversation = {}, incoming = {}, intent = "", orderState = "", aiDecision = {} } = {}) {
   if (!orderService || !conversation?.id) return { ok: false, skipped: true };
   const text = incoming.text || incoming.transcricao || "";
   const normalized = normalizeText(text);
   if (!normalized || HUMAN_INTENTS.has(intent) || isCancelIntent(normalized)) return { ok: false, skipped: true };
   const isOrderFlow = intent === "pedido" || ["COMANDA_EM_ANDAMENTO", "COMANDA_PRONTA"].includes(orderState || conversation.atendimentoEstado || "");
   if (!isOrderFlow) return { ok: false, skipped: true };
+  const allowedAction = aiDecision.allowedAction || "";
+  if (!["CREATE_ORDER_DRAFT", "ADD_ORDER_ITEM"].includes(allowedAction)) {
+    return { ok: false, skipped: true, reason: "ai_decision_not_order_item" };
+  }
 
   const draft = await orderService.createDraftOrderFromConversation(conversation, {
     customerName: conversation.nome || incoming.nome || incoming.profileName || "Cliente WhatsApp",
     phone: conversation.telefone || incoming.telefone || ""
   });
   if (!draft.ok) return draft;
+  if (allowedAction !== "ADD_ORDER_ITEM") return { ok: true, order: draft.order, created: draft.created };
   if (!shouldCollectWhatsappOrderItem(text)) return { ok: true, order: draft.order, created: draft.created };
   return orderService.addItemToOrder(conversation.id, { text });
 }

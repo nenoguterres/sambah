@@ -170,9 +170,12 @@ export function shouldCollectWhatsappOrderItem(text = "") {
   if (!normalized) return false;
   if (["1", "01", "quero pedir", "pedido", "fazer pedido", "quero fazer pedido"].includes(normalized)) return false;
   if (["oi", "ola", "buenas", "bom dia", "boa tarde", "boa noite"].includes(normalized)) return false;
+  if (["cardapio", "menu", "humano", "atendente", "cancelar", "cancela", "ajuda", "horario", "endereco", "localizacao"].includes(normalized)) return false;
   if (["delivery", "entrega", "retirada", "retirar", "buscar", "pix", "cartao", "dinheiro", "pronto", "fechar", "finalizar"].includes(normalized)) return false;
   if (normalized.includes("enviar para mesa") || normalized.includes("pode enviar") || normalized.includes("pedido pronto")) return false;
+  if (normalized.includes("cardapio") || normalized.includes("menu")) return false;
   if (normalized.includes("atendente") || normalized.includes("humano") || normalized.includes("cancelar")) return false;
+  if (normalized.includes("horario") || normalized.includes("que horas") || normalized.includes("onde fica") || normalized.includes("endereco")) return false;
   return true;
 }
 

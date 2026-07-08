@@ -41,6 +41,7 @@ const SAFE_REPLIES = {
   company_info: "Atendemos demandas de empresa pelo fluxo de eventos/orcamentos. Me passa data, local e quantidade de pessoas.",
   location_info: "Posso te orientar pelo canal oficial, sem inventar endereco. Se preferir, chamo a equipe para confirmar a localizacao contigo.",
   hours_info: "Pra nao te passar horario errado, eu encaminho pelo canal oficial ou chamo a equipe para confirmar contigo.",
+  help_info: "Posso te ajudar com pedido, cardapio, evento, pagamento ou atendimento humano. Me diz em poucas palavras o que tu precisa.",
   cancel_flow: "Certo, vou cancelar esse fluxo por aqui. Se quiser retomar depois, e so me chamar.",
   flow_cancelled: "Esse fluxo esta cancelado, entao nao vou executar nenhuma acao automatica.",
   no_auto_reply_human: "",
@@ -95,12 +96,16 @@ function decideByState({ detected, normalized, state }) {
   if (state === "AGUARDANDO_NOME") {
     if (detected.intent === "humano") return decision("humano", detected.confidence, "HANDOFF_HUMAN", "human_support", "Cliente pediu atendimento humano", true);
     if (detected.intent === "cancelar") return decision("cancelar", detected.confidence, "CANCEL_FLOW", "cancel_flow", "Cliente pediu cancelamento");
+    const priorityDecision = priorityDecisionForActiveOrder(detected);
+    if (priorityDecision) return priorityDecision;
     if (normalized) return decision("pedido", 0.72, "ADD_ORDER_ITEM", "item_added", "Primeiro item recebido; manter comanda interna");
     return decision("unknown", 0.2, "ASK_NAME", "ask_name_again", "Estado aguarda nome e mensagem nao trouxe nome claro");
   }
   if (ORDER_DRAFT_STATES.has(state)) {
     if (detected.intent === "humano") return decision("humano", detected.confidence, "HANDOFF_HUMAN", "human_support", "Cliente pediu atendimento humano durante pedido", true);
     if (detected.intent === "cancelar") return decision("cancelar", detected.confidence, "CANCEL_FLOW", "cancel_flow", "Cliente pediu cancelamento durante pedido");
+    const priorityDecision = priorityDecisionForActiveOrder(detected);
+    if (priorityDecision) return priorityDecision;
     if (isOrderDraftControlMessage(normalized, detected.intent)) {
       return decision("pedido", Math.max(detected.confidence, 0.65), "ANSWER_INFO", "ask_order_item", "Mensagem nao e item de pedido; manter comanda sem anotar item");
     }
@@ -110,6 +115,8 @@ function decideByState({ detected, normalized, state }) {
   if (ORDER_WAITING_STATES.has(state)) {
     if (detected.intent === "humano") return decision("humano", detected.confidence, "HANDOFF_HUMAN", "human_support", "Cliente pediu atendimento humano durante pedido", true);
     if (detected.intent === "cancelar") return decision("cancelar", detected.confidence, "CANCEL_FLOW", "cancel_flow", "Cliente pediu cancelamento durante pedido");
+    const priorityDecision = priorityDecisionForActiveOrder(detected);
+    if (priorityDecision) return priorityDecision;
     return decision(detected.intent, Math.max(detected.confidence, 0.65), "SEND_MESA_LINK", "send_mesa_link", "Pedido ativo pertence a Mesa; IA apenas reenvia link");
   }
   if (state === "PEDIDO_MESA_RECEBIDO") {
@@ -156,6 +163,7 @@ function detectIntent(normalized = "", previousIntent = "") {
   if (hasAny(normalized, ["dinheiro"])) return { intent: "pagamento_dinheiro", confidence: 0.88 };
   if (hasAny(normalized, ["a cobrar", "cobrar depois", "pendente"])) return { intent: "pagamento_a_cobrar", confidence: 0.88 };
   if (hasAny(normalized, ["manda o link", "me manda o link", "link"])) return { intent: "link", confidence: 0.62 };
+  if (hasAny(normalized, ["ajuda", "me ajuda", "socorro", "opcoes", "opcoes de atendimento"])) return { intent: "ajuda", confidence: 0.78 };
   if (hasAny(normalized, ["faz entrega", "entrega", "delivery", "entregar"])) return { intent: "delivery", confidence: 0.82 };
   if (hasAny(normalized, ["retirar", "retirada", "buscar", "pegar ai", "posso retirar"])) return { intent: "retirada", confidence: 0.82 };
   if (hasAny(normalized, ["evento", "festa", "orcamento", "food truck", "foodtruck", "casamento", "aniversario"])) return { intent: "evento", confidence: 0.82 };
@@ -166,8 +174,9 @@ function detectIntent(normalized = "", previousIntent = "") {
   if (hasAny(normalized, ["tem hoje", "tem disponivel", "disponivel", "estoque", "ainda tem"])) return { intent: "estoque", confidence: 0.78 };
   if (hasAny(normalized, ["cardapio", "menu"])) return { intent: "cardapio", confidence: 0.82 };
   if (hasAny(normalized, ["ja fiz o pedido", "pedido feito", "finalizei o pedido"])) return { intent: "pedido", confidence: 0.74 };
-  if (normalized === "1" || hasAny(normalized, ["pedido", "pedir", "comprar", "lanche", "espetinho", "farofa", "adicional", "complemento"])) return { intent: "pedido", confidence: 0.82 };
-  if (previousIntent) return { intent: normalizeIntent(previousIntent), confidence: 0.35 };
+  if (normalized === "1" || hasAny(normalized, ["pedido", "pedir", "comprar", "lanche", "burger", "hamburguer", "hamburger", "pizza", "batata", "porcao", "espetinho", "farofa", "adicional", "complemento"])) return { intent: "pedido", confidence: 0.82 };
+  const previous = normalizeIntent(previousIntent);
+  if (previous && !["unknown", "saudacao", "cardapio", "humano", "cancelar"].includes(previous)) return { intent: previous, confidence: 0.35 };
   return { intent: "unknown", confidence: 0.2 };
 }
 
@@ -264,6 +273,31 @@ function isOrderDraftControlMessage(normalized = "", intent = "") {
   if (["1", "01", "2", "02", "3", "03", "4", "04", "5", "05", "6", "06"].includes(normalized)) return true;
   if (["quero pedir", "pedido", "fazer pedido", "quero fazer pedido"].includes(normalized)) return true;
   return false;
+}
+
+function priorityDecisionForActiveOrder(detected = {}) {
+  if (detected.intent === "saudacao") {
+    return decision("saudacao", detected.confidence, "ANSWER_INFO", "greeting_short", "Saudacao prioritaria durante fluxo ativo; nao anotar item");
+  }
+  if (detected.intent === "cardapio") {
+    return decision("cardapio", detected.confidence, "ANSWER_INFO", "menu_info", "Cardapio e intencao prioritaria; nao anotar item");
+  }
+  if (detected.intent === "horario") {
+    return decision("horario", detected.confidence, "ANSWER_INFO", "hours_info", "Horario e intencao prioritaria; nao anotar item");
+  }
+  if (detected.intent === "localizacao") {
+    return decision("localizacao", detected.confidence, "ANSWER_INFO", "location_info", "Localizacao e intencao prioritaria; nao anotar item");
+  }
+  if (detected.intent === "pagamento_comprovante") {
+    return decision("pagamento", detected.confidence, "HANDOFF_HUMAN", "payment_review", "Pagamento exige conferencia humana; nao anotar item", true);
+  }
+  if (String(detected.intent || "").startsWith("pagamento")) {
+    return decision(detected.intent, detected.confidence, "ANSWER_INFO", "ask_payment", "Pagamento e intencao prioritaria; nao anotar item");
+  }
+  if (detected.intent === "ajuda") {
+    return decision("ajuda", detected.confidence, "ANSWER_INFO", "help_info", "Ajuda e intencao prioritaria; nao anotar item");
+  }
+  return null;
 }
 
 function normalizeText(value = "") {

@@ -136,10 +136,30 @@ test("Atendimento Natural Controlado preserva Mesa e humano", () => {
 });
 
 test("AI Core nao transforma saudacao em item durante comanda ativa", () => {
-  for (const message of ["Oi", "bom dia", "1"]) {
+  for (const message of ["Oi", "bom dia"]) {
     const result = classifySambahIntent({ message, conversationState: "COMANDA_EM_ANDAMENTO" });
     assert.equal(result.allowedAction, "ANSWER_INFO", message);
-    assert.equal(result.replyKey, "ask_order_item", message);
+    assert.equal(result.replyKey, "greeting_short", message);
+    assert.doesNotMatch(result.safeReply, /Anotei esse item/i);
+  }
+  const option = classifySambahIntent({ message: "1", conversationState: "COMANDA_EM_ANDAMENTO" });
+  assert.equal(option.allowedAction, "ANSWER_INFO");
+  assert.equal(option.replyKey, "ask_order_item");
+  assert.doesNotMatch(option.safeReply, /Anotei esse item/i);
+});
+
+test("AI Core prioriza intencoes de navegacao durante pedido ativo", () => {
+  const samples = [
+    ["Oi", "AGUARDANDO_PEDIDO_MESA", "ANSWER_INFO"],
+    ["Cardápio", "AGUARDANDO_PEDIDO_MESA", "ANSWER_INFO"],
+    ["Humano", "AGUARDANDO_PEDIDO_MESA", "HANDOFF_HUMAN"],
+    ["Cancelar", "AGUARDANDO_PEDIDO_MESA", "CANCEL_FLOW"],
+    ["Cardápio", "COMANDA_EM_ANDAMENTO", "ANSWER_INFO"]
+  ];
+  for (const [message, state, allowedAction] of samples) {
+    const result = classifySambahIntent({ message, conversationState: state });
+    assert.equal(result.allowedAction, allowedAction, `${state}: ${message}`);
+    assert.notEqual(result.allowedAction, "ADD_ORDER_ITEM", `${state}: ${message}`);
     assert.doesNotMatch(result.safeReply, /Anotei esse item/i);
   }
 });

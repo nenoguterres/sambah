@@ -250,7 +250,7 @@ test("WhatsApp nao anota saudacao como item em comanda ativa", async () => {
     assert.equal(helloAgain.conversa.atendimentoEstado, "COMANDA_EM_ANDAMENTO");
     assert.equal(helloAgain.aiDecision.allowedAction, "ANSWER_INFO");
     assert.doesNotMatch(helloAgain.aiDecision.safeReply, /Anotei esse item/i);
-    assert.match(helloAgain.aiDecision.safeReply, /Me manda o item do pedido/i);
+    assert.match(helloAgain.aiDecision.safeReply, /SamBah/);
     assert.equal(helloAgain.conversa.whatsappOrder.items.length, 0);
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -306,6 +306,106 @@ test("WhatsApp segue anotando item real depois de saudacao ignorada", async () =
     assert.equal(item.conversa.whatsappOrder.items.length, 1);
     assert.equal(item.conversa.whatsappOrder.items[0].name, "burger");
     assert.equal(item.conversa.whatsappOrder.items[0].quantity, 2);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("WhatsApp nao captura intencoes prioritarias como item em AGUARDANDO_PEDIDO_MESA", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-conversation-priority-waiting-"));
+  const filePath = join(dir, "conversas.json");
+  const orderPath = join(dir, "orders.json");
+  const orderService = new WhatsAppOrderService({ filePath: orderPath, now: () => new Date("2026-07-07T20:20:00.000Z") });
+  const service = new WhatsAppConversationService({
+    filePath,
+    orderService,
+    now: () => new Date("2026-07-07T20:20:00.000Z")
+  });
+  try {
+    await writeFile(filePath, JSON.stringify({
+      conversas: [{
+        id: "wa_5551999999999",
+        nome: "Cliente Teste",
+        telefone: "5551999999999",
+        status: "aguardando_cliente",
+        atendimentoEstado: "AGUARDANDO_PEDIDO_MESA",
+        mensagens: [],
+        createdAt: "2026-07-07T20:00:00.000Z",
+        updatedAt: "2026-07-07T20:00:00.000Z",
+        ultimaInteracao: "2026-07-07T20:00:00.000Z"
+      }]
+    }), "utf8");
+    await writeFile(orderPath, JSON.stringify({
+      orders: [{
+        id: "wa_order_test",
+        conversationId: "wa_5551999999999",
+        phone: "5551999999999",
+        customerName: "Cliente Teste",
+        items: [],
+        status: "collecting_items",
+        source: "whatsapp_sambah",
+        createdAt: "2026-07-07T20:00:00.000Z",
+        updatedAt: "2026-07-07T20:00:00.000Z"
+      }]
+    }), "utf8");
+
+    for (const [index, text] of ["Oi", "Cardápio", "Humano", "Cancelar"].entries()) {
+      await writeFile(filePath, JSON.stringify({
+        conversas: [{
+          id: "wa_5551999999999",
+          nome: "Cliente Teste",
+          telefone: "5551999999999",
+          status: "aguardando_cliente",
+          atendimentoEstado: "AGUARDANDO_PEDIDO_MESA",
+          mensagens: [],
+          createdAt: "2026-07-07T20:00:00.000Z",
+          updatedAt: "2026-07-07T20:00:00.000Z",
+          ultimaInteracao: "2026-07-07T20:00:00.000Z"
+        }]
+      }), "utf8");
+      await writeFile(orderPath, JSON.stringify({
+        orders: [{
+          id: "wa_order_test",
+          conversationId: "wa_5551999999999",
+          phone: "5551999999999",
+          customerName: "Cliente Teste",
+          items: [],
+          status: "collecting_items",
+          source: "whatsapp_sambah",
+          createdAt: "2026-07-07T20:00:00.000Z",
+          updatedAt: "2026-07-07T20:00:00.000Z"
+        }]
+      }), "utf8");
+      const result = await service.recordIncoming({ from: "5551999999999", text, messageId: `priority-waiting-${index}` });
+      const orders = JSON.parse(await readFile(orderPath, "utf8"));
+
+      assert.notEqual(result.aiDecision.allowedAction, "ADD_ORDER_ITEM");
+      assert.doesNotMatch(result.aiDecision.safeReply, /Anotei esse item/i);
+      assert.equal(orders.orders[0].items.length, 0, text);
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("WhatsApp nao captura Cardapio como item em COMANDA_EM_ANDAMENTO", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-conversation-cardapio-active-"));
+  const filePath = join(dir, "conversas.json");
+  const orderService = new WhatsAppOrderService({ filePath: join(dir, "orders.json"), now: () => new Date("2026-07-07T20:24:00.000Z") });
+  const service = new WhatsAppConversationService({
+    filePath,
+    orderService,
+    now: () => new Date("2026-07-07T20:24:00.000Z")
+  });
+  try {
+    await service.recordIncoming({ from: "5551999999999", text: "Quero pedir", messageId: "cardapio-active-1" });
+    const cardapio = await service.recordIncoming({ from: "5551999999999", text: "Cardápio", messageId: "cardapio-active-2" });
+
+    assert.equal(cardapio.conversa.atendimentoEstado, "COMANDA_EM_ANDAMENTO");
+    assert.equal(cardapio.aiDecision.intent, "cardapio");
+    assert.equal(cardapio.aiDecision.allowedAction, "ANSWER_INFO");
+    assert.doesNotMatch(cardapio.aiDecision.safeReply, /Anotei esse item/i);
+    assert.equal(cardapio.conversa.whatsappOrder.items.length, 0);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
