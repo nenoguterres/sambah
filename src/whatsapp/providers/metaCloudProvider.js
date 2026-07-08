@@ -32,9 +32,11 @@ export class MetaCloudWhatsAppProvider {
     try {
       const firstAttempt = await sendMetaText(this.fetch, endpoint, this.config.accessToken, { to, text });
       let attempt = firstAttempt;
+      const attempts = [buildMetaAttemptLog({ to, attempt: firstAttempt, accessToken: this.config.accessToken })];
       const retryTo = metaBrazilianAllowedListRetryNumber(to, firstAttempt.body);
       if (!firstAttempt.response.ok && retryTo) {
         const retryAttempt = await sendMetaText(this.fetch, endpoint, this.config.accessToken, { to: retryTo, text });
+        attempts.push(buildMetaAttemptLog({ to: retryTo, attempt: retryAttempt, accessToken: this.config.accessToken }));
         attempt = {
           ...retryAttempt,
           retried: true,
@@ -50,6 +52,7 @@ export class MetaCloudWhatsAppProvider {
         status: attempt.response.ok ? "sent" : "meta_error",
         httpStatus: attempt.response.status,
         response: sanitizeMetaPayload(attempt.body, this.config.accessToken),
+        attempts,
         ...(attempt.retried ? {
           retried: true,
           originalTo: attempt.originalTo,
@@ -67,6 +70,15 @@ export class MetaCloudWhatsAppProvider {
       };
     }
   }
+}
+
+function buildMetaAttemptLog({ to = "", attempt = {}, accessToken = "" } = {}) {
+  return {
+    to,
+    httpStatus: attempt.response?.status || null,
+    ok: Boolean(attempt.response?.ok),
+    response: sanitizeMetaPayload(attempt.body, accessToken)
+  };
 }
 
 async function sendMetaText(fetchImpl, endpoint, accessToken, { to, text }) {

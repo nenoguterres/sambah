@@ -114,6 +114,9 @@ test("provider meta tenta nono digito brasileiro quando Meta recusa destinatario
   assert.equal(result.retried, true);
   assert.equal(result.originalTo, "555180413745");
   assert.equal(result.retryTo, "5551980413745");
+  assert.equal(result.attempts.length, 2);
+  assert.equal(result.attempts[0].to, "555180413745");
+  assert.equal(result.attempts[1].to, "5551980413745");
   assert.equal(requests.length, 2);
   assert.equal(requests[0].url, "https://graph.facebook.com/v25.0/12345/messages");
   assert.equal(requests[0].body.to, "555180413745");
@@ -148,6 +151,9 @@ test("provider meta tenta remover nono digito brasileiro quando Meta recusa dest
   assert.equal(result.retried, true);
   assert.equal(result.originalTo, "5551980413745");
   assert.equal(result.retryTo, "555180413745");
+  assert.equal(result.attempts.length, 2);
+  assert.equal(result.attempts[0].to, "5551980413745");
+  assert.equal(result.attempts[1].to, "555180413745");
   assert.equal(requests.length, 2);
   assert.equal(requests[0].body.to, "5551980413745");
   assert.equal(requests[1].body.to, "555180413745");

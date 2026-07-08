@@ -223,8 +223,14 @@ export class WhatsAppConversationService {
       text,
       createdAt: now,
       status: sendStatus,
+      provider: sendResult?.provider || "",
+      providerMessageId: sendResult?.response?.messages?.[0]?.id || "",
       httpStatus: sendResult?.httpStatus || null,
-      response: sendResult?.response || null
+      response: sendResult?.response || null,
+      retried: Boolean(sendResult?.retried),
+      originalTo: sendResult?.originalTo || "",
+      retryTo: sendResult?.retryTo || "",
+      attempts: Array.isArray(sendResult?.attempts) ? sendResult.attempts : []
     };
     const updated = {
       ...data.conversas[index],

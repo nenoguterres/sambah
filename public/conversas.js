@@ -197,12 +197,25 @@ function renderOrderPanel(conversa) {
 function renderMessage(message) {
   const outgoing = message.direction === "out";
   const text = message.text || message.transcricao || describeMessage(message);
+  const failure = renderMessageFailure(message);
   return `
     <article class="message ${outgoing ? "out" : "in"}">
       <p>${escapeHtml(text)}</p>
+      ${failure}
       <span>${formatTime(message.createdAt)} - ${escapeHtml(message.status || "")}</span>
     </article>
   `;
+}
+
+function renderMessageFailure(message = {}) {
+  if (message.status !== "meta_error" && message.status !== "meta_request_failed") return "";
+  const error = message.response?.error || {};
+  const attempts = Array.isArray(message.attempts) && message.attempts.length
+    ? message.attempts.map((attempt) => `${attempt.to || "destino"}: HTTP ${attempt.httpStatus || "?"}`).join(" | ")
+    : "";
+  const code = [error.code, error.error_subcode].filter(Boolean).join("/");
+  const details = error.message || error.error_data?.details || message.response?.raw || "Falha Meta sem detalhe";
+  return `<small class="message-error">Meta ${escapeHtml(code || "erro")}: ${escapeHtml(details)}${attempts ? ` (${escapeHtml(attempts)})` : ""}</small>`;
 }
 
 async function sendReply(id) {

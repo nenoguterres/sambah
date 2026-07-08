@@ -326,6 +326,15 @@ body.sambah-shell-mounted .app {
   text-align: right;
 }
 
+.message-error {
+  display: block;
+  margin-top: 8px;
+  color: #fecaca;
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: left;
+}
+
 .order-panel {
   margin: 0 clamp(14px, 3vw, 54px) 12px;
   border: 1px solid var(--line);
