@@ -21,6 +21,7 @@ const INTENT_RESPONSES = {
 };
 
 const HUMAN_INTENTS = new Set(["humano", "reclamacao"]);
+const HUMAN_WAIT_MESSAGE = "Já te coloquei para atendimento humano. Aguarda um instante que vamos te responder por aqui.";
 const OPPORTUNITY_INTENTS = new Set(["evento", "food_truck", "corporativo", "xeriffe", "reserva", "festa"]);
 const ORDER_STATES = new Set([
   "AGUARDANDO_NOME",
@@ -105,11 +106,12 @@ export class WhatsAppConversationService {
     });
     const intent = mapAiIntentToWhatsAppIntent(aiDecision.intent);
     const respostaSugerida = suggestedWhatsAppResponse(intent);
+    const isHumanHandoff = HUMAN_INTENTS.has(intent) || aiDecision.allowedAction === "HANDOFF_HUMAN" || contextBase.atendimentoEstado === "HUMANO";
     const status = configStatus
-      || (aiDecision.allowedAction === "NO_ACTION"
-        ? (contextBase.status || "aguardando_equipe")
-        : HUMAN_INTENTS.has(intent) || aiDecision.allowedAction === "HANDOFF_HUMAN"
-          ? "humano"
+      || (isHumanHandoff
+        ? "aguardando_humano"
+        : aiDecision.allowedAction === "NO_ACTION"
+          ? (contextBase.status || "aguardando_equipe")
           : "aguardando_equipe");
     const orderState = nextOrderState(contextBase, incoming, intent);
     const orderSync = await syncWhatsappOrderFromIncoming({
@@ -151,7 +153,13 @@ export class WhatsAppConversationService {
       mesaPedido: contextBase.mesaPedido || null,
       statusCobranca: paymentStatus || contextBase.statusCobranca || "",
       status,
-      respostaSugerida,
+      respostaSugerida: isHumanHandoff ? HUMAN_WAIT_MESSAGE : respostaSugerida,
+      humanHandoff: nextHumanHandoffState(contextBase, {
+        now,
+        intent,
+        aiDecision,
+        messageId: message.id
+      }),
       lastOrderContextResetAt: contextBase.orderContextExpired ? now : contextBase.lastOrderContextResetAt || "",
       orderContextExpired: undefined,
       aiDecision: persistedAiDecision,
@@ -220,7 +228,8 @@ export class WhatsAppConversationService {
     };
     const updated = {
       ...data.conversas[index],
-      status: sendResult?.sent ? "aguardando_cliente" : enabled && !hasCredentials ? "erro_configuracao" : data.conversas[index].status,
+      status: nextOutgoingStatus(data.conversas[index], sendResult, { manual: true }),
+      humanHandoff: nextOutgoingHumanHandoff(data.conversas[index], sendResult, { manual: true, now }),
       ultimaInteracao: now,
       updatedAt: now,
       mensagens: [...(data.conversas[index].mensagens || []), message].slice(-60)
@@ -254,6 +263,7 @@ export class WhatsAppConversationService {
     const updated = {
       ...data.conversas[index],
       status: nextOutgoingStatus(data.conversas[index], sendResult),
+      humanHandoff: nextOutgoingHumanHandoff(data.conversas[index], sendResult, { text, now }),
       ultimaInteracao: now,
       updatedAt: now,
       mensagens: [...(data.conversas[index].mensagens || []), message].slice(-60)
@@ -462,7 +472,19 @@ export class WhatsAppConversationService {
       : status === "resolvido" && data.conversas[index].atendimentoEstado === "HUMANO"
         ? ""
         : data.conversas[index].atendimentoEstado;
-    data.conversas[index] = { ...data.conversas[index], status, atendimentoEstado, updatedAt: now };
+    const nextStatus = status === "humano" ? "aguardando_humano" : status;
+    data.conversas[index] = {
+      ...data.conversas[index],
+      status: nextStatus,
+      atendimentoEstado,
+      respostaSugerida: status === "humano" ? HUMAN_WAIT_MESSAGE : data.conversas[index].respostaSugerida,
+      humanHandoff: status === "humano"
+        ? nextHumanHandoffState(data.conversas[index], { now, intent: "humano", aiDecision: { allowedAction: "HANDOFF_HUMAN" }, messageId: "" })
+        : status === "resolvido"
+          ? { ...(data.conversas[index].humanHandoff || {}), status: "resolvido", resolvedAt: now }
+          : data.conversas[index].humanHandoff,
+      updatedAt: now
+    };
     await this.#write(data);
     return { ok: true, conversa: this.#withPriority(data.conversas[index]) };
   }
@@ -591,6 +613,7 @@ async function updateCrmFromConversation(crmService, conversation, incoming, int
 function nextOrderState(conversation = {}, incoming = {}, intent = "") {
   const current = conversation.atendimentoEstado || "";
   const text = normalizeText(incoming.text || incoming.transcricao || "");
+  if (current === "HUMANO") return "HUMANO";
   if (isCancelIntent(text)) return "CANCELADO";
   if (HUMAN_INTENTS.has(intent)) return "HUMANO";
   if (["COMANDA_EM_ANDAMENTO", "COMANDA_PRONTA"].includes(current)) return "COMANDA_EM_ANDAMENTO";
@@ -669,12 +692,54 @@ function isOrderConversation(conversation = {}) {
   return ORDER_STATES.has(conversation.atendimentoEstado || "");
 }
 
-function nextOutgoingStatus(conversation = {}, sendResult = null) {
+function nextOutgoingStatus(conversation = {}, sendResult = null, { manual = false } = {}) {
   if (!sendResult?.sent) return conversation.status;
   if ((conversation.atendimentoEstado || "") === "HUMANO" || HUMAN_INTENTS.has(conversation.intencao || "")) {
-    return "humano";
+    return manual ? "aguardando_cliente" : "aguardando_humano";
   }
   return "aguardando_cliente";
+}
+
+function nextHumanHandoffState(conversation = {}, { now = new Date().toISOString(), intent = "", aiDecision = {}, messageId = "" } = {}) {
+  const current = conversation.humanHandoff || null;
+  const isHuman = HUMAN_INTENTS.has(intent) || aiDecision.allowedAction === "HANDOFF_HUMAN" || (conversation.atendimentoEstado || "") === "HUMANO";
+  if (!isHuman) return current;
+  const alreadyWaitingHuman = Boolean(current?.requestedAt) || (conversation.atendimentoEstado || "") === "HUMANO";
+  const pendingNoticeDue = alreadyWaitingHuman && !current?.waitMessageSentAt && current?.status !== "em_atendimento";
+  return {
+    status: current?.status === "em_atendimento" ? "em_atendimento" : "pendente",
+    requestedAt: current?.requestedAt || now,
+    lastCustomerMessageAt: now,
+    lastMessageId: messageId || current?.lastMessageId || "",
+    waitMessageSentAt: current?.waitMessageSentAt || "",
+    pendingNoticeDue,
+    assignedAt: current?.assignedAt || "",
+    resolvedAt: ""
+  };
+}
+
+function nextOutgoingHumanHandoff(conversation = {}, sendResult = null, { manual = false, text = "", now = new Date().toISOString() } = {}) {
+  const current = conversation.humanHandoff || null;
+  if (!current && (conversation.atendimentoEstado || "") !== "HUMANO") return current;
+  if (!sendResult?.sent) return current;
+  if (manual) {
+    return {
+      ...(current || {}),
+      status: "em_atendimento",
+      assignedAt: current?.assignedAt || now,
+      lastHumanReplyAt: now,
+      pendingNoticeDue: false
+    };
+  }
+  if (String(text || "").trim() === HUMAN_WAIT_MESSAGE) {
+    return {
+      ...(current || {}),
+      status: current?.status || "pendente",
+      waitMessageSentAt: current?.waitMessageSentAt || now,
+      pendingNoticeDue: false
+    };
+  }
+  return current;
 }
 
 function isPixPaymentText(text = "") {

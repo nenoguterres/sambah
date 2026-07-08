@@ -459,7 +459,8 @@ test("WhatsApp pedido de atendente durante pedido permanece em handoff humano", 
       messageId: "order-human-3"
     });
     assert.equal(handoff.conversa.atendimentoEstado, "HUMANO");
-    assert.equal(handoff.conversa.status, "humano");
+    assert.equal(handoff.conversa.status, "aguardando_humano");
+    assert.equal(handoff.conversa.humanHandoff.status, "pendente");
     assert.equal(handoff.aiDecision.allowedAction, "HANDOFF_HUMAN");
 
     const recorded = await service.recordOutgoing("wa_5551999999999", {
@@ -471,7 +472,7 @@ test("WhatsApp pedido de atendente durante pedido permanece em handoff humano", 
         response: { messages: [{ id: "wamid-human-sent" }] }
       }
     });
-    assert.equal(recorded.conversa.status, "humano");
+    assert.equal(recorded.conversa.status, "aguardando_humano");
     assert.equal(recorded.conversa.atendimentoEstado, "HUMANO");
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -496,12 +497,46 @@ test("Central marca atendimento humano preservando estado de handoff", async () 
   const service = new WhatsAppConversationService({ filePath });
   try {
     const marked = await service.markHuman("wa_55518881111");
-    assert.equal(marked.conversa.status, "humano");
+    assert.equal(marked.conversa.status, "aguardando_humano");
     assert.equal(marked.conversa.atendimentoEstado, "HUMANO");
+    assert.equal(marked.conversa.humanHandoff.status, "pendente");
 
     const resolved = await service.markResolved("wa_55518881111");
     assert.equal(resolved.conversa.status, "resolvido");
     assert.equal(resolved.conversa.atendimentoEstado, "");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Atendente responde handoff humano e conversa continua sem automacao", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-human-manual-reply-"));
+  const filePath = join(dir, "conversas.json");
+  const service = new WhatsAppConversationService({ filePath });
+  const whatsappProvider = {
+    sendText: async () => ({ sent: true, status: "sent", httpStatus: 200, response: { messages: [{ id: "wamid-human-manual" }] } })
+  };
+  try {
+    const handoff = await service.recordIncoming({ from: "5551999999999", text: "humano", messageId: "manual-human-1" });
+    assert.equal(handoff.conversa.status, "aguardando_humano");
+    assert.equal(handoff.conversa.humanHandoff.status, "pendente");
+
+    const replied = await service.addOutgoing("wa_5551999999999", { text: "Buenas, estou contigo por aqui." }, {
+      runtimeConfig: { whatsappBusiness: { sendEnabled: true, accessToken: "token", phoneNumberId: "123" } },
+      whatsappProvider
+    });
+
+    assert.equal(replied.ok, true);
+    assert.equal(replied.enviado, true);
+    assert.equal(replied.conversa.status, "aguardando_cliente");
+    assert.equal(replied.conversa.atendimentoEstado, "HUMANO");
+    assert.equal(replied.conversa.humanHandoff.status, "em_atendimento");
+    assert.equal(replied.conversa.mensagens.at(-1).direction, "out");
+
+    const after = await service.recordIncoming({ from: "5551999999999", text: "oi", messageId: "manual-human-2" });
+    assert.equal(after.aiDecision.allowedAction, "NO_ACTION");
+    assert.equal(after.conversa.status, "aguardando_humano");
+    assert.equal(after.conversa.mensagens.at(-1).text, "oi");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -608,7 +643,9 @@ test("Central registra decisao do AI Core sem responder em atendimento humano", 
       id: "wa_55518880000",
       nome: "Cliente Humano",
       telefone: "55518880000",
-      status: "humano",
+      status: "aguardando_humano",
+      atendimentoEstado: "HUMANO",
+      humanHandoff: { status: "pendente", requestedAt: "2026-07-06T10:00:00.000Z" },
       mensagens: [],
       createdAt: "2026-07-06T10:00:00.000Z",
       updatedAt: "2026-07-06T10:00:00.000Z"
@@ -623,7 +660,11 @@ test("Central registra decisao do AI Core sem responder em atendimento humano", 
     });
     assert.equal(result.ok, true);
     assert.equal(result.aiDecision.allowedAction, "NO_ACTION");
-    assert.equal(result.conversa.status, "humano");
+    assert.equal(result.conversa.status, "aguardando_humano");
+    assert.equal(result.conversa.atendimentoEstado, "HUMANO");
+    assert.equal(result.conversa.mensagens.length, 1);
+    assert.match(result.conversa.respostaSugerida, /atendimento humano/);
+    assert.equal(result.conversa.humanHandoff.status, "pendente");
     assert.equal(result.conversa.aiAuditTrail.length, 1);
     assert.equal(result.conversa.aiAuditTrail[0].intent, "humano");
   } finally {

@@ -67,7 +67,7 @@ function renderList() {
           </span>
           <span class="conversation-preview">${escapeHtml(item.ultimaMensagem || "Sem mensagem")}</span>
           <span class="conversation-tags">
-            <em>${escapeHtml(labelStatus(item.status))}</em>
+            <em class="${item.atendimentoEstado === "HUMANO" ? "tag-human" : ""}">${escapeHtml(labelStatus(item.status, item))}</em>
             <em>${escapeHtml(item.intencao || "desconhecido")}</em>
           </span>
         </span>
@@ -102,7 +102,7 @@ function renderChat(conversa, { draft = "" } = {}) {
       <span class="avatar large">${escapeHtml(initialsFor(conversa.nome || conversa.telefone || "WA"))}</span>
       <div>
         <strong>${escapeHtml(conversa.nome || "Cliente WhatsApp")}</strong>
-        <small>${escapeHtml(conversa.telefone || "")} · ${escapeHtml(labelStatus(conversa.status))}</small>
+        <small>${escapeHtml(conversa.telefone || "")} - ${escapeHtml(labelStatus(conversa.status, conversa))}</small>
       </div>
       <div class="chat-actions">
         <button type="button" data-action="human">Humano</button>
@@ -200,7 +200,7 @@ function renderMessage(message) {
   return `
     <article class="message ${outgoing ? "out" : "in"}">
       <p>${escapeHtml(text)}</p>
-      <span>${formatTime(message.createdAt)} · ${escapeHtml(message.status || "")}</span>
+      <span>${formatTime(message.createdAt)} - ${escapeHtml(message.status || "")}</span>
     </article>
   `;
 }
@@ -349,7 +349,7 @@ async function syncMesaCatalog() {
 }
 
 function matchesFilter(item) {
-  if (state.filter === "human") return item.status === "humano";
+  if (state.filter === "human") return item.status === "humano" || item.status === "aguardando_humano" || item.atendimentoEstado === "HUMANO";
   if (state.filter === "needs_reply") return !["resolvido", "aguardando_cliente"].includes(item.status);
   return true;
 }
@@ -366,10 +366,12 @@ function describeMessage(message = {}) {
   return "";
 }
 
-function labelStatus(status = "") {
+function labelStatus(status = "", conversation = {}) {
+  if (conversation.atendimentoEstado === "HUMANO" && status === "aguardando_humano") return "Aguardando humano";
   const labels = {
     aguardando_equipe: "Aguardando equipe",
     aguardando_cliente: "Aguardando cliente",
+    aguardando_humano: "Aguardando humano",
     humano: "Humano",
     resolvido: "Resolvido",
     pendente_configuracao: "Configuração",

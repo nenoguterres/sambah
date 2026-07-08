@@ -237,6 +237,11 @@ body.sambah-shell-mounted .app {
   font-style: normal;
 }
 
+.conversation-tags .tag-human {
+  background: rgba(251, 191, 36, 0.16);
+  color: #fde68a;
+}
+
 .loading,
 .empty-state {
   padding: 22px;

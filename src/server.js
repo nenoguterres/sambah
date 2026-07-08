@@ -1888,7 +1888,8 @@ async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRun
   if (config.sendEnabled !== true) {
     return { ok: true, sent: false, status: "disabled" };
   }
-  if (conversation?.aiDecision?.allowedAction === "NO_ACTION") {
+  const humanWaitReply = getPendingHumanWaitReply(conversation);
+  if (conversation?.aiDecision?.allowedAction === "NO_ACTION" && !humanWaitReply) {
     return { ok: true, sent: false, status: "ai_no_action" };
   }
   if ((summary.field && summary.field !== "messages") || !summary.from || !summary.textBody) {
@@ -1900,7 +1901,7 @@ async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRun
   }
 
   const endpoint = `https://graph.facebook.com/v25.0/${encodeURIComponent(sendPhoneNumberId)}/messages`;
-  const autoReplyText = await resolveControlledWhatsAppReply(summary.textBody, {
+  const autoReplyText = humanWaitReply || await resolveControlledWhatsAppReply(summary.textBody, {
     conversation,
     mesaComandaUrl: mesaComandaUrl || runtimeConfig.mesaComandaUrl,
     whatsappCatalogService
@@ -1980,6 +1981,16 @@ async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRun
     });
     return { ok: false, sent: false, status: "request_failed", text: autoReplyText, error: sanitizeMetaText(error.message, config.accessToken) };
   }
+}
+
+function getPendingHumanWaitReply(conversation = null) {
+  if (!conversation || conversation.atendimentoEstado !== "HUMANO") return "";
+  const handoff = conversation.humanHandoff || {};
+  if (handoff.status && handoff.status !== "pendente") return "";
+  if (handoff.waitMessageSentAt) return "";
+  if (handoff.pendingNoticeDue !== true) return "";
+  const text = String(conversation.respostaSugerida || "").trim();
+  return text.includes("atendimento humano") ? text : "";
 }
 
 async function resolveControlledWhatsAppReply(text = "", { conversation = null, mesaComandaUrl = "", whatsappCatalogService = null } = {}) {
