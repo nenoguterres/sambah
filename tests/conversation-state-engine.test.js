@@ -24,9 +24,9 @@ test("Conversation State Engine controla handoff humano, cancelamento e retomada
     intent: "humano",
     aiDecision: { allowedAction: "NO_ACTION" }
   });
-  assert.equal(cancelled.state, CONVERSATION_STATES.FINALIZADO);
+  assert.equal(cancelled.state, CONVERSATION_STATES.NORMAL);
   assert.equal(cancelled.atendimentoEstado, "");
-  assert.equal(cancelled.status, "resolvido");
+  assert.equal(cancelled.status, "aguardando_equipe");
 
   const reopened = resolveIncomingConversationState({
     conversation: { conversationState: cancelled.state, status: "resolvido" },

@@ -555,14 +555,20 @@ test("Conversation State Engine cancela handoff humano e permite retomar fluxo i
     assert.equal(handoff.conversa.humanHandoff.status, "pendente");
 
     const cancelled = await service.recordIncoming({ from: "5551999999999", text: "cancelar", messageId: "state-human-2" });
-    assert.equal(cancelled.conversa.conversationState, "FINALIZADO");
+    assert.equal(cancelled.conversa.conversationState, "NORMAL");
     assert.equal(cancelled.conversa.atendimentoEstado, "");
-    assert.equal(cancelled.conversa.status, "resolvido");
+    assert.equal(cancelled.conversa.status, "aguardando_equipe");
     assert.equal(cancelled.conversa.humanHandoff.status, "cancelado");
+    assert.equal(cancelled.aiDecision.allowedAction, "NO_ACTION");
+
+    const persistedAfterCancel = JSON.parse(await readFile(filePath, "utf8")).conversas[0];
+    assert.equal(persistedAfterCancel.conversationState, "NORMAL");
+    assert.notEqual(persistedAfterCancel.atendimentoEstado, "HUMANO");
 
     const reopened = await service.recordIncoming({ from: "5551999999999", text: "oi", messageId: "state-human-3" });
     assert.equal(reopened.conversa.conversationState, "NORMAL");
     assert.equal(reopened.conversa.atendimentoEstado, "");
+    assert.notEqual(reopened.aiDecision.allowedAction, "NO_ACTION");
     assert.notEqual(reopened.conversa.respostaSugerida, "Ja te coloquei para atendimento humano. Aguarda um instante que vamos te responder por aqui.");
     assert.equal(reopened.conversa.mensagens.at(-1).text, "oi");
   } finally {

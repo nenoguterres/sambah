@@ -103,61 +103,71 @@ export class WhatsAppConversationService {
       await this.orderService.cancelOrder(base.id, "Contexto de pedido expirado por inatividade").catch(() => null);
     }
     const textForIntent = incoming.text || incoming.transcricao || incoming.caption || "";
+    const preIntentStateDecision = resolveIncomingConversationState({
+      conversation: contextBase,
+      text: textForIntent
+    });
+    const contextForIntent = applyConversationStateDecision(contextBase, preIntentStateDecision);
     const aiDecision = classifySambahIntent({
       message: textForIntent,
-      conversationState: contextBase,
-      orderContext: contextBase.mesaPedido || null,
-      mesaOrderId: contextBase.mesaPedido?.id || "",
-      paymentStatus: contextBase.statusCobranca || "",
-      customerName: contextBase.nome || "",
-      previousIntent: contextBase.aiDecision?.intent || contextBase.intencao || ""
+      conversationState: contextForIntent,
+      orderContext: contextForIntent.mesaPedido || null,
+      mesaOrderId: contextForIntent.mesaPedido?.id || "",
+      paymentStatus: contextForIntent.statusCobranca || "",
+      customerName: contextForIntent.nome || "",
+      previousIntent: contextForIntent.aiDecision?.intent || contextForIntent.intencao || ""
     });
     const intent = mapAiIntentToWhatsAppIntent(aiDecision.intent);
     const respostaSugerida = suggestedWhatsAppResponse(intent);
-    const orderState = nextOrderState(contextBase, incoming, intent);
+    const orderState = nextOrderState(contextForIntent, incoming, intent);
     const stateDecision = resolveIncomingConversationState({
-      conversation: contextBase,
+      conversation: contextForIntent,
       text: textForIntent,
       intent,
       aiDecision,
       orderState
     });
-    const isHumanHandoff = isHumanState(stateDecision.state);
+    const effectiveStateDecision = isHumanHandoffCancellation(preIntentStateDecision)
+      ? preIntentStateDecision
+      : stateDecision;
+    const shouldForceNoAction = shouldForceNoActionForState(effectiveStateDecision);
+    const shouldSuppressSuggestion = isHumanHandoffCancellation(effectiveStateDecision);
+    const isHumanHandoff = isHumanState(effectiveStateDecision.state);
     const status = configStatus
-      || stateDecision.status
+      || effectiveStateDecision.status
       || (aiDecision.allowedAction === "NO_ACTION"
         ? (contextBase.status || "aguardando_equipe")
         : "aguardando_equipe");
     const orderSync = await syncWhatsappOrderFromIncoming({
       orderService: this.orderService,
-      conversation: contextBase,
+      conversation: contextForIntent,
       incoming,
       intent,
       orderState,
       aiDecision
     });
-    const whatsappOrder = orderSync.order ? summarizeWhatsappOrder(orderSync.order) : contextBase.whatsappOrder || null;
-    const paymentStatus = nextPaymentStatus(contextBase, incoming);
-    const effectiveConversationState = stateDecision.state || normalizeConversationState(contextBase);
-    const legacyConversationState = stateDecision.atendimentoEstado || aiDecision.conversationState || aiDecision.state || "IDLE";
+    const whatsappOrder = orderSync.order ? summarizeWhatsappOrder(orderSync.order) : contextForIntent.whatsappOrder || null;
+    const paymentStatus = nextPaymentStatus(contextForIntent, incoming);
+    const effectiveConversationState = effectiveStateDecision.state || normalizeConversationState(contextForIntent);
+    const legacyConversationState = effectiveStateDecision.atendimentoEstado || aiDecision.conversationState || aiDecision.state || "IDLE";
     const persistedAiDecision = {
-      ...aiDecision,
+      ...(shouldForceNoAction ? { ...aiDecision, allowedAction: "NO_ACTION" } : aiDecision),
       previousConversationState: aiDecision.conversationState || aiDecision.state || "IDLE",
       conversationState: legacyConversationState,
       state: legacyConversationState,
       stateEngineState: effectiveConversationState,
-      stateEngineReason: stateDecision.auditReason
+      stateEngineReason: effectiveStateDecision.auditReason
     };
     const aiAudit = {
       ...buildSambahAiAudit({
         message: textForIntent,
-        conversationState: contextBase,
-        previousIntent: contextBase.aiDecision?.intent || contextBase.intencao || ""
+        conversationState: contextForIntent,
+        previousIntent: contextForIntent.aiDecision?.intent || contextForIntent.intencao || ""
       }, persistedAiDecision),
       nextState: legacyConversationState,
       conversationState: persistedAiDecision.conversationState,
       stateEngineState: effectiveConversationState,
-      stateEngineReason: stateDecision.auditReason
+      stateEngineReason: effectiveStateDecision.auditReason
     };
     const updated = {
       ...contextBase,
@@ -168,12 +178,14 @@ export class WhatsAppConversationService {
       updatedAt: now,
       intencao: intent,
       conversationState: effectiveConversationState,
-      atendimentoEstado: stateDecision.atendimentoEstado,
+      atendimentoEstado: effectiveStateDecision.atendimentoEstado,
       whatsappOrder,
       mesaPedido: contextBase.mesaPedido || null,
       statusCobranca: paymentStatus || contextBase.statusCobranca || "",
       status,
-      respostaSugerida: stateDecision.state === CONVERSATION_STATES.FINALIZADO
+      respostaSugerida: shouldSuppressSuggestion
+        ? ""
+        : effectiveStateDecision.state === CONVERSATION_STATES.FINALIZADO
         ? ""
         : isHumanHandoff
           ? HUMAN_WAIT_MESSAGE
@@ -183,7 +195,7 @@ export class WhatsAppConversationService {
         intent,
         aiDecision,
         messageId: message.id,
-        stateDecision
+        stateDecision: effectiveStateDecision
       }),
       lastOrderContextResetAt: contextBase.orderContextExpired ? now : contextBase.lastOrderContextResetAt || "",
       orderContextExpired: undefined,
@@ -799,6 +811,31 @@ function nextOutgoingHumanHandoff(conversation = {}, sendResult = null, { manual
     };
   }
   return current;
+}
+
+function applyConversationStateDecision(conversation = {}, stateDecision = {}) {
+  if (!stateDecision?.state) return conversation;
+  if (!stateDecision.shouldBlockAutomation && stateDecision.auditReason !== "human_handoff_cancelled_to_normal") {
+    return conversation;
+  }
+  return {
+    ...conversation,
+    conversationState: stateDecision.state,
+    atendimentoEstado: stateDecision.atendimentoEstado,
+    status: stateDecision.status || conversation.status,
+    respostaSugerida: stateDecision.shouldBlockAutomation ? "" : conversation.respostaSugerida
+  };
+}
+
+function isHumanHandoffCancellation(stateDecision = {}) {
+  return stateDecision.humanHandoffStatus === "cancelado"
+    || stateDecision.auditReason === "human_handoff_cancelled_to_normal";
+}
+
+function shouldForceNoActionForState(stateDecision = {}) {
+  return isHumanHandoffCancellation(stateDecision)
+    || stateDecision.auditReason === "waiting_human"
+    || stateDecision.auditReason === "human_already_assumed";
 }
 
 function isHumanConversation(conversation = {}) {

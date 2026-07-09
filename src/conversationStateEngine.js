@@ -60,10 +60,10 @@ export function resolveIncomingConversationState({
 
   if (cancel && isHuman) {
     return buildDecision({
-      state: CONVERSATION_STATES.FINALIZADO,
-      status: "resolvido",
+      state: CONVERSATION_STATES.NORMAL,
+      status: "aguardando_equipe",
       atendimentoEstado: "",
-      auditReason: "human_handoff_cancelled",
+      auditReason: "human_handoff_cancelled_to_normal",
       shouldBlockAutomation: true,
       humanHandoffStatus: "cancelado"
     });
