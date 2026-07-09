@@ -580,6 +580,24 @@ test("Conversation mode controla humano, cancelar e retomada automatica", async 
   }
 });
 
+test("Intencao util em AGUARDANDO_HUMANO retoma AUTO antes do roteamento", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-human-mode-useful-intent-"));
+  const filePath = join(dir, "conversas.json");
+  const service = new WhatsAppConversationService({ filePath });
+  try {
+    await service.recordIncoming({ from: "5551999999998", text: "atendimento humano", messageId: "useful-human-1" });
+    const event = await service.recordIncoming({ from: "5551999999998", text: "evento", messageId: "useful-human-2" });
+
+    assert.equal(event.intent, "evento");
+    assert.equal(event.conversa.mode, "AUTO");
+    assert.equal(event.conversa.atendimentoEstado, "");
+    assert.match(event.respostaSugerida, /data, local/);
+    assert.doesNotMatch(event.respostaSugerida, /atendimento humano/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("Campos antigos de humano nao bloqueiam automacao quando mode e AUTO", async () => {
   const dir = await mkdtemp(join(tmpdir(), "sambha-human-mode-secondary-"));
   const filePath = join(dir, "conversas.json");

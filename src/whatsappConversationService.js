@@ -677,6 +677,13 @@ function withConversationMode(conversation = {}, mode = CONVERSATION_MODES.AUTO)
       atendimentoEstado: conversation.atendimentoEstado === "HUMANO" ? "" : conversation.atendimentoEstado || ""
     };
   }
+  if (mode === CONVERSATION_MODES.AGUARDANDO_HUMANO) {
+    return {
+      ...conversation,
+      mode,
+      atendimentoEstado: conversation.atendimentoEstado === "HUMANO" ? "" : conversation.atendimentoEstado || ""
+    };
+  }
   return {
     ...conversation,
     mode,
