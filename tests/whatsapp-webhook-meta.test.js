@@ -339,6 +339,65 @@ test("POST /webhook/whatsapp em AGUARDANDO_HUMANO cancela e retoma automatico", 
   }
 });
 
+test("POST /webhook/whatsapp mantem contexto de evento ao enviar para Meta", async () => {
+  const previousSendEnabled = process.env.WHATSAPP_SEND_ENABLED;
+  const previousAccessToken = process.env.META_ACCESS_TOKEN;
+  const previousPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  process.env.WHATSAPP_SEND_ENABLED = "true";
+  process.env.META_ACCESS_TOKEN = "meta-token-teste";
+  process.env.WHATSAPP_PHONE_NUMBER_ID = "1234567890";
+
+  const graphCalls = [];
+  const { server, base, cleanup, conversationsFile } = await createTestServer({
+    whatsappSendFetch: async (url, options) => {
+      graphCalls.push({ url, body: JSON.parse(options.body) });
+      return new Response(JSON.stringify({
+        messaging_product: "whatsapp",
+        contacts: [{ input: "5551999999999", wa_id: "5551999999999" }],
+        messages: [{ id: `wamid-event-${graphCalls.length}` }]
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+  });
+  try {
+    const send = (id, text) => fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(metaPayload({
+        from: "5551999999999",
+        id,
+        type: "text",
+        text: { body: text }
+      }))
+    });
+
+    await send("wamid-event-start", "evento");
+    await send("wamid-event-details", "01/08/26, porto, 20h, 1000");
+    await send("wamid-event-complement", "porto alegre, 1000 pessoas");
+
+    assert.equal(graphCalls.length, 3);
+    assert.match(graphCalls[0].body.text.body, /data, cidade|data, local/);
+    assert.match(graphCalls[1].body.text.body, /Recebi os dados iniciais/);
+    assert.doesNotMatch(graphCalls[1].body.text.body, /me passa data/i);
+    assert.match(graphCalls[2].body.text.body, /complemento do evento/);
+    assert.doesNotMatch(graphCalls[2].body.text.body, /me passa data/i);
+
+    const conversations = JSON.parse(await readFile(conversationsFile, "utf8"));
+    assert.equal(conversations.conversas[0].eventQuote.status, "details_received");
+  } finally {
+    await close(server);
+    await cleanup();
+    if (previousSendEnabled === undefined) delete process.env.WHATSAPP_SEND_ENABLED;
+    else process.env.WHATSAPP_SEND_ENABLED = previousSendEnabled;
+    if (previousAccessToken === undefined) delete process.env.META_ACCESS_TOKEN;
+    else process.env.META_ACCESS_TOKEN = previousAccessToken;
+    if (previousPhoneNumberId === undefined) delete process.env.WHATSAPP_PHONE_NUMBER_ID;
+    else process.env.WHATSAPP_PHONE_NUMBER_ID = previousPhoneNumberId;
+  }
+});
+
 test("manual reply in HUMANO state uses Meta provider and succeeds", async () => {
   const previousSendEnabled = process.env.WHATSAPP_SEND_ENABLED;
   const previousAccessToken = process.env.META_ACCESS_TOKEN;

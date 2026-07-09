@@ -2001,7 +2001,9 @@ function getPendingHumanWaitReply(conversation = null) {
 async function resolveControlledWhatsAppReply(text = "", { conversation = null, mesaComandaUrl = "", whatsappCatalogService = null } = {}) {
   const suggestedReply = String(conversation?.respostaSugerida || "").trim();
   const modeReason = String(conversation?.aiDecision?.modeReason || "");
-  if (suggestedReply && ["human_requested", "human_waiting", "human_waiting_greeting", "human_cancelled"].includes(modeReason)) {
+  const eventQuoteStatus = String(conversation?.eventQuote?.status || "");
+  if (suggestedReply && (["human_requested", "human_waiting", "human_waiting_greeting", "human_cancelled"].includes(modeReason)
+    || eventQuoteStatus === "details_received")) {
     return suggestedReply;
   }
   const aiSafeReply = String(conversation?.aiDecision?.safeReply || "").trim();
