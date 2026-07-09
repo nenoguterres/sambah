@@ -192,7 +192,7 @@ export function buildSambahAutoReply(text = "", context = {}) {
 function buildContextualReply(normalized = "", context = {}) {
   if (!normalized) return "";
   const conversation = context.conversation || context.conversa || null;
-  if (conversation?.activeFlow === "event" && conversation.respostaSugerida) {
+  if (conversation?.respostaSugerida && (conversation.activeFlow === "event" || isGlobalEventFlowCommand(normalized))) {
     return conversation.respostaSugerida;
   }
   const flow = inferActiveFlow(conversation);
@@ -277,6 +277,22 @@ function isContinueWithSambahIntent(normalized = "") {
 
 function isWaitingAttendantIntent(normalized = "") {
   return ["aguardar atendente", "esperar atendente", "aguardar um atendente", "esperar um atendente"].some((term) => normalized.includes(term));
+}
+
+function isGlobalEventFlowCommand(normalized = "") {
+  return [
+    "cancelar",
+    "cancela",
+    "voltar",
+    "voltar ao inicio",
+    "inicio",
+    "menu",
+    "menu principal",
+    "humano",
+    "atendente",
+    "atendimento humano",
+    "falar com atendente"
+  ].includes(normalized);
 }
 
 function isOrderIntent(normalized = "") {

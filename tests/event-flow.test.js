@@ -38,13 +38,13 @@ test("data com ano nao vira quantidade de pessoas quando etapa pede data", async
   const harness = await createHarness({
     activeFlow: "event",
     activeStep: "askDate",
-    flowData: { type: "Aniversario", city: "Porto Alegre" }
+    flowData: { type: "Aniversario", city: "Porto Alegre", people: 1 }
   });
   try {
     const result = await harness.incoming("20 de agosto de 2026");
     assert.equal(result.conversa.activeStep, "askTime");
     assert.equal(result.conversa.flowData.date, "20 de agosto de 2026");
-    assert.equal(result.conversa.flowData.people, undefined);
+    assert.equal(result.conversa.flowData.people, 1);
   } finally {
     await harness.cleanup();
   }
@@ -66,7 +66,7 @@ test("cidade e pessoas na mesma mensagem preenchem os dois campos", async () => 
   }
 });
 
-test("data e horario na mesma mensagem preenchem os dois campos", async () => {
+test("data e horario em askDate salva somente data", async () => {
   const harness = await createHarness({
     activeFlow: "event",
     activeStep: "askDate",
@@ -74,9 +74,88 @@ test("data e horario na mesma mensagem preenchem os dois campos", async () => {
   });
   try {
     const result = await harness.incoming("20 de agosto, 20h");
-    assert.equal(result.conversa.activeStep, "askPeople");
+    assert.equal(result.conversa.activeStep, "askTime");
     assert.equal(result.conversa.flowData.date, "20 de agosto");
-    assert.equal(result.conversa.flowData.time, "20h");
+    assert.equal(result.conversa.flowData.time, undefined);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("oi dentro de activeFlow oferece escolha sem avancar fluxo cegamente", async () => {
+  const harness = await createHarness({
+    activeFlow: "event",
+    activeStep: "askDate",
+    flowData: { type: "Aniversario", city: "Porto Alegre", people: 1 }
+  });
+  try {
+    const result = await harness.incoming("oi");
+    assert.equal(result.conversa.activeFlow, "event");
+    assert.equal(result.conversa.activeStep, "askDate");
+    assert.deepEqual(result.conversa.flowData, { type: "Aniversario", city: "Porto Alegre", people: 1 });
+    assert.match(result.respostaSugerida, /Tu quer continuar o orçamento em andamento ou voltar ao início/);
+    assert.match(result.respostaSugerida, /Continuar orçamento/);
+    assert.match(result.respostaSugerida, /Voltar ao início/);
+    assert.match(result.respostaSugerida, /Atendimento humano/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("menu dentro de activeFlow limpa fluxo e mostra menu principal", async () => {
+  const harness = await createHarness({
+    activeFlow: "event",
+    activeStep: "askDate",
+    flowData: { type: "Aniversario", city: "Porto Alegre", people: 1 }
+  });
+  try {
+    const result = await harness.incoming("menu");
+    assert.equal(result.conversa.activeFlow, "");
+    assert.equal(result.conversa.activeStep, "");
+    assert.deepEqual(result.conversa.flowData, {});
+    assert.match(result.respostaSugerida, /Fazer pedido/);
+    assert.match(result.respostaSugerida, /Orçamento para evento/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("humano dentro de activeFlow limpa fluxo e encaminha atendimento", async () => {
+  const harness = await createHarness({
+    activeFlow: "event",
+    activeStep: "askDate",
+    flowData: { type: "Aniversario", city: "Porto Alegre", people: 1 }
+  });
+  try {
+    const result = await harness.incoming("humano");
+    assert.equal(result.conversa.activeFlow, "");
+    assert.equal(result.conversa.activeStep, "");
+    assert.deepEqual(result.conversa.flowData, {});
+    assert.equal(result.conversa.status, "humano");
+    assert.match(result.respostaSugerida, /fila da nossa equipe/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("cidade e pessoas seguidas de data com ano mantem pessoas e pede somente horario", async () => {
+  const harness = await createHarness({
+    activeFlow: "event",
+    activeStep: "askCity",
+    flowData: { type: "Aniversario" }
+  });
+  try {
+    const city = await harness.incoming("porto alegre, 1 pessoa");
+    assert.equal(city.conversa.activeStep, "askDate");
+    assert.equal(city.conversa.flowData.city, "Porto Alegre");
+    assert.equal(city.conversa.flowData.people, 1);
+
+    const date = await harness.incoming("20 de agosto de 2026");
+    assert.equal(date.conversa.activeStep, "askTime");
+    assert.equal(date.conversa.flowData.date, "20 de agosto de 2026");
+    assert.equal(date.conversa.flowData.people, 1);
+    assert.match(date.respostaSugerida, /Agora me passa o horario aproximado/);
+    assert.doesNotMatch(date.respostaSugerida, /quantidade de pessoas/);
   } finally {
     await harness.cleanup();
   }

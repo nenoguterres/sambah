@@ -65,7 +65,7 @@ export function processEventFlow({ conversation = {}, text = "", intent = "", no
     }
   }
 
-  const currentStep = active ? conversation.activeStep : "start";
+  const currentStep = active ? conversation.activeStep : "askEventType";
   const flowData = {
     ...getFlowData(conversation),
     ...extractEventData(text, { activeStep: currentStep })
@@ -102,11 +102,19 @@ Cancelar`;
 export function extractEventData(text = "", { activeStep = "" } = {}) {
   const rawText = String(text || "").trim();
   const normalized = normalizeText(rawText);
+  if (activeStep === "askDate") {
+    return compact({ date: extractDate(rawText, normalized) });
+  }
+  if (activeStep === "askTime") {
+    return compact({ time: extractTime(rawText, normalized) });
+  }
+  if (activeStep === "askPeople") {
+    return compact({ people: extractPeople(rawText, normalized, activeStep) });
+  }
+
   const date = extractDate(rawText, normalized);
   const time = extractTime(rawText, normalized);
-  const people = activeStep === "askDate" && date && !hasPeopleMarker(normalized)
-    ? null
-    : extractPeople(rawText, normalized, activeStep);
+  const people = extractPeople(rawText, normalized, activeStep);
   const type = extractEventType(normalized);
   const city = extractCity(rawText, normalized, { date, time, people, type, activeStep });
   return compact({
@@ -206,6 +214,7 @@ function extractTime(rawText = "", normalized = "") {
 }
 
 function extractPeople(rawText = "", normalized = "", activeStep = "") {
+  if (!["askPeople", "askCity", "askEventType"].includes(activeStep)) return null;
   const marked = normalized.match(/\b(\d{1,5})\s*(?:pessoas?|convidados?|pax)\b/);
   if (marked) return Number(marked[1]);
   if (activeStep === "askPeople") {
@@ -238,10 +247,6 @@ function hasLikelyCity(rawText = "", normalized = "", { date = "", time = "", pe
   if (/\b(em|para|no|na)\s+[\p{L}]{3,}/iu.test(rawText)) return true;
   if (rawText.includes(",") && /[\p{L}]{3,}/u.test(rawText) && !normalized.includes(" de ")) return true;
   return false;
-}
-
-function hasPeopleMarker(normalized = "") {
-  return /\b\d{1,5}\s*(pessoas?|convidados?|pax)\b/.test(normalized);
 }
 
 function isCancel(normalized = "") {
