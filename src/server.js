@@ -2002,8 +2002,10 @@ async function resolveControlledWhatsAppReply(text = "", { conversation = null, 
   const suggestedReply = String(conversation?.respostaSugerida || "").trim();
   const modeReason = String(conversation?.aiDecision?.modeReason || "");
   const eventQuoteStatus = String(conversation?.eventQuote?.status || "");
+  const activeFlowType = String(conversation?.activeFlow?.type || "");
   if (suggestedReply && (["human_requested", "human_waiting", "human_waiting_greeting", "human_cancelled"].includes(modeReason)
-    || eventQuoteStatus === "details_received")) {
+    || eventQuoteStatus === "details_received"
+    || activeFlowType === "evento")) {
     return suggestedReply;
   }
   const aiSafeReply = String(conversation?.aiDecision?.safeReply || "").trim();

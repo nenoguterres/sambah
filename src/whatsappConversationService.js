@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import crypto from "node:crypto";
 import { buildSambahAiAudit, classifySambahIntent } from "./intentEngine.js";
+import { resolveConversationFlow } from "./flowManager.js";
 import { extractWhatsAppMessageText } from "./whatsapp/whatsappWebhookParser.js";
 import { shouldCollectWhatsappOrderItem, summarizeWhatsappOrder } from "./whatsappOrderService.js";
 
@@ -150,7 +151,16 @@ export class WhatsAppConversationService {
     });
     const whatsappOrder = orderSync.order ? summarizeWhatsappOrder(orderSync.order) : contextForIntent.whatsappOrder || null;
     const paymentStatus = nextPaymentStatus(contextForIntent, incoming);
-    const eventQuote = nextEventQuoteState(contextForIntent, incoming, intent);
+    const flowDecision = resolveConversationFlow({
+      conversation: contextForIntent,
+      text: textForIntent,
+      intent,
+      mode: modeDecision.mode,
+      now
+    });
+    const eventQuote = flowDecision.handled
+      ? eventQuoteFromActiveFlow(flowDecision.activeFlow, contextForIntent.eventQuote)
+      : nextEventQuoteState(contextForIntent, incoming, intent);
     const effectiveConversationState = orderState || humanMetadataState(modeDecision.mode) || aiDecision.conversationState || "";
     const modeAllowsControlledReply = Boolean(modeDecision.reply) && modeDecision.mode !== CONVERSATION_MODES.HUMANO_ASSUMIU;
     const aiDecisionForMode = modeDecision.mode === CONVERSATION_MODES.HUMANO_ASSUMIU
@@ -186,13 +196,15 @@ export class WhatsAppConversationService {
       mode: modeDecision.mode,
       atendimentoEstado: humanMetadataState(modeDecision.mode) || orderState || "",
       eventQuote: eventQuote.eventQuote,
+      activeFlow: flowDecision.handled ? flowDecision.activeFlow : contextForIntent.activeFlow || null,
+      nextAction: flowDecision.handled ? flowDecision.nextAction || "" : contextForIntent.nextAction || "",
       whatsappOrder,
       mesaPedido: contextBase.mesaPedido || null,
       statusCobranca: paymentStatus || contextBase.statusCobranca || "",
       status,
       respostaSugerida: modeDecision.mode === CONVERSATION_MODES.HUMANO_ASSUMIU
         ? ""
-        : modeDecision.reply || eventQuote.reply || (isHumanHandoff ? HUMAN_WAIT_MESSAGE : respostaSugerida),
+        : flowDecision.reply || modeDecision.reply || eventQuote.reply || (isHumanHandoff ? HUMAN_WAIT_MESSAGE : respostaSugerida),
       humanHandoff: nextHumanHandoffState(contextBase, {
         now,
         intent,
@@ -843,6 +855,19 @@ function nextEventQuoteState(conversation = {}, incoming = {}, intent = "") {
   }
   return {
     eventQuote: baseQuote,
+    reply: ""
+  };
+}
+
+function eventQuoteFromActiveFlow(activeFlow = null, current = null) {
+  if (!activeFlow || activeFlow.type !== "evento") return { eventQuote: current, reply: "" };
+  return {
+    eventQuote: {
+      ...(current || {}),
+      status: activeFlow.status === "ready" ? "details_received" : "collecting",
+      slots: activeFlow.slots || {},
+      updatedAt: activeFlow.updatedAt || new Date().toISOString()
+    },
     reply: ""
   };
 }
