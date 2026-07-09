@@ -102,6 +102,25 @@ test("oi dentro de activeFlow oferece escolha sem avancar fluxo cegamente", asyn
   }
 });
 
+test("oi dentro de activeFlow antigo remove pessoas corrompidas", async () => {
+  const harness = await createHarness({
+    activeFlow: "event",
+    activeStep: "askDate",
+    flowData: { city: "Porto Alegre", time: "20h", people: 2026 },
+    flowUpdatedAt: "2026-07-09T11:45:00.000Z"
+  });
+  try {
+    const result = await harness.incoming("oi");
+    assert.equal(result.conversa.activeFlow, "event");
+    assert.equal(result.conversa.activeStep, "askDate");
+    assert.deepEqual(result.conversa.flowData, { city: "Porto Alegre", time: "20h" });
+    assert.match(result.respostaSugerida, /Tu quer continuar o orçamento em andamento ou voltar ao início/);
+    assert.doesNotMatch(result.respostaSugerida, /Pessoas: 2026/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
 test("menu dentro de activeFlow limpa fluxo e mostra menu principal", async () => {
   const harness = await createHarness({
     activeFlow: "event",
@@ -120,6 +139,29 @@ test("menu dentro de activeFlow limpa fluxo e mostra menu principal", async () =
   }
 });
 
+test("reset forte limpa fluxo e mostra menu principal", async () => {
+  const harness = await createHarness({
+    activeFlow: "event",
+    activeStep: "askDate",
+    flowData: { city: "Porto Alegre", time: "20h", people: 2026 },
+    flowUpdatedAt: "2026-07-09T12:00:00.000Z",
+    eventDraft: { id: "draft-evento" },
+    eventBudgetDraft: { id: "budget-evento" }
+  });
+  try {
+    const result = await harness.incoming("reset");
+    assert.equal(result.conversa.activeFlow, "");
+    assert.equal(result.conversa.activeStep, "");
+    assert.deepEqual(result.conversa.flowData, {});
+    assert.equal(result.conversa.flowUpdatedAt, "");
+    assert.equal(result.conversa.eventDraft, null);
+    assert.equal(result.conversa.eventBudgetDraft, null);
+    assert.match(result.respostaSugerida, /Fazer pedido/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
 test("humano dentro de activeFlow limpa fluxo e encaminha atendimento", async () => {
   const harness = await createHarness({
     activeFlow: "event",
@@ -133,6 +175,46 @@ test("humano dentro de activeFlow limpa fluxo e encaminha atendimento", async ()
     assert.deepEqual(result.conversa.flowData, {});
     assert.equal(result.conversa.status, "humano");
     assert.match(result.respostaSugerida, /fila da nossa equipe/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("flowData.people 2026 e removido e pede quantidade quando data e horario existem", async () => {
+  const harness = await createHarness({
+    activeFlow: "event",
+    activeStep: "askPeople",
+    flowData: { type: "Aniversario", city: "Porto Alegre", date: "20 de agosto de 2026", time: "20h", people: 2026 }
+  });
+  try {
+    const result = await harness.incoming("continuar orçamento");
+    assert.equal(result.conversa.activeStep, "askPeople");
+    assert.deepEqual(result.conversa.flowData, {
+      type: "Aniversario",
+      city: "Porto Alegre",
+      date: "20 de agosto de 2026",
+      time: "20h"
+    });
+    assert.match(result.respostaSugerida, /Agora me passa a quantidade de pessoas/);
+    assert.doesNotMatch(result.respostaSugerida, /Pessoas: 2026/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("fluxo com mais de 30 minutos pergunta se continua ou reinicia", async () => {
+  const harness = await createHarness({
+    activeFlow: "event",
+    activeStep: "askDate",
+    flowData: { type: "Aniversario", city: "Porto Alegre", people: 1 },
+    flowUpdatedAt: "2026-07-09T11:20:00.000Z"
+  });
+  try {
+    const result = await harness.incoming("20 de agosto de 2026");
+    assert.equal(result.conversa.activeStep, "askDate");
+    assert.match(result.respostaSugerida, /Tu quer continuar o orçamento antigo ou começar de novo/);
+    assert.match(result.respostaSugerida, /Continuar orçamento/);
+    assert.match(result.respostaSugerida, /Voltar ao início/);
   } finally {
     await harness.cleanup();
   }

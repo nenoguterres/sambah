@@ -1094,7 +1094,11 @@ test("operacao real multiplataforma cobre Insano, Xeriffe, WhatsApp e pre-comand
     const apiOptions = await fetch(`http://127.0.0.1:${port}/api/site/lead`, { method: "OPTIONS", headers: { origin: "https://api.insanofoodtruck.com.br" } });
     assert.equal(apiOptions.headers.get("access-control-allow-origin"), "https://api.insanofoodtruck.com.br");
     const health = await fetch(`http://127.0.0.1:${port}/health`).then((response) => response.json());
-    assert.deepEqual(health, { ok: true, service: "sambah", provider: "meta" });
+    assert.equal(health.ok, true);
+    assert.equal(health.service, "sambah");
+    assert.equal(health.provider, "meta");
+    assert.equal(typeof health.commit, "string");
+    assert.equal(typeof health.version, "string");
 
     const insanoPedido = await fetch(`http://127.0.0.1:${port}/api/crm/atendimento`, {
       method: "POST",

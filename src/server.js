@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { mkdir, readFile, readdir, stat } from "node:fs/promises";
 import crypto from "node:crypto";
+import { createRequire } from "node:module";
 import { dirname, extname, join, normalize } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { AuditService } from "./auditService.js";
@@ -28,6 +29,8 @@ import { isMetaWhatsAppPayload, parseWhatsAppWebhookPayload } from "./whatsapp/w
 import { InstagramPublisher } from "./services/instagramPublisher.js";
 import { buildSambahAutoReply } from "./sambahPersonality.js";
 
+const require = createRequire(import.meta.url);
+const packageJson = require("../package.json");
 const publicDir = fileURLToPath(new URL("../public/", import.meta.url));
 const runtimeConfig = getRuntimeConfig();
 const dataFile = (name) => join(runtimeConfig.dataDir, name);
@@ -369,7 +372,13 @@ export function createApp({
       }
 
       if (req.method === "GET" && url.pathname === "/health") {
-        return sendJson(res, 200, { ok: true, service: "sambah", provider: runtimeConfig.whatsappBusiness.provider });
+        return sendJson(res, 200, {
+          ok: true,
+          service: "sambah",
+          provider: runtimeConfig.whatsappBusiness.provider,
+          commit: buildCommitVersion(),
+          version: buildAppVersion()
+        });
       }
 
       if (req.method === "GET" && url.pathname === "/api/admin/storage-status") {
@@ -1313,7 +1322,8 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
       const directAutoReply = await sendWhatsAppCloudAutoReply(body, {
         runtimeConfig: getRuntimeConfig(),
         fetchImpl: whatsappSendFetch,
-        auditService
+        auditService,
+        conversation: conversationResult.conversa
       });
       if (directAutoReply.sent || directAutoReply.status === "meta_error" || directAutoReply.status === "request_failed") {
         await recordDirectWhatsAppAutoReply(whatsappMessageService, body, directAutoReply);
@@ -1591,7 +1601,7 @@ function isMetaWhatsAppEnvelope(payload = {}) {
   return Array.isArray(payload.entry);
 }
 
-async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRuntimeConfig(), fetchImpl = globalThis.fetch, auditService = null } = {}) {
+async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRuntimeConfig(), fetchImpl = globalThis.fetch, auditService = null, conversation = null } = {}) {
   const summary = summarizeWhatsAppPostPayload(payload);
   const config = runtimeConfig.whatsappBusiness || {};
   if (config.sendEnabled !== true) {
@@ -1606,7 +1616,7 @@ async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRun
   }
 
   const endpoint = `https://graph.facebook.com/v25.0/${encodeURIComponent(sendPhoneNumberId)}/messages`;
-  const autoReplyText = buildSambahAutoReply(summary.textBody);
+  const autoReplyText = buildSambahAutoReply(summary.textBody, { conversation });
   const baseRequestBody = {
     messaging_product: "whatsapp",
     type: "text",
@@ -2902,6 +2912,18 @@ function formatDraftSummary(draft) {
     const note = item.note ? ` (${item.note})` : "";
     return `${item.qty || 1}x ${item.name || item.productId}${note}`;
   }).join("\n");
+}
+
+function buildCommitVersion() {
+  return process.env.RENDER_GIT_COMMIT
+    || process.env.GIT_COMMIT
+    || process.env.COMMIT_SHA
+    || process.env.SOURCE_VERSION
+    || "";
+}
+
+function buildAppVersion() {
+  return process.env.APP_VERSION || packageJson.version || "guided-event-flow-state";
 }
 
 const isCliRun = globalThis.process?.argv?.[1] && import.meta.url === pathToFileURL(globalThis.process.argv[1]).href;

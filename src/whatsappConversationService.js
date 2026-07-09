@@ -87,6 +87,11 @@ export class WhatsAppConversationService {
       mensagens: [],
       createdAt: now
     };
+    const flowBefore = {
+      activeFlow: base.activeFlow || "",
+      activeStep: base.activeStep || "",
+      flowData: base.flowData || {}
+    };
     const flowResult = handleActiveFlow({
       conversation: base,
       text: textForIntent,
@@ -124,6 +129,17 @@ export class WhatsAppConversationService {
     } else {
       data.conversas.push(updated);
     }
+    console.info("whatsapp.flow_manager.received", {
+      text: textForIntent,
+      activeFlowBefore: flowBefore.activeFlow,
+      activeStepBefore: flowBefore.activeStep,
+      flowDataBefore: flowBefore.flowData,
+      globalCommand: flowResult?.globalCommand || "",
+      responseText: flowResponse,
+      activeFlowAfter: updated.activeFlow || "",
+      activeStepAfter: updated.activeStep || "",
+      flowDataAfter: updated.flowData || {}
+    });
     await this.#write(data);
 
     if (crmService && incoming.telefone) {

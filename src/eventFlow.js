@@ -225,6 +225,7 @@ function extractPeople(rawText = "", normalized = "", activeStep = "") {
 }
 
 function extractCity(rawText = "", normalized = "", { date = "", time = "", people = null, type = "", activeStep = "" } = {}) {
+  if (activeStep === "askEventType" && !(date && time && people)) return "";
   if (activeStep !== "askCity" && !hasLikelyCity(rawText, normalized, { date, time, people })) return "";
   let city = rawText;
   for (const token of [date, time]) {
