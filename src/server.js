@@ -1999,6 +1999,11 @@ function getPendingHumanWaitReply(conversation = null) {
 }
 
 async function resolveControlledWhatsAppReply(text = "", { conversation = null, mesaComandaUrl = "", whatsappCatalogService = null } = {}) {
+  const suggestedReply = String(conversation?.respostaSugerida || "").trim();
+  const modeReason = String(conversation?.aiDecision?.modeReason || "");
+  if (suggestedReply && ["human_requested", "human_waiting", "human_waiting_greeting", "human_cancelled"].includes(modeReason)) {
+    return suggestedReply;
+  }
   const aiSafeReply = String(conversation?.aiDecision?.safeReply || "").trim();
   if (!aiSafeReply) {
     return buildSambahAutoReply(text, { conversation, mesaComandaUrl });

@@ -22,6 +22,16 @@ const INTENT_RESPONSES = {
 
 const HUMAN_INTENTS = new Set(["humano", "reclamacao"]);
 const HUMAN_WAIT_MESSAGE = "Já te coloquei para atendimento humano. Aguarda um instante que vamos te responder por aqui.";
+const HUMAN_STILL_WAITING_MESSAGE = "To contigo, vivente. Tua conversa segue na fila do atendimento humano. Se quiser continuar comigo, me diz o que tu precisa agora.";
+const HUMAN_CANCELLED_MESSAGE = "Feito! Cancelei a espera pelo atendimento humano. Seguimos por aqui. Me diz, o que tu precisa agora?";
+const CONVERSATION_MODES = Object.freeze({
+  AUTO: "AUTO",
+  AGUARDANDO_HUMANO: "AGUARDANDO_HUMANO",
+  HUMANO_ASSUMIU: "HUMANO_ASSUMIU"
+});
+const HUMAN_CANCEL_TERMS = new Set(["cancelar", "cancela", "voltar", "continuar", "sambah"]);
+const HUMAN_GREETING_TERMS = new Set(["oi", "ola", "olá", "bom dia", "boa tarde", "boa noite", "buenas"]);
+const HUMAN_AUTO_INTENTS = new Set(["pedido", "cardapio", "pagamento", "evento", "food_truck", "corporativo", "granja"]);
 const OPPORTUNITY_INTENTS = new Set(["evento", "food_truck", "corporativo", "xeriffe", "reserva", "festa"]);
 const ORDER_STATES = new Set([
   "AGUARDANDO_NOME",
@@ -95,41 +105,63 @@ export class WhatsAppConversationService {
       await this.orderService.cancelOrder(base.id, "Contexto de pedido expirado por inatividade").catch(() => null);
     }
     const textForIntent = incoming.text || incoming.transcricao || incoming.caption || "";
+    const currentMode = normalizeConversationMode(contextBase);
+    const preIntentMode = resolvePreIntentMode(currentMode, textForIntent);
+    const contextForIntent = withConversationMode(contextBase, preIntentMode.mode);
     const aiDecision = classifySambahIntent({
       message: textForIntent,
-      conversationState: contextBase,
-      orderContext: contextBase.mesaPedido || null,
-      mesaOrderId: contextBase.mesaPedido?.id || "",
-      paymentStatus: contextBase.statusCobranca || "",
-      customerName: contextBase.nome || "",
-      previousIntent: contextBase.aiDecision?.intent || contextBase.intencao || ""
+      conversationState: contextForIntent,
+      orderContext: contextForIntent.mesaPedido || null,
+      mesaOrderId: contextForIntent.mesaPedido?.id || "",
+      paymentStatus: contextForIntent.statusCobranca || "",
+      customerName: contextForIntent.nome || "",
+      previousIntent: contextForIntent.aiDecision?.intent || contextForIntent.intencao || ""
     });
     const intent = mapAiIntentToWhatsAppIntent(aiDecision.intent);
     const respostaSugerida = suggestedWhatsAppResponse(intent);
-    const isHumanHandoff = HUMAN_INTENTS.has(intent) || aiDecision.allowedAction === "HANDOFF_HUMAN" || contextBase.atendimentoEstado === "HUMANO";
+    const modeDecision = resolvePostIntentMode({
+      mode: preIntentMode.mode,
+      text: textForIntent,
+      intent,
+      aiDecision,
+      preIntentAction: preIntentMode.action
+    });
+    const isHumanHandoff = modeDecision.mode === CONVERSATION_MODES.AGUARDANDO_HUMANO;
     const status = configStatus
-      || (isHumanHandoff
+      || (modeDecision.mode === CONVERSATION_MODES.HUMANO_ASSUMIU
+        ? (contextBase.status || "aguardando_humano")
+        : isHumanHandoff
         ? "aguardando_humano"
         : aiDecision.allowedAction === "NO_ACTION"
           ? (contextBase.status || "aguardando_equipe")
           : "aguardando_equipe");
-    const orderState = nextOrderState(contextBase, incoming, intent);
+    const orderState = modeDecision.action === "cancel_human"
+      ? ""
+      : nextOrderState(contextForIntent, incoming, intent, modeDecision.mode);
     const orderSync = await syncWhatsappOrderFromIncoming({
       orderService: this.orderService,
-      conversation: contextBase,
+      conversation: contextForIntent,
       incoming,
       intent,
       orderState,
       aiDecision
     });
-    const whatsappOrder = orderSync.order ? summarizeWhatsappOrder(orderSync.order) : contextBase.whatsappOrder || null;
-    const paymentStatus = nextPaymentStatus(contextBase, incoming);
-    const effectiveConversationState = orderState || contextBase.atendimentoEstado || aiDecision.conversationState || "";
+    const whatsappOrder = orderSync.order ? summarizeWhatsappOrder(orderSync.order) : contextForIntent.whatsappOrder || null;
+    const paymentStatus = nextPaymentStatus(contextForIntent, incoming);
+    const effectiveConversationState = orderState || humanMetadataState(modeDecision.mode) || aiDecision.conversationState || "";
+    const modeAllowsControlledReply = Boolean(modeDecision.reply) && modeDecision.mode !== CONVERSATION_MODES.HUMANO_ASSUMIU;
+    const aiDecisionForMode = modeDecision.mode === CONVERSATION_MODES.HUMANO_ASSUMIU
+      ? { ...aiDecision, allowedAction: "NO_ACTION" }
+      : modeAllowsControlledReply && aiDecision.allowedAction === "NO_ACTION"
+        ? { ...aiDecision, allowedAction: "ANSWER_INFO", requiresHuman: modeDecision.mode === CONVERSATION_MODES.AGUARDANDO_HUMANO }
+        : aiDecision;
     const persistedAiDecision = {
-      ...aiDecision,
+      ...aiDecisionForMode,
       previousConversationState: aiDecision.conversationState || aiDecision.state || "IDLE",
       conversationState: effectiveConversationState || "IDLE",
-      state: effectiveConversationState || "IDLE"
+      state: effectiveConversationState || "IDLE",
+      conversationMode: modeDecision.mode,
+      modeReason: modeDecision.reason
     };
     const aiAudit = {
       ...buildSambahAiAudit({
@@ -148,17 +180,21 @@ export class WhatsAppConversationService {
       ultimaInteracao: now,
       updatedAt: now,
       intencao: intent,
-      atendimentoEstado: orderState || contextBase.atendimentoEstado || "",
+      mode: modeDecision.mode,
+      atendimentoEstado: humanMetadataState(modeDecision.mode) || orderState || "",
       whatsappOrder,
       mesaPedido: contextBase.mesaPedido || null,
       statusCobranca: paymentStatus || contextBase.statusCobranca || "",
       status,
-      respostaSugerida: isHumanHandoff ? HUMAN_WAIT_MESSAGE : respostaSugerida,
+      respostaSugerida: modeDecision.mode === CONVERSATION_MODES.HUMANO_ASSUMIU
+        ? ""
+        : modeDecision.reply || (isHumanHandoff ? HUMAN_WAIT_MESSAGE : respostaSugerida),
       humanHandoff: nextHumanHandoffState(contextBase, {
         now,
         intent,
         aiDecision,
-        messageId: message.id
+        messageId: message.id,
+        modeDecision
       }),
       lastOrderContextResetAt: contextBase.orderContextExpired ? now : contextBase.lastOrderContextResetAt || "",
       orderContextExpired: undefined,
@@ -192,7 +228,7 @@ export class WhatsAppConversationService {
       message,
       intent,
       aiDecision: persistedAiDecision,
-      respostaSugerida,
+      respostaSugerida: updated.respostaSugerida,
       sendEnabled: runtimeConfig.whatsappBusiness?.sendEnabled === true,
       voiceReplyEnabled: runtimeConfig.ai?.voiceReplyEnabled === true
     };
@@ -234,6 +270,7 @@ export class WhatsAppConversationService {
     };
     const updated = {
       ...data.conversas[index],
+      mode: nextOutgoingMode(data.conversas[index], sendResult, { manual: true }),
       status: nextOutgoingStatus(data.conversas[index], sendResult, { manual: true }),
       humanHandoff: nextOutgoingHumanHandoff(data.conversas[index], sendResult, { manual: true, now }),
       ultimaInteracao: now,
@@ -268,6 +305,7 @@ export class WhatsAppConversationService {
     };
     const updated = {
       ...data.conversas[index],
+      mode: nextOutgoingMode(data.conversas[index], sendResult, { text }),
       status: nextOutgoingStatus(data.conversas[index], sendResult),
       humanHandoff: nextOutgoingHumanHandoff(data.conversas[index], sendResult, { text, now }),
       ultimaInteracao: now,
@@ -482,6 +520,11 @@ export class WhatsAppConversationService {
     data.conversas[index] = {
       ...data.conversas[index],
       status: nextStatus,
+      mode: status === "humano"
+        ? CONVERSATION_MODES.AGUARDANDO_HUMANO
+        : status === "resolvido"
+          ? CONVERSATION_MODES.AUTO
+          : normalizeConversationMode(data.conversas[index]),
       atendimentoEstado,
       respostaSugerida: status === "humano" ? HUMAN_WAIT_MESSAGE : data.conversas[index].respostaSugerida,
       humanHandoff: status === "humano"
@@ -616,12 +659,91 @@ async function updateCrmFromConversation(crmService, conversation, incoming, int
   }
 }
 
-function nextOrderState(conversation = {}, incoming = {}, intent = "") {
+function normalizeConversationMode(conversation = {}) {
+  const mode = String(conversation.mode || "").toUpperCase();
+  if (Object.values(CONVERSATION_MODES).includes(mode)) return mode;
+  return CONVERSATION_MODES.AUTO;
+}
+
+function humanMetadataState(mode = CONVERSATION_MODES.AUTO) {
+  return [CONVERSATION_MODES.AGUARDANDO_HUMANO, CONVERSATION_MODES.HUMANO_ASSUMIU].includes(mode) ? "HUMANO" : "";
+}
+
+function withConversationMode(conversation = {}, mode = CONVERSATION_MODES.AUTO) {
+  if (mode === CONVERSATION_MODES.AUTO) {
+    return {
+      ...conversation,
+      mode,
+      atendimentoEstado: conversation.atendimentoEstado === "HUMANO" ? "" : conversation.atendimentoEstado || ""
+    };
+  }
+  return {
+    ...conversation,
+    mode,
+    atendimentoEstado: humanMetadataState(mode) || conversation.atendimentoEstado || ""
+  };
+}
+
+function resolvePreIntentMode(mode = CONVERSATION_MODES.AUTO, text = "") {
+  const normalized = normalizeText(text);
+  if (mode === CONVERSATION_MODES.HUMANO_ASSUMIU) {
+    return { mode, action: "human_assumed" };
+  }
+  if (mode !== CONVERSATION_MODES.AGUARDANDO_HUMANO) {
+    return { mode: CONVERSATION_MODES.AUTO, action: "auto" };
+  }
+  if (HUMAN_CANCEL_TERMS.has(normalized)) {
+    return { mode: CONVERSATION_MODES.AUTO, action: "cancel_human", reply: HUMAN_CANCELLED_MESSAGE };
+  }
+  return { mode, action: "waiting_human" };
+}
+
+function resolvePostIntentMode({ mode = CONVERSATION_MODES.AUTO, text = "", intent = "", aiDecision = {}, preIntentAction = "" } = {}) {
+  const normalized = normalizeText(text);
+  if (preIntentAction === "cancel_human") {
+    return { mode: CONVERSATION_MODES.AUTO, action: "cancel_human", reason: "human_cancelled", reply: HUMAN_CANCELLED_MESSAGE };
+  }
+  if (mode === CONVERSATION_MODES.HUMANO_ASSUMIU) {
+    return { mode, action: "human_assumed", reason: "human_operator_active", reply: "" };
+  }
+  if (mode === CONVERSATION_MODES.AGUARDANDO_HUMANO) {
+    if (HUMAN_GREETING_TERMS.has(normalized)) {
+      return {
+        mode,
+        action: "still_waiting_human",
+        reason: "human_waiting_greeting",
+        reply: HUMAN_STILL_WAITING_MESSAGE
+      };
+    }
+    if (HUMAN_AUTO_INTENTS.has(intent)
+      || aiDecision.allowedAction === "CREATE_ORDER_DRAFT"
+      || aiDecision.allowedAction === "SHOW_MENU") {
+      return {
+        mode: CONVERSATION_MODES.AUTO,
+        action: "resume_auto",
+        reason: "useful_intent_resumed_auto",
+        reply: ""
+      };
+    }
+    return { mode, action: "waiting_human", reason: "human_waiting", reply: HUMAN_WAIT_MESSAGE };
+  }
+  if (HUMAN_INTENTS.has(intent) || aiDecision.allowedAction === "HANDOFF_HUMAN") {
+    return {
+      mode: CONVERSATION_MODES.AGUARDANDO_HUMANO,
+      action: "request_human",
+      reason: "human_requested",
+      reply: HUMAN_WAIT_MESSAGE
+    };
+  }
+  return { mode: CONVERSATION_MODES.AUTO, action: "auto", reason: "auto_flow", reply: "" };
+}
+
+function nextOrderState(conversation = {}, incoming = {}, intent = "", mode = CONVERSATION_MODES.AUTO) {
   const current = conversation.atendimentoEstado || "";
   const text = normalizeText(incoming.text || incoming.transcricao || "");
-  if (current === "HUMANO") return "HUMANO";
+  if (mode !== CONVERSATION_MODES.AUTO) return "";
   if (isCancelIntent(text)) return "CANCELADO";
-  if (HUMAN_INTENTS.has(intent)) return "HUMANO";
+  if (HUMAN_INTENTS.has(intent)) return "";
   if (["COMANDA_EM_ANDAMENTO", "COMANDA_PRONTA"].includes(current)) return "COMANDA_EM_ANDAMENTO";
   if (current === "AGUARDANDO_NOME" && text) return "ENVIADO_PARA_MESA_COMANDA";
   if (["ENVIADO_PARA_MESA_COMANDA", "AGUARDANDO_PEDIDO_MESA"].includes(current)) return "AGUARDANDO_PEDIDO_MESA";
@@ -643,6 +765,7 @@ function resetStaleOrderContext(conversation = {}, nowIso = new Date().toISOStri
   if (!isStaleOrderContext(conversation, nowIso)) return conversation;
   return {
     ...conversation,
+    mode: normalizeConversationMode(conversation),
     atendimentoEstado: "",
     whatsappOrder: null,
     statusCobranca: "",
@@ -700,17 +823,29 @@ function isOrderConversation(conversation = {}) {
 
 function nextOutgoingStatus(conversation = {}, sendResult = null, { manual = false } = {}) {
   if (!sendResult?.sent) return conversation.status;
-  if ((conversation.atendimentoEstado || "") === "HUMANO" || HUMAN_INTENTS.has(conversation.intencao || "")) {
+  if (normalizeConversationMode(conversation) !== CONVERSATION_MODES.AUTO || HUMAN_INTENTS.has(conversation.intencao || "")) {
     return manual ? "aguardando_cliente" : "aguardando_humano";
   }
   return "aguardando_cliente";
 }
 
-function nextHumanHandoffState(conversation = {}, { now = new Date().toISOString(), intent = "", aiDecision = {}, messageId = "" } = {}) {
+function nextHumanHandoffState(conversation = {}, { now = new Date().toISOString(), intent = "", aiDecision = {}, messageId = "", modeDecision = null } = {}) {
   const current = conversation.humanHandoff || null;
-  const isHuman = HUMAN_INTENTS.has(intent) || aiDecision.allowedAction === "HANDOFF_HUMAN" || (conversation.atendimentoEstado || "") === "HUMANO";
+  if (modeDecision?.action === "cancel_human") {
+    return {
+      ...(current || {}),
+      status: "cancelado",
+      cancelledAt: now,
+      resolvedAt: now,
+      pendingNoticeDue: false
+    };
+  }
+  const isHuman = modeDecision?.mode === CONVERSATION_MODES.AGUARDANDO_HUMANO
+    || modeDecision?.mode === CONVERSATION_MODES.HUMANO_ASSUMIU
+    || HUMAN_INTENTS.has(intent)
+    || aiDecision.allowedAction === "HANDOFF_HUMAN";
   if (!isHuman) return current;
-  const alreadyWaitingHuman = Boolean(current?.requestedAt) || (conversation.atendimentoEstado || "") === "HUMANO";
+  const alreadyWaitingHuman = Boolean(current?.requestedAt) || normalizeConversationMode(conversation) === CONVERSATION_MODES.AGUARDANDO_HUMANO;
   const pendingNoticeDue = alreadyWaitingHuman && !current?.waitMessageSentAt && current?.status !== "em_atendimento";
   return {
     status: current?.status === "em_atendimento" ? "em_atendimento" : "pendente",
@@ -726,7 +861,7 @@ function nextHumanHandoffState(conversation = {}, { now = new Date().toISOString
 
 function nextOutgoingHumanHandoff(conversation = {}, sendResult = null, { manual = false, text = "", now = new Date().toISOString() } = {}) {
   const current = conversation.humanHandoff || null;
-  if (!current && (conversation.atendimentoEstado || "") !== "HUMANO") return current;
+  if (!current && normalizeConversationMode(conversation) === CONVERSATION_MODES.AUTO) return current;
   if (!sendResult?.sent) return current;
   if (manual) {
     return {
@@ -746,6 +881,14 @@ function nextOutgoingHumanHandoff(conversation = {}, sendResult = null, { manual
     };
   }
   return current;
+}
+
+function nextOutgoingMode(conversation = {}, sendResult = null, { manual = false, text = "" } = {}) {
+  const mode = normalizeConversationMode(conversation);
+  if (!sendResult?.sent) return mode;
+  if (manual && mode === CONVERSATION_MODES.AGUARDANDO_HUMANO) return CONVERSATION_MODES.HUMANO_ASSUMIU;
+  if (String(text || "").trim() === HUMAN_WAIT_MESSAGE) return CONVERSATION_MODES.AGUARDANDO_HUMANO;
+  return mode;
 }
 
 function isPixPaymentText(text = "") {

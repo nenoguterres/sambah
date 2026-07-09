@@ -530,13 +530,79 @@ test("Atendente responde handoff humano e conversa continua sem automacao", asyn
     assert.equal(replied.enviado, true);
     assert.equal(replied.conversa.status, "aguardando_cliente");
     assert.equal(replied.conversa.atendimentoEstado, "HUMANO");
+    assert.equal(replied.conversa.mode, "HUMANO_ASSUMIU");
     assert.equal(replied.conversa.humanHandoff.status, "em_atendimento");
     assert.equal(replied.conversa.mensagens.at(-1).direction, "out");
 
     const after = await service.recordIncoming({ from: "5551999999999", text: "oi", messageId: "manual-human-2" });
     assert.equal(after.aiDecision.allowedAction, "NO_ACTION");
-    assert.equal(after.conversa.status, "aguardando_humano");
+    assert.equal(after.conversa.mode, "HUMANO_ASSUMIU");
+    assert.equal(after.conversa.status, "aguardando_cliente");
+    assert.equal(after.conversa.respostaSugerida, "");
     assert.equal(after.conversa.mensagens.at(-1).text, "oi");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Conversation mode controla humano, cancelar e retomada automatica", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-human-mode-flow-"));
+  const filePath = join(dir, "conversas.json");
+  const service = new WhatsAppConversationService({ filePath });
+  try {
+    const start = await service.recordIncoming({ from: "5551999999999", text: "oi", messageId: "mode-flow-1" });
+    assert.equal(start.conversa.mode, "AUTO");
+
+    const human = await service.recordIncoming({ from: "5551999999999", text: "humano", messageId: "mode-flow-2" });
+    assert.equal(human.conversa.mode, "AGUARDANDO_HUMANO");
+    assert.equal(human.conversa.atendimentoEstado, "HUMANO");
+    assert.match(human.respostaSugerida, /atendimento humano/);
+
+    const waiting = await service.recordIncoming({ from: "5551999999999", text: "oi", messageId: "mode-flow-3" });
+    assert.equal(waiting.conversa.mode, "AGUARDANDO_HUMANO");
+    assert.match(waiting.respostaSugerida, /Tua conversa segue na fila/);
+
+    const cancelled = await service.recordIncoming({ from: "5551999999999", text: "cancelar", messageId: "mode-flow-4" });
+    assert.equal(cancelled.conversa.mode, "AUTO");
+    assert.equal(cancelled.conversa.atendimentoEstado, "");
+    assert.match(cancelled.respostaSugerida, /Cancelei a espera/);
+
+    const resumedHello = await service.recordIncoming({ from: "5551999999999", text: "oi", messageId: "mode-flow-5" });
+    assert.equal(resumedHello.conversa.mode, "AUTO");
+    assert.notEqual(resumedHello.aiDecision.allowedAction, "NO_ACTION");
+    assert.doesNotMatch(resumedHello.respostaSugerida, /fila do atendimento humano/);
+
+    const order = await service.recordIncoming({ from: "5551999999999", text: "quero comprar espetinho", messageId: "mode-flow-6" });
+    assert.equal(order.conversa.mode, "AUTO");
+    assert.notEqual(order.aiDecision.allowedAction, "NO_ACTION");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Campos antigos de humano nao bloqueiam automacao quando mode e AUTO", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-human-mode-secondary-"));
+  const filePath = join(dir, "conversas.json");
+  await writeFile(filePath, JSON.stringify({
+    conversas: [{
+      id: "wa_55518881112",
+      nome: "Cliente Legado",
+      telefone: "55518881112",
+      mode: "AUTO",
+      status: "aguardando_humano",
+      atendimentoEstado: "HUMANO",
+      humanHandoff: { status: "pendente", requestedAt: "2026-07-06T10:00:00.000Z" },
+      mensagens: [],
+      createdAt: "2026-07-06T10:00:00.000Z",
+      updatedAt: "2026-07-06T10:00:00.000Z"
+    }]
+  }), "utf8");
+  const service = new WhatsAppConversationService({ filePath });
+  try {
+    const result = await service.recordIncoming({ from: "55518881112", text: "oi", messageId: "legacy-human-auto" });
+    assert.equal(result.conversa.mode, "AUTO");
+    assert.equal(result.conversa.atendimentoEstado, "");
+    assert.notEqual(result.aiDecision.allowedAction, "NO_ACTION");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -643,6 +709,7 @@ test("Central registra decisao do AI Core sem responder em atendimento humano", 
       id: "wa_55518880000",
       nome: "Cliente Humano",
       telefone: "55518880000",
+      mode: "HUMANO_ASSUMIU",
       status: "aguardando_humano",
       atendimentoEstado: "HUMANO",
       humanHandoff: { status: "pendente", requestedAt: "2026-07-06T10:00:00.000Z" },
@@ -660,10 +727,11 @@ test("Central registra decisao do AI Core sem responder em atendimento humano", 
     });
     assert.equal(result.ok, true);
     assert.equal(result.aiDecision.allowedAction, "NO_ACTION");
+    assert.equal(result.conversa.mode, "HUMANO_ASSUMIU");
     assert.equal(result.conversa.status, "aguardando_humano");
     assert.equal(result.conversa.atendimentoEstado, "HUMANO");
     assert.equal(result.conversa.mensagens.length, 1);
-    assert.match(result.conversa.respostaSugerida, /atendimento humano/);
+    assert.equal(result.conversa.respostaSugerida, "");
     assert.equal(result.conversa.humanHandoff.status, "pendente");
     assert.equal(result.conversa.aiAuditTrail.length, 1);
     assert.equal(result.conversa.aiAuditTrail[0].intent, "humano");

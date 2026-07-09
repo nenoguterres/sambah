@@ -275,7 +275,7 @@ test("Central de Conversas recebe texto e audio do WhatsApp sem envio automatico
       }))
     }).then((response) => response.json());
     assert.equal(humanResponse.intent, "humano");
-    assert.match(humanResponse.respostaSugerida, /encaminhar/);
+    assert.match(humanResponse.respostaSugerida, /atendimento humano/);
 
     const eventResponse = await fetch(`${base}/webhook/whatsapp`, {
       method: "POST",
