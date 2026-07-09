@@ -598,6 +598,40 @@ test("Intencao util em AGUARDANDO_HUMANO retoma AUTO antes do roteamento", async
   }
 });
 
+test("Fluxo de evento nao repete pedido de dados depois que cliente informa detalhes", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-event-details-flow-"));
+  const filePath = join(dir, "conversas.json");
+  const service = new WhatsAppConversationService({ filePath });
+  try {
+    const start = await service.recordIncoming({ from: "5551999999997", text: "evento", messageId: "event-detail-1" });
+    assert.equal(start.intent, "evento");
+    assert.equal(start.conversa.eventQuote.status, "collecting");
+    assert.match(start.respostaSugerida, /data, local/);
+
+    const details = await service.recordIncoming({
+      from: "5551999999997",
+      text: "01/08/26, porto, 20h, 1000",
+      messageId: "event-detail-2"
+    });
+    assert.equal(details.intent, "evento");
+    assert.equal(details.conversa.eventQuote.status, "details_received");
+    assert.match(details.respostaSugerida, /Recebi os dados iniciais/);
+    assert.doesNotMatch(details.respostaSugerida, /me passa data/i);
+
+    const complement = await service.recordIncoming({
+      from: "5551999999997",
+      text: "porto alegre, 1000 pessoas",
+      messageId: "event-detail-3"
+    });
+    assert.equal(complement.intent, "evento");
+    assert.equal(complement.conversa.eventQuote.status, "details_received");
+    assert.match(complement.respostaSugerida, /complemento do evento/);
+    assert.doesNotMatch(complement.respostaSugerida, /me passa data/i);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("Campos antigos de humano nao bloqueiam automacao quando mode e AUTO", async () => {
   const dir = await mkdtemp(join(tmpdir(), "sambha-human-mode-secondary-"));
   const filePath = join(dir, "conversas.json");

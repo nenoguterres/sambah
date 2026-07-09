@@ -24,6 +24,8 @@ const HUMAN_INTENTS = new Set(["humano", "reclamacao"]);
 const HUMAN_WAIT_MESSAGE = "Já te coloquei para atendimento humano. Aguarda um instante que vamos te responder por aqui.";
 const HUMAN_STILL_WAITING_MESSAGE = "To contigo, vivente. Tua conversa segue na fila do atendimento humano. Se quiser continuar comigo, me diz o que tu precisa agora.";
 const HUMAN_CANCELLED_MESSAGE = "Feito! Cancelei a espera pelo atendimento humano. Seguimos por aqui. Me diz, o que tu precisa agora?";
+const EVENT_DETAILS_RECEIVED_MESSAGE = "Show! Recebi os dados iniciais do evento. Vou deixar isso encaminhado para a equipe montar o orçamento. Se tiver mais algum detalhe importante, pode me mandar por aqui.";
+const EVENT_DETAILS_COMPLEMENT_MESSAGE = "Recebi esse complemento do evento. Vou manter tudo junto no atendimento para a equipe seguir contigo.";
 const CONVERSATION_MODES = Object.freeze({
   AUTO: "AUTO",
   AGUARDANDO_HUMANO: "AGUARDANDO_HUMANO",
@@ -148,6 +150,7 @@ export class WhatsAppConversationService {
     });
     const whatsappOrder = orderSync.order ? summarizeWhatsappOrder(orderSync.order) : contextForIntent.whatsappOrder || null;
     const paymentStatus = nextPaymentStatus(contextForIntent, incoming);
+    const eventQuote = nextEventQuoteState(contextForIntent, incoming, intent);
     const effectiveConversationState = orderState || humanMetadataState(modeDecision.mode) || aiDecision.conversationState || "";
     const modeAllowsControlledReply = Boolean(modeDecision.reply) && modeDecision.mode !== CONVERSATION_MODES.HUMANO_ASSUMIU;
     const aiDecisionForMode = modeDecision.mode === CONVERSATION_MODES.HUMANO_ASSUMIU
@@ -182,13 +185,14 @@ export class WhatsAppConversationService {
       intencao: intent,
       mode: modeDecision.mode,
       atendimentoEstado: humanMetadataState(modeDecision.mode) || orderState || "",
+      eventQuote: eventQuote.eventQuote,
       whatsappOrder,
       mesaPedido: contextBase.mesaPedido || null,
       statusCobranca: paymentStatus || contextBase.statusCobranca || "",
       status,
       respostaSugerida: modeDecision.mode === CONVERSATION_MODES.HUMANO_ASSUMIU
         ? ""
-        : modeDecision.reply || (isHumanHandoff ? HUMAN_WAIT_MESSAGE : respostaSugerida),
+        : modeDecision.reply || eventQuote.reply || (isHumanHandoff ? HUMAN_WAIT_MESSAGE : respostaSugerida),
       humanHandoff: nextHumanHandoffState(contextBase, {
         now,
         intent,
@@ -812,6 +816,45 @@ async function syncWhatsappOrderFromIncoming({ orderService, conversation = {}, 
   if (allowedAction !== "ADD_ORDER_ITEM") return { ok: true, order: draft.order, created: draft.created };
   if (!shouldCollectWhatsappOrderItem(text)) return { ok: true, order: draft.order, created: draft.created };
   return orderService.addItemToOrder(conversation.id, { text });
+}
+
+function nextEventQuoteState(conversation = {}, incoming = {}, intent = "") {
+  const current = conversation.eventQuote || null;
+  const text = String(incoming.text || incoming.transcricao || "").trim();
+  if (intent !== "evento") return { eventQuote: current, reply: "" };
+  const details = [...(current?.details || [])];
+  if (text) details.push({ text, receivedAt: new Date().toISOString() });
+  const baseQuote = {
+    ...(current || {}),
+    status: current?.status || "collecting",
+    details: details.slice(-10)
+  };
+  if (current?.status === "details_received") {
+    return {
+      eventQuote: { ...baseQuote, status: "details_received" },
+      reply: EVENT_DETAILS_COMPLEMENT_MESSAGE
+    };
+  }
+  if (current?.status === "collecting" || looksLikeEventDetails(text)) {
+    return {
+      eventQuote: { ...baseQuote, status: "details_received" },
+      reply: EVENT_DETAILS_RECEIVED_MESSAGE
+    };
+  }
+  return {
+    eventQuote: baseQuote,
+    reply: ""
+  };
+}
+
+function looksLikeEventDetails(text = "") {
+  const normalized = normalizeText(text);
+  if (!normalized) return false;
+  if (/\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b/.test(normalized)) return true;
+  if (/\b\d{1,2}h(?:\d{2})?\b/.test(normalized)) return true;
+  if (/\b\d+\s*(pessoas|pessoa|convidados|convidado)\b/.test(normalized)) return true;
+  if (hasAny(normalized, ["porto alegre", "poa", "cidade", "local", "endereco", "centro", "bairro"])) return true;
+  return false;
 }
 
 function nextPaymentStatus(conversation = {}, incoming = {}) {
