@@ -52,6 +52,7 @@ const ORDER_STATES = new Set([
 ]);
 const ORDER_CONTEXT_TTL_MS = 2 * 60 * 60 * 1000;
 const EXPIRABLE_ORDER_STATES = new Set(["AGUARDANDO_NOME", "COMANDA_EM_ANDAMENTO", "COMANDA_PRONTA", "ENVIADO_PARA_MESA_COMANDA", "AGUARDANDO_PEDIDO_MESA"]);
+const HARD_RESET_REPLY = "Atendimento reiniciado. Me manda um oi para começarmos de novo.";
 
 export class WhatsAppConversationService {
   constructor({ filePath, now = () => new Date(), orderService = null } = {}) {
@@ -103,11 +104,41 @@ export class WhatsAppConversationService {
       mensagens: [],
       createdAt: now
     };
-    const contextBase = resetStaleOrderContext(base, now);
+    let contextBase = sanitizeProductionFlowState(resetStaleOrderContext(base, now));
     if (contextBase.orderContextExpired && this.orderService) {
       await this.orderService.cancelOrder(base.id, "Contexto de pedido expirado por inatividade").catch(() => null);
     }
     const textForIntent = incoming.text || incoming.transcricao || incoming.caption || "";
+    const globalCommand = detectProductionGlobalCommand(textForIntent);
+    const beforeFlowLog = summarizeFlowState(contextBase);
+    if (globalCommand === "reset") {
+      const updated = buildHardResetConversation(contextBase, incoming, message, now);
+      if (existing) {
+        data.conversas = data.conversas.map((item) => (item.id === existing.id ? updated : item));
+      } else {
+        data.conversas.push(updated);
+      }
+      await this.#write(data);
+      console.info("whatsapp.production_flow_safety", {
+        messageId: message.id,
+        from: incoming.telefone,
+        normalizedText: normalizeText(textForIntent),
+        globalCommand,
+        before: beforeFlowLog,
+        after: summarizeFlowState(updated),
+        reply: HARD_RESET_REPLY
+      });
+      return {
+        ok: true,
+        conversa: this.#withPriority(updated),
+        message,
+        intent: "reset",
+        aiDecision: null,
+        respostaSugerida: HARD_RESET_REPLY,
+        sendEnabled: runtimeConfig.whatsappBusiness?.sendEnabled === true,
+        voiceReplyEnabled: runtimeConfig.ai?.voiceReplyEnabled === true
+      };
+    }
     const currentMode = normalizeConversationMode(contextBase);
     const preIntentMode = resolvePreIntentMode(currentMode, textForIntent);
     const contextForIntent = withConversationMode(contextBase, preIntentMode.mode);
@@ -237,6 +268,15 @@ export class WhatsAppConversationService {
     if (crmService && incoming.telefone) {
       await updateCrmFromConversation(crmService, updated, incoming, intent);
     }
+    console.info("whatsapp.production_flow_safety", {
+      messageId: message.id,
+      from: incoming.telefone,
+      normalizedText: normalizeText(textForIntent),
+      globalCommand,
+      before: beforeFlowLog,
+      after: summarizeFlowState(updated),
+      reply: updated.respostaSugerida || ""
+    });
 
     return {
       ok: true,
@@ -806,6 +846,116 @@ function isStaleOrderContext(conversation = {}, nowIso = "") {
   const nowTime = Date.parse(nowIso);
   if (!Number.isFinite(lastInteraction) || !Number.isFinite(nowTime)) return false;
   return nowTime - lastInteraction > ORDER_CONTEXT_TTL_MS;
+}
+
+function detectProductionGlobalCommand(text = "") {
+  const normalized = normalizeText(text);
+  if (["reset", "reiniciar", "zerar atendimento", "limpar conversa"].includes(normalized)) return "reset";
+  return "";
+}
+
+function buildHardResetConversation(conversation = {}, incoming = {}, message = {}, now = new Date().toISOString()) {
+  return {
+    ...conversation,
+    nome: conversation.nome || incoming.nome || incoming.profileName || "Cliente WhatsApp",
+    telefone: conversation.telefone || incoming.telefone,
+    ultimaMensagem: incoming.text || incoming.transcricao || describeMessageType(incoming.tipo),
+    ultimaInteracao: now,
+    updatedAt: now,
+    intencao: "reset",
+    mode: CONVERSATION_MODES.AUTO,
+    atendimentoEstado: "",
+    activeFlow: null,
+    activeStep: "",
+    flowData: null,
+    flowUpdatedAt: "",
+    nextAction: "",
+    eventQuote: null,
+    draft: null,
+    draftId: "",
+    orderDraft: null,
+    eventDraft: null,
+    orcamentoDraft: null,
+    whatsappOrder: null,
+    mesaPedido: null,
+    statusCobranca: "",
+    respostaSugerida: HARD_RESET_REPLY,
+    humanHandoff: null,
+    orderContextExpired: undefined,
+    aiDecision: null,
+    aiAuditTrail: Array.isArray(conversation.aiAuditTrail) ? conversation.aiAuditTrail : [],
+    mensagens: [...(conversation.mensagens || []), message].slice(-60)
+  };
+}
+
+function sanitizeProductionFlowState(conversation = {}) {
+  let next = conversation;
+  const activeFlow = sanitizeActiveFlow(conversation.activeFlow);
+  const eventQuote = sanitizeEventQuote(conversation.eventQuote);
+  const flowData = sanitizeFlowData(conversation.flowData);
+  if (activeFlow !== conversation.activeFlow || eventQuote !== conversation.eventQuote || flowData !== conversation.flowData) {
+    next = {
+      ...conversation,
+      activeFlow,
+      eventQuote,
+      flowData
+    };
+  }
+  return next;
+}
+
+function sanitizeActiveFlow(activeFlow = null) {
+  if (!activeFlow || typeof activeFlow !== "object") return activeFlow || null;
+  const slots = activeFlow.slots && typeof activeFlow.slots === "object" ? activeFlow.slots : null;
+  if (!slots || !isLikelyYearValue(slots.people)) return activeFlow;
+  return {
+    ...activeFlow,
+    status: activeFlow.status === "ready" ? "collecting" : activeFlow.status,
+    slots: {
+      ...slots,
+      people: null
+    }
+  };
+}
+
+function sanitizeEventQuote(eventQuote = null) {
+  if (!eventQuote || typeof eventQuote !== "object") return eventQuote || null;
+  const slots = eventQuote.slots && typeof eventQuote.slots === "object" ? eventQuote.slots : null;
+  if (!slots || !isLikelyYearValue(slots.people)) return eventQuote;
+  return {
+    ...eventQuote,
+    status: eventQuote.status === "details_received" ? "collecting" : eventQuote.status,
+    slots: {
+      ...slots,
+      people: null
+    }
+  };
+}
+
+function sanitizeFlowData(flowData = null) {
+  if (!flowData || typeof flowData !== "object") return flowData || null;
+  if (!isLikelyYearValue(flowData.people) && !isLikelyYearValue(flowData.pessoas) && !isLikelyYearValue(flowData.quantidade_pessoas)) return flowData;
+  const next = { ...flowData };
+  if (isLikelyYearValue(next.people)) delete next.people;
+  if (isLikelyYearValue(next.pessoas)) delete next.pessoas;
+  if (isLikelyYearValue(next.quantidade_pessoas)) delete next.quantidade_pessoas;
+  return next;
+}
+
+function summarizeFlowState(conversation = {}) {
+  return {
+    activeFlow: conversation.activeFlow?.type || "",
+    activeStep: conversation.activeStep || "",
+    flowData: conversation.flowData || null,
+    flowUpdatedAt: conversation.flowUpdatedAt || conversation.activeFlow?.updatedAt || "",
+    activeFlowStatus: conversation.activeFlow?.status || "",
+    activeFlowSlots: conversation.activeFlow?.slots || null
+  };
+}
+
+function isLikelyYearValue(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 1900 && number <= 2100;
 }
 
 async function syncWhatsappOrderFromIncoming({ orderService, conversation = {}, incoming = {}, intent = "", orderState = "", aiDecision = {} } = {}) {

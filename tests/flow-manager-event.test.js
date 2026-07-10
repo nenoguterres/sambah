@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { extractEventSlots, resolveConversationFlow } from "../src/flowManager.js";
@@ -94,6 +94,49 @@ test("cancelar limpa activeFlow de evento", () => {
   assert.match(result.reply, /Cancelei esse atendimento de evento/);
 });
 
+test("people com ano em activeFlow e removido antes da resposta", () => {
+  const result = resolveConversationFlow({
+    conversation: {
+      activeFlow: {
+        type: "evento",
+        status: "collecting",
+        slots: { date: null, city: "Porto Alegre", time: "20h", people: "2026", eventType: null },
+        updatedAt: "2026-07-09T12:00:00.000Z"
+      }
+    },
+    text: "oi",
+    intent: "saudacao",
+    mode: "AUTO",
+    now: "2026-07-09T12:01:00.000Z"
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.activeFlow.slots.people, null);
+  assert.doesNotMatch(result.reply, /Pessoas: 2026/);
+  assert.match(result.reply, /quantidade de pessoas/);
+});
+
+test("activeFlow antigo por TTL pergunta antes de continuar", () => {
+  const result = resolveConversationFlow({
+    conversation: {
+      activeFlow: {
+        type: "evento",
+        status: "collecting",
+        slots: { date: "20 de agosto", city: "Porto Alegre", time: "20h", people: null, eventType: null },
+        updatedAt: "2026-07-09T12:00:00.000Z"
+      }
+    },
+    text: "1 pessoa",
+    intent: "desconhecido",
+    mode: "AUTO",
+    now: "2026-07-09T12:31:00.000Z"
+  });
+
+  assert.equal(result.handled, true);
+  assert.match(result.reply, /continuar o orcamento anterior|continuar o orçamento anterior/i);
+  assert.match(result.reply, /Começar novo atendimento|Comecar novo atendimento/i);
+});
+
 test("humano durante activeFlow preserva fluxo para handoff", () => {
   const flow = {
     type: "evento",
@@ -140,6 +183,49 @@ test("WhatsApp evento nao repete pergunta completa depois dos dados", async () =
     assert.equal(details.conversa.activeFlow.slots.people, "1000");
     assert.doesNotMatch(details.respostaSugerida, /me passa data, cidade, horario aproximado e quantidade de pessoas/i);
     assert.match(details.respostaSugerida, /Ja tenho as informacoes principais|informacoes principais/i);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("reset forte limpa activeFlow, campos legados e drafts", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-flow-reset-"));
+  const filePath = join(dir, "conversas.json");
+  await writeFile(filePath, JSON.stringify({
+    conversas: [{
+      id: "wa_5551999999999",
+      nome: "Cliente",
+      telefone: "5551999999999",
+      activeFlow: { type: "evento", status: "collecting", slots: { people: "2026" }, updatedAt: "2026-07-09T12:00:00.000Z" },
+      activeStep: "askDate",
+      flowData: { people: "2026" },
+      flowUpdatedAt: "2026-07-09T12:00:00.000Z",
+      draftId: "draft-1",
+      draft: { id: "draft-1" },
+      orcamentoDraft: { id: "orc-1" },
+      mensagens: []
+    }]
+  }), "utf8");
+  const service = new WhatsAppConversationService({
+    filePath,
+    now: () => new Date("2026-07-09T12:05:00.000Z")
+  });
+
+  try {
+    const result = await service.recordIncoming({ from: "5551999999999", text: "reset", messageId: "reset-1" });
+
+    assert.equal(result.respostaSugerida, "Atendimento reiniciado. Me manda um oi para começarmos de novo.");
+    assert.equal(result.conversa.activeFlow, null);
+    assert.equal(result.conversa.activeStep, "");
+    assert.equal(result.conversa.flowData, null);
+    assert.equal(result.conversa.flowUpdatedAt, "");
+    assert.equal(result.conversa.draftId, "");
+    assert.equal(result.conversa.draft, null);
+    assert.equal(result.conversa.orcamentoDraft, null);
+
+    const saved = JSON.parse(await readFile(filePath, "utf8"));
+    assert.equal(saved.conversas[0].activeFlow, null);
+    assert.equal(saved.conversas[0].flowData, null);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

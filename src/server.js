@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { mkdir, readFile, readdir, stat } from "node:fs/promises";
 import crypto from "node:crypto";
+import { createRequire } from "node:module";
 import { dirname, extname, join, normalize } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { AuditService } from "./auditService.js";
@@ -31,6 +32,8 @@ import { isMetaWhatsAppPayload, parseWhatsAppWebhookPayload } from "./whatsapp/w
 import { InstagramPublisher } from "./services/instagramPublisher.js";
 import { buildMesaComandaUrl, buildSambahAutoReply } from "./sambahPersonality.js";
 
+const require = createRequire(import.meta.url);
+const packageJson = require("../package.json");
 const publicDir = fileURLToPath(new URL("../public/", import.meta.url));
 const runtimeConfig = getRuntimeConfig();
 const dataFile = (name) => join(runtimeConfig.dataDir, name);
@@ -378,7 +381,13 @@ export function createApp({
       }
 
       if (req.method === "GET" && url.pathname === "/health") {
-        return sendJson(res, 200, { ok: true, service: "sambah", provider: runtimeConfig.whatsappBusiness.provider });
+        return sendJson(res, 200, {
+          ok: true,
+          service: "sambah",
+          provider: runtimeConfig.whatsappBusiness.provider,
+          version: process.env.APP_VERSION || packageJson.version || "unknown",
+          commit: process.env.RENDER_GIT_COMMIT || process.env.COMMIT_SHA || process.env.GIT_COMMIT || "unknown"
+        });
       }
 
       if (req.method === "GET" && url.pathname === "/api/admin/storage-status") {
@@ -1489,11 +1498,12 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
         auditService
       });
       if (paymentSync?.conversa) conversationResult.conversa = paymentSync.conversa;
+      const conversaAtualizada = conversationResult?.conversa || null;
       const directAutoReply = await sendWhatsAppCloudAutoReply(body, {
         runtimeConfig: getRuntimeConfig(),
         fetchImpl: whatsappSendFetch,
         auditService,
-        conversation: conversationResult.conversa,
+        conversation: conversaAtualizada,
         mesaComandaUrl: getRuntimeConfig().mesaComandaUrl,
         whatsappCatalogService
       });
@@ -2003,7 +2013,9 @@ async function resolveControlledWhatsAppReply(text = "", { conversation = null, 
   const modeReason = String(conversation?.aiDecision?.modeReason || "");
   const eventQuoteStatus = String(conversation?.eventQuote?.status || "");
   const activeFlowType = String(conversation?.activeFlow?.type || "");
+  const conversationIntent = String(conversation?.intencao || "");
   if (suggestedReply && (["human_requested", "human_waiting", "human_waiting_greeting", "human_cancelled"].includes(modeReason)
+    || conversationIntent === "reset"
     || eventQuoteStatus === "details_received"
     || activeFlowType === "evento")) {
     return suggestedReply;
