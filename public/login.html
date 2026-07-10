@@ -17,7 +17,12 @@
         <p>Autenticacao local para administracao e SamBah Voice Pay. Credenciais de desenvolvimento devem ser trocadas antes de producao.</p>
         <form id="loginForm" class="login-form">
           <label>Usuario<input name="username" autocomplete="username" required></label>
-          <label>Senha<input name="password" type="password" autocomplete="current-password" required></label>
+          <label>Senha
+            <span class="password-field">
+              <input id="passwordInput" name="password" type="password" autocomplete="current-password" required>
+              <button id="togglePassword" class="password-toggle" type="button" aria-label="Mostrar senha" aria-pressed="false">Mostrar</button>
+            </span>
+          </label>
           <button type="submit">Entrar</button>
         </form>
         <div id="loginMessage" class="login-message" role="status" aria-live="polite"></div>

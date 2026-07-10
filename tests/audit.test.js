@@ -197,7 +197,8 @@ test("Central de Conversas recebe texto e audio do WhatsApp sem envio automatico
   process.env.WHATSAPP_ACCESS_TOKEN = "";
   process.env.VOICE_REPLY_ENABLED = "false";
 
-  const audit = new AuditService({ filePath: join(dir, "audit.json") });
+  const auditFile = join(dir, "audit.json");
+  const audit = new AuditService({ filePath: auditFile });
   const crmService = tempCrm(dir);
   const whatsappConversationService = new WhatsAppConversationService({
     filePath: join(dir, "whatsapp-conversas.json"),
@@ -275,7 +276,7 @@ test("Central de Conversas recebe texto e audio do WhatsApp sem envio automatico
       }))
     }).then((response) => response.json());
     assert.equal(humanResponse.intent, "humano");
-    assert.match(humanResponse.respostaSugerida, /encaminhar/);
+    assert.match(humanResponse.respostaSugerida, /tu não precisa repetir tudo de novo/);
 
     const eventResponse = await fetch(`${base}/webhook/whatsapp`, {
       method: "POST",
@@ -288,6 +289,23 @@ test("Central de Conversas recebe texto e audio do WhatsApp sem envio automatico
       }))
     }).then((response) => response.json());
     assert.equal(eventResponse.intent, "evento");
+    assert.equal(eventResponse.intentEngine.intent, "evento");
+    assert.equal(eventResponse.operationRoute.module, "crm");
+    assert.equal(eventResponse.conversa.currentModule, "crm");
+    assert.equal(eventResponse.conversa.nextAction, "commercial_flow");
+
+    const auditEvents = JSON.parse(await readFile(auditFile, "utf8"));
+    const detected = auditEvents.find((event) => event.type === "intent_detected" && event.context.intent === "pedido");
+    assert.ok(detected);
+    assert.equal(detected.context.destination, "mesa");
+    assert.equal(detected.context.phone, undefined);
+    assert.equal(detected.context.text, undefined);
+    assert.equal(detected.context.message, undefined);
+    const routed = auditEvents.find((event) => event.type === "operation_router" && event.context.intent === "evento");
+    assert.ok(routed);
+    assert.equal(routed.context.module, "crm");
+    assert.equal(routed.context.phone, undefined);
+    assert.equal(routed.context.text, undefined);
 
     const page = await fetch(`${base}/conversas`);
     assert.equal(page.status, 200);
@@ -304,6 +322,164 @@ test("Central de Conversas recebe texto e audio do WhatsApp sem envio automatico
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("Central de Conversas exige ADMIN para excluir mensagem", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-conversation-admin-delete-"));
+  const filePath = join(dir, "whatsapp-conversas.json");
+  await writeFile(filePath, JSON.stringify({
+    conversas: [{
+      id: "wa_5551980413745",
+      nome: "Cliente Teste",
+      telefone: "5551980413745",
+      status: "aguardando_equipe",
+      mensagens: [{ id: "msg-admin-delete", direction: "in", type: "text", text: "Apagar", createdAt: "2026-06-30T10:00:00.000Z" }],
+      createdAt: "2026-06-30T10:00:00.000Z",
+      updatedAt: "2026-06-30T10:00:00.000Z"
+    }]
+  }), "utf8");
+  const audit = new AuditService({ filePath: join(dir, "audit.json") });
+  const whatsappConversationService = new WhatsAppConversationService({ filePath });
+
+  const sessionServer = createApp({
+    auditService: audit,
+    crmService: tempCrm(dir),
+    whatsappConversationService,
+    authMode: "session"
+  });
+  await new Promise((resolve) => sessionServer.listen(0, resolve));
+  const sessionBase = `http://127.0.0.1:${sessionServer.address().port}`;
+  try {
+    const blocked = await fetch(`${sessionBase}/api/conversas/wa_5551980413745/mensagens/msg-admin-delete`, { method: "DELETE" });
+    const blockedBody = await blocked.json();
+    assert.equal(blocked.status, 401);
+    assert.equal(blockedBody.error, "auth_required");
+  } finally {
+    await new Promise((resolve) => sessionServer.close(resolve));
+  }
+
+  const adminServer = createApp({
+    auditService: audit,
+    crmService: tempCrm(dir),
+    whatsappConversationService,
+    authMode: "mock"
+  });
+  await new Promise((resolve) => adminServer.listen(0, resolve));
+  const adminBase = `http://127.0.0.1:${adminServer.address().port}`;
+  try {
+    const deleted = await fetch(`${adminBase}/api/conversas/wa_5551980413745/mensagens/msg-admin-delete`, { method: "DELETE" });
+    const deletedBody = await deleted.json();
+    assert.equal(deleted.status, 200);
+    assert.equal(deletedBody.ok, true);
+    assert.equal(deletedBody.removed.text, undefined);
+    const saved = JSON.parse(await readFile(filePath, "utf8"));
+    assert.equal(saved.conversas[0].mensagens.length, 0);
+    const auditEvents = JSON.parse(await readFile(join(dir, "audit.json"), "utf8"));
+    assert.ok(auditEvents.some((event) => event.type === "whatsapp_conversation_message_deleted"));
+  } finally {
+    await new Promise((resolve) => adminServer.close(resolve));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Central de Conversas exclui conversa sem uso somente com ADMIN", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-conversation-delete-"));
+  const filePath = join(dir, "whatsapp-conversas.json");
+  const auditFile = join(dir, "audit.json");
+  await writeFile(filePath, JSON.stringify({
+    conversas: [
+      {
+        id: "wa_empty",
+        nome: "Conversa Vazia",
+        telefone: "5551000000000",
+        status: "aguardando_equipe",
+        mensagens: [],
+        createdAt: "2026-06-30T10:00:00.000Z",
+        updatedAt: "2026-06-30T10:00:00.000Z"
+      },
+      {
+        id: "wa_active",
+        nome: "Conversa Ativa",
+        telefone: "5551999999999",
+        status: "aguardando_equipe",
+        currentModule: "mesa",
+        nextAction: "start_order",
+        mensagens: [{ id: "msg-active", direction: "in", type: "text", text: "Quero pizza", createdAt: "2026-06-30T10:01:00.000Z" }],
+        createdAt: "2026-06-30T10:01:00.000Z",
+        updatedAt: "2026-06-30T10:01:00.000Z"
+      }
+    ]
+  }), "utf8");
+  const audit = new AuditService({ filePath: auditFile });
+  const whatsappConversationService = new WhatsAppConversationService({ filePath });
+  const server = createApp({
+    auditService: audit,
+    crmService: tempCrm(dir),
+    whatsappConversationService,
+    authMode: "session"
+  });
+  await new Promise((resolve) => server.listen(0, resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const atendente = await loginCookie(base, "atendente", "atendente123");
+    const blocked = await fetch(`${base}/api/conversas/wa_empty`, {
+      method: "DELETE",
+      headers: { cookie: atendente.cookie }
+    });
+    assert.equal(blocked.status, 403);
+    assert.equal((await blocked.json()).error, "admin_required");
+
+    const admin = await loginCookie(base, "admin", "admin123");
+    const active = await fetch(`${base}/api/conversas/wa_active`, {
+      method: "DELETE",
+      headers: { cookie: admin.cookie }
+    });
+    const activeBody = await active.json();
+    assert.equal(active.status, 409);
+    assert.equal(activeBody.error, "conversation_not_deletable");
+
+    const missing = await fetch(`${base}/api/conversas/wa_missing`, {
+      method: "DELETE",
+      headers: { cookie: admin.cookie }
+    });
+    assert.equal(missing.status, 404);
+    assert.equal((await missing.json()).error, "conversation_not_found");
+
+    const deleted = await fetch(`${base}/api/conversas/wa_empty`, {
+      method: "DELETE",
+      headers: { cookie: admin.cookie }
+    });
+    const deletedBody = await deleted.json();
+    assert.equal(deleted.status, 200);
+    assert.equal(deletedBody.ok, true);
+    assert.equal(deletedBody.reason, "sem_mensagens");
+    const saved = JSON.parse(await readFile(filePath, "utf8"));
+    assert.equal(saved.conversas.some((item) => item.id === "wa_empty"), false);
+    assert.equal(saved.conversas.some((item) => item.id === "wa_active"), true);
+    const auditEvents = JSON.parse(await readFile(auditFile, "utf8"));
+    const event = auditEvents.find((item) => item.type === "conversation_deleted");
+    assert.ok(event);
+    assert.equal(event.context.conversationId, "wa_empty");
+    assert.equal(event.context.adminUser, "admin");
+    assert.equal(event.context.phone, undefined);
+    assert.equal(event.context.text, undefined);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+async function loginCookie(base, username, password) {
+  const response = await fetch(`${base}/api/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username, password })
+  });
+  return {
+    response,
+    json: await response.json(),
+    cookie: (response.headers.get("set-cookie") || "").split(";")[0]
+  };
+}
 
 function metaPayload(message) {
   return {

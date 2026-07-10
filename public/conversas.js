@@ -2,15 +2,18 @@ const state = {
   items: [],
   selectedId: "",
   filter: "all",
-  query: ""
+  query: "",
+  activeRole: "",
+  whatsappStatus: null
 };
 
 const listEl = document.querySelector("#conversationList");
 const chatEl = document.querySelector("#chatPane");
 const searchInput = document.querySelector("#searchInput");
 const refreshButton = document.querySelector("#refreshButton");
+const connectionStatusEl = document.querySelector("#connectionStatus");
 
-refreshButton?.addEventListener("click", loadConversas);
+refreshButton?.addEventListener("click", refreshInbox);
 searchInput?.addEventListener("input", (event) => {
   state.query = event.target.value;
   renderList();
@@ -24,8 +27,29 @@ document.querySelectorAll("[data-filter]").forEach((button) => {
   });
 });
 
-loadConversas();
-setInterval(loadConversas, 30000);
+init();
+setInterval(refreshInbox, 30000);
+
+async function init() {
+  await loadActiveUser();
+  await refreshInbox();
+}
+
+async function refreshInbox() {
+  await loadWhatsappStatus();
+  await loadConversas();
+}
+
+async function loadActiveUser() {
+  try {
+    const response = await fetch("/api/auth/me");
+    if (!response.ok) return;
+    const data = await response.json();
+    state.activeRole = data.user?.role || "";
+  } catch {
+    state.activeRole = "";
+  }
+}
 
 async function loadConversas() {
   listEl.innerHTML = `<div class="loading">Carregando...</div>`;
@@ -40,6 +64,41 @@ async function loadConversas() {
   } catch (error) {
     listEl.innerHTML = `<div class="loading">${escapeHtml(error.message || "Nao foi possivel carregar.")}</div>`;
   }
+}
+
+async function loadWhatsappStatus() {
+  try {
+    const response = await fetch("/admin/whatsapp/status");
+    if (!response.ok) throw new Error("status_unavailable");
+    state.whatsappStatus = await response.json();
+  } catch {
+    state.whatsappStatus = { provider: "desconhecido", configured: false, sendEnabled: false, error: "status_unavailable" };
+  }
+  renderConnectionStatus();
+}
+
+function renderConnectionStatus() {
+  if (!connectionStatusEl) return;
+  const status = state.whatsappStatus || {};
+  const provider = status.provider || "desconhecido";
+  const healthy = status.configured === true && status.sendEnabled === true;
+  const partial = status.configured === true && status.sendEnabled !== true;
+  const missing = [];
+  if (provider === "meta" && status.phoneNumberIdConfigured !== true) missing.push("ID do telefone");
+  if (provider === "meta" && status.accessTokenConfigured !== true) missing.push("token Meta");
+  if (provider === "meta" && status.verifyTokenConfigured !== true) missing.push("token de verificacao");
+  const label = healthy
+    ? "Meta pronto para envio real"
+    : partial
+      ? "Meta configurado, envio real desligado"
+      : provider === "meta"
+        ? `Meta incompleto${missing.length ? `: falta ${missing.join(", ")}` : ""}`
+        : "Modo local/mock";
+  connectionStatusEl.className = `connection-status ${healthy ? "ok" : partial ? "warn" : "error"}`;
+  connectionStatusEl.innerHTML = `
+    <strong>${escapeHtml(label)}</strong>
+    <span>${escapeHtml(`provider=${provider} | sendEnabled=${Boolean(status.sendEnabled)} | configured=${Boolean(status.configured)}`)}</span>
+  `;
 }
 
 function renderList() {
@@ -99,6 +158,7 @@ function renderChat(conversa) {
       <div class="chat-actions">
         <button type="button" data-action="human">Humano</button>
         <button type="button" data-action="resolved">Resolvido</button>
+        ${state.activeRole === "ADMIN" ? `<button class="danger-action" type="button" data-action="delete-conversation">Excluir conversa</button>` : ""}
       </div>
     </header>
 
@@ -115,11 +175,20 @@ function renderChat(conversa) {
   `;
 
   scrollMessagesToBottom();
+  chatEl.querySelectorAll("[data-delete-message]").forEach((button) => {
+    button.addEventListener("click", () => deleteMessage(conversa.id, button.dataset.deleteMessage));
+  });
   chatEl.querySelector("[data-action='human']")?.addEventListener("click", () => postAction(conversa.id, "humano"));
   chatEl.querySelector("[data-action='resolved']")?.addEventListener("click", () => postAction(conversa.id, "resolvido"));
+  chatEl.querySelector("[data-action='delete-conversation']")?.addEventListener("click", () => deleteConversation(conversa.id));
   chatEl.querySelector("#useSuggestion")?.addEventListener("click", () => {
     chatEl.querySelector("#replyText").value = conversa.respostaSugerida || "";
     chatEl.querySelector("#replyText").focus();
+  });
+  chatEl.querySelector("#replyText")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.shiftKey) return;
+    event.preventDefault();
+    sendReply(conversa.id);
   });
   chatEl.querySelector("#sendReply")?.addEventListener("click", () => sendReply(conversa.id));
 }
@@ -142,9 +211,11 @@ function scrollMessagesToBottom() {
 function renderMessage(message) {
   const outgoing = message.direction === "out";
   const text = message.text || message.transcricao || describeMessage(message);
+  const messageId = message.id || "";
   return `
     <article class="message ${outgoing ? "out" : "in"}">
       <p>${escapeHtml(text)}</p>
+      ${messageId ? `<button class="message-delete" type="button" data-delete-message="${escapeAttr(messageId)}" title="Excluir mensagem; somente ADMIN">Excluir</button>` : ""}
       <span>${formatTime(message.createdAt)} · ${escapeHtml(message.status || "")}</span>
     </article>
   `;
@@ -183,6 +254,56 @@ async function sendReply(id) {
 async function postAction(id, action) {
   await fetch(`/api/conversas/${encodeURIComponent(id)}/${action}`, { method: "POST" });
   await loadConversas();
+}
+
+async function deleteMessage(conversationId, messageId) {
+  const status = chatEl.querySelector("#replyStatus");
+  if (!messageId) return;
+  const confirmed = window.confirm("Excluir esta mensagem do histórico? Apenas ADMIN pode fazer isso.");
+  if (!confirmed) return;
+  if (status) status.textContent = "Excluindo mensagem...";
+  try {
+    const response = await fetch(`/api/conversas/${encodeURIComponent(conversationId)}/mensagens/${encodeURIComponent(messageId)}`, {
+      method: "DELETE"
+    });
+    const data = await response.json();
+    if (!data.ok) throw new Error(deleteErrorMessage(data.error));
+    if (status) status.textContent = "Mensagem excluída por ADMIN.";
+    await loadConversas();
+  } catch (error) {
+    if (status) status.textContent = error.message || "Nao foi possivel excluir a mensagem.";
+  }
+}
+
+async function deleteConversation(conversationId) {
+  const status = chatEl.querySelector("#replyStatus");
+  const confirmed = window.confirm("Tem certeza que deseja excluir esta conversa sem uso?");
+  if (!confirmed) return;
+  if (status) status.textContent = "Excluindo conversa...";
+  try {
+    const response = await fetch(`/api/conversas/${encodeURIComponent(conversationId)}`, { method: "DELETE" });
+    const data = await response.json();
+    if (!data.ok) throw new Error(conversationDeleteErrorMessage(data.error, data.reason));
+    state.selectedId = "";
+    if (status) status.textContent = "Conversa excluida.";
+    await loadConversas();
+  } catch (error) {
+    if (status) status.textContent = error.message || "Nao foi possivel excluir a conversa.";
+  }
+}
+
+function deleteErrorMessage(error = "") {
+  if (error === "auth_required") return "Entra como ADMIN para excluir mensagens.";
+  if (error === "admin_required") return "Somente ADMIN pode excluir mensagens.";
+  return error || "Nao foi possivel excluir a mensagem.";
+}
+
+function conversationDeleteErrorMessage(error = "", reason = "") {
+  if (error === "auth_required") return "Entra como ADMIN para excluir conversas.";
+  if (error === "admin_required") return "Somente ADMIN pode excluir conversas.";
+  if (error === "conversation_not_deletable") return "Esta conversa ainda esta ativa e nao pode ser excluida.";
+  if (error === "conversation_not_found") return "Conversa nao encontrada.";
+  return reason || error || "Nao foi possivel excluir a conversa.";
 }
 
 function matchesFilter(item) {

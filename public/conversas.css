@@ -122,6 +122,41 @@ body.sambah-shell-mounted .app {
   color: var(--text);
 }
 
+.connection-status {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  background: #172229;
+  color: var(--text);
+}
+
+.connection-status:empty {
+  display: none;
+}
+
+.connection-status strong {
+  font-size: 12px;
+}
+
+.connection-status span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.connection-status.ok {
+  border-left: 4px solid var(--green);
+}
+
+.connection-status.warn {
+  border-left: 4px solid #f5b642;
+}
+
+.connection-status.error {
+  border-left: 4px solid #ff7070;
+}
+
 .filters {
   display: flex;
   gap: 8px;
@@ -280,6 +315,17 @@ body.sambah-shell-mounted .app {
   padding: 0 12px;
 }
 
+.chat-actions .danger-action {
+  border: 1px solid rgba(255, 112, 112, 0.46);
+  background: rgba(92, 24, 24, 0.58);
+  color: #ffb4b4;
+}
+
+.chat-actions .danger-action:hover {
+  background: rgba(160, 38, 38, 0.78);
+  color: #fff0f0;
+}
+
 .message-list {
   display: flex;
   flex-direction: column;
@@ -314,8 +360,27 @@ body.sambah-shell-mounted .app {
   line-height: 1.35;
 }
 
+.message-delete {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  margin-top: 6px;
+  margin-right: 8px;
+  border: 1px solid rgba(255, 112, 112, 0.42);
+  border-radius: 999px;
+  padding: 0 8px;
+  background: rgba(92, 24, 24, 0.42);
+  color: #ffb4b4;
+  font-size: 11px;
+}
+
+.message-delete:hover {
+  background: rgba(160, 38, 38, 0.72);
+  color: #fff0f0;
+}
+
 .message span {
-  display: block;
+  display: inline-block;
   margin-top: 4px;
   font-size: 11px;
   text-align: right;

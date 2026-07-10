@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import { dirname, extname, join, normalize } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { AuditService } from "./auditService.js";
+import { CallCenterService } from "./callCenterService.js";
 import { CrmService } from "./crmService.js";
 import { EventScheduleService } from "./eventScheduleService.js";
 import { InsanoWorkhubController } from "./insanoWorkhubController.js";
@@ -28,6 +29,10 @@ import { WhatsAppMessageService } from "./whatsapp/whatsappMessageService.js";
 import { isMetaWhatsAppPayload, parseWhatsAppWebhookPayload } from "./whatsapp/whatsappWebhookParser.js";
 import { InstagramPublisher } from "./services/instagramPublisher.js";
 import { buildSambahAutoReply } from "./sambahPersonality.js";
+import { AiMetricsService } from "./ai/aiMetricsService.js";
+import { AiAuditService } from "./ai/aiAuditService.js";
+import { AiPerformanceService } from "./ai/aiPerformanceService.js";
+import { AiConversionService } from "./ai/aiConversionService.js";
 
 const require = createRequire(import.meta.url);
 const packageJson = require("../package.json");
@@ -38,10 +43,18 @@ const audit = new AuditService({ filePath: dataFile("audit-logs.json") });
 const mesa = new MesaIntegrationService({ queueFile: dataFile("mesa-queue.json") });
 const menu = new MenuSyncService({ cacheFile: dataFile("menu-cache.json") });
 const conversation = new SambahConversationService({ scriptsFile: dataFile("sambah-scripts.json") });
-const whatsappConversations = new WhatsAppConversationService({ filePath: dataFile("whatsapp-conversas.json") });
+const whatsappConversations = new WhatsAppConversationService({
+  filePath: dataFile("whatsapp-conversas.json"),
+  messagesFile: dataFile("whatsapp-messages.json")
+});
 const drafts = new OrderDraftService({ draftsFile: dataFile("order-drafts.json"), rulesFile: dataFile("sambah-menu-rules.json") });
 const events = new EventScheduleService({ leadsFile: dataFile("event-leads.json"), servicesFile: dataFile("insano-services.json") });
 const tracking = new OrderTrackingService({ filePath: dataFile("order-tracking.json") });
+const callCenter = new CallCenterService({
+  operatorsFile: dataFile("call-center-operators.json"),
+  alertsFile: dataFile("call-center-alerts.json"),
+  alertUrl: `${runtimeConfig.publicBaseUrl || runtimeConfig.baseUrl || "https://api.insanofoodtruck.com.br"}/conversas`
+});
 const insanoWorkhub = new InsanoWorkhubService();
 const insanoWorkhubController = new InsanoWorkhubController({ workhubService: insanoWorkhub });
 const instagramPublisher = new InstagramPublisher(runtimeConfig.perolaInstagram);
@@ -62,6 +75,10 @@ const whatsappMessages = new WhatsAppMessageService({
   sessionsFile: dataFile("whatsapp-sessions.json"),
   messagesFile: dataFile("whatsapp-messages.json")
 });
+const aiMetrics = new AiMetricsService({ filePath: dataFile("controlled-ai-metrics.json") });
+const aiAudit = new AiAuditService({ filePath: dataFile("controlled-ai-audit.json") });
+const aiPerformance = new AiPerformanceService({ filePath: dataFile("controlled-ai-performance.json") });
+const aiConversion = new AiConversionService({ filePath: dataFile("controlled-ai-conversion.json") });
 const crm = new CrmService({
   files: {
     clientes: dataFile("clientes.json"),
@@ -102,6 +119,11 @@ export function createApp({
   sambahPayModule = sambahPay,
   authService = auth,
   whatsappMessageService = whatsappMessages,
+  callCenterService = callCenter,
+  aiMetricsService = aiMetrics,
+  aiAuditService = aiAudit,
+  aiPerformanceService = aiPerformance,
+  aiConversionService = aiConversion,
   whatsappSendFetch = globalThis.fetch,
   authMode = globalThis.process?.env?.SAMBAH_AUTH_MODE || "session"
 } = {}) {
@@ -401,6 +423,24 @@ export function createApp({
         });
       }
 
+      if (req.method === "GET" && url.pathname === "/api/sambah-ai/metrics") {
+        return sendJson(res, 200, await aiMetricsService.summary());
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/sambah-ai/audit") {
+        return sendJson(res, 200, await aiAuditService.list({
+          limit: Math.min(Math.max(Number(url.searchParams.get("limit")) || 50, 1), 200)
+        }));
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/sambah-ai/performance") {
+        return sendJson(res, 200, await aiPerformanceService.summary());
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/sambah-ai/conversion") {
+        return sendJson(res, 200, await aiConversionService.summary());
+      }
+
       if (req.method === "GET" && url.pathname === "/api/config") {
         return sendJson(res, 200, getPublicConfig());
       }
@@ -501,6 +541,16 @@ export function createApp({
       if (req.method === "GET" && url.pathname === "/sambah-observability") {
         if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
         return serveStatic(res, "sambah-observability.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/sambah-ai") {
+        if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
+        return serveStatic(res, "sambah-ai.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/sambah-ai-performance") {
+        if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
+        return serveStatic(res, "sambah-ai-performance.html");
       }
 
       if (req.method === "GET" && url.pathname === "/sambah-security") {
@@ -608,6 +658,42 @@ export function createApp({
         return sendJson(res, 200, whatsappMessageService.status());
       }
 
+      if (req.method === "GET" && url.pathname === "/api/call-center/operators") {
+        return sendJson(res, 200, await callCenterService.listOperators());
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/call-center/operators/login") {
+        const result = await callCenterService.login(await readJson(req, { requireBody: true }));
+        if (!result.ok) return sendJson(res, result.statusCode || 400, result);
+        await safeAuditRecord(auditService, {
+          type: "call_center_operator_login",
+          status: "info",
+          source: "call_center",
+          message: "Atendente entrou na fila do SamBah",
+          context: { operatorId: result.operator.id, operatorPhone: maskPhone(result.operator.phone), operatorStatus: result.operator.status }
+        });
+        return sendJson(res, 200, result);
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/call-center/operators/status") {
+        const body = await readJson(req, { requireBody: true });
+        const result = await callCenterService.setStatus(body.phone || body.telefone || "", body.status || "available");
+        return sendJson(res, result.ok ? 200 : result.statusCode || 400, result);
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/call-center/alerts") {
+        return sendJson(res, 200, await callCenterService.listAlerts({
+          phone: url.searchParams.get("phone") || url.searchParams.get("telefone") || "",
+          unreadOnly: url.searchParams.get("unreadOnly") === "true"
+        }));
+      }
+
+      const callCenterAlertReadMatch = url.pathname.match(/^\/api\/call-center\/alerts\/([^/]+)\/read$/);
+      if (req.method === "POST" && callCenterAlertReadMatch) {
+        const result = await callCenterService.markAlertRead(decodeURIComponent(callCenterAlertReadMatch[1]));
+        return sendJson(res, result.ok ? 200 : result.statusCode || 404, result);
+      }
+
       if (req.method === "GET" && url.pathname === "/admin/whatsapp/sessions") {
         return sendJson(res, 200, await whatsappMessageService.sessions());
       }
@@ -643,6 +729,29 @@ export function createApp({
         return sendJson(res, result.ok ? 200 : 404, result);
       }
 
+      if (req.method === "DELETE" && conversaMatch) {
+        const adminCheck = requireAdminUser(req, activeAuthMode);
+        if (!adminCheck.ok) return sendJson(res, adminCheck.statusCode, { ok: false, error: adminCheck.error });
+        const conversationId = decodeURIComponent(conversaMatch[1]);
+        const result = await whatsappConversationService.deleteConversation(conversationId);
+        if (result.ok) {
+          await safeAuditRecord(auditService, {
+            type: "conversation_deleted",
+            status: "warning",
+            source: "admin",
+            message: "Conversa sem uso excluida por administrador",
+            context: {
+              conversationId: result.conversationId,
+              adminUser: safeAuditUsername(req.sambahUser?.username || "mock"),
+              timestamp: new Date().toISOString(),
+              reason: result.reason || ""
+            },
+            dedupeKey: `conversation-delete:${result.conversationId}`
+          });
+        }
+        return sendJson(res, result.statusCode || (result.ok ? 200 : 400), result);
+      }
+
       const conversaResponderMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/responder$/);
       if (req.method === "POST" && conversaResponderMatch) {
         const body = await readJson(req, { requireBody: true });
@@ -662,6 +771,33 @@ export function createApp({
       const conversaResolvidoMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/resolvido$/);
       if (req.method === "POST" && conversaResolvidoMatch) {
         const result = await whatsappConversationService.markResolved(decodeURIComponent(conversaResolvidoMatch[1]));
+        return sendJson(res, result.ok ? 200 : 404, result);
+      }
+
+      const conversaMensagemMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/mensagens\/([^/]+)$/);
+      if (req.method === "DELETE" && conversaMensagemMatch) {
+        const adminCheck = requireAdminUser(req, activeAuthMode);
+        if (!adminCheck.ok) return sendJson(res, adminCheck.statusCode, { ok: false, error: adminCheck.error });
+        const conversationId = decodeURIComponent(conversaMensagemMatch[1]);
+        const messageId = decodeURIComponent(conversaMensagemMatch[2]);
+        const result = await whatsappConversationService.deleteMessage(conversationId, messageId);
+        if (result.ok) {
+          await safeAuditRecord(auditService, {
+            type: "whatsapp_conversation_message_deleted",
+            status: "warning",
+            source: "admin",
+            message: "Mensagem da Central de Conversas excluida por administrador",
+            context: {
+              conversationId,
+              messageId,
+              username: req.sambahUser?.username || "mock",
+              role: req.sambahUser?.role || "ADMIN",
+              direction: result.removed?.direction || "",
+              messageType: result.removed?.type || ""
+            },
+            dedupeKey: `wa-message-delete:${conversationId}:${messageId}`
+          });
+        }
         return sendJson(res, result.ok ? 200 : 404, result);
       }
 
@@ -1173,7 +1309,7 @@ export function createApp({
       }
 
       if (req.method === "POST" && ["/webhook/whatsapp", "/webhook/site"].includes(url.pathname)) {
-        return handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappMessageService, whatsappSendFetch);
+        return handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappMessageService, callCenterService, whatsappSendFetch);
       }
 
       if (req.method === "POST" && url.pathname === "/webhooks/meta") {
@@ -1261,7 +1397,7 @@ function summarizeMetaWebhookPayload(payload = {}) {
   };
 }
 
-async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappMessageService, whatsappSendFetch = globalThis.fetch) {
+async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappMessageService, callCenterService = null, whatsappSendFetch = globalThis.fetch) {
   let body = {};
   try {
     body = await readJson(req, { requireBody: true });
@@ -1302,6 +1438,19 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
 
     if (req.url?.includes("/webhook/whatsapp")) {
       if (isMetaWhatsAppEnvelope(body) && metaSummary.messagesLength === 0) {
+        const statusResult = await recordWhatsAppMetaStatuses(body, {
+          whatsappMessageService,
+          whatsappConversationService,
+          auditService
+        });
+        if (statusResult.statuses > 0) {
+          return sendJson(res, 200, {
+            ok: true,
+            statuses: statusResult.statuses,
+            updated: statusResult.updated,
+            reason: "meta_status_callback"
+          });
+        }
         await safeAuditRecord(auditService, {
           type: "whatsapp_webhook_ignored",
           status: "info",
@@ -1319,6 +1468,14 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
         runtimeConfig: getRuntimeConfig(),
         crmService
       });
+      await recordIntentDetected(auditService, conversationResult);
+      await recordOperationRoute(auditService, conversationResult);
+      const callCenterResult = await routeCallCenterIfNeeded({
+        conversationResult,
+        callCenterService,
+        whatsappConversationService,
+        auditService
+      });
       const directAutoReply = await sendWhatsAppCloudAutoReply(body, {
         runtimeConfig: getRuntimeConfig(),
         fetchImpl: whatsappSendFetch,
@@ -1335,6 +1492,9 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
           ok: true,
           conversa: conversationResult.conversa,
           intent: conversationResult.intent,
+          intentEngine: conversationResult.intentEngine,
+          operationRoute: conversationResult.operationRoute,
+          callCenter: callCenterResult,
           respostaSugerida: conversationResult.respostaSugerida,
           enviado: directAutoReply.sent,
           automaticoAtivo: conversationResult.sendEnabled,
@@ -1354,6 +1514,9 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
           ok: true,
           conversa: conversationResult.conversa,
           intent: conversationResult.intent,
+          intentEngine: conversationResult.intentEngine,
+          operationRoute: conversationResult.operationRoute,
+          callCenter: callCenterResult,
           respostaSugerida: conversationResult.respostaSugerida,
           enviado: autoResult.sent,
           automaticoAtivo: conversationResult.sendEnabled,
@@ -1585,12 +1748,17 @@ function summarizeWhatsAppPostPayload(payload = {}) {
   const firstChange = entries.flatMap((entry) => Array.isArray(entry?.changes) ? entry.changes : [])[0] || {};
   const value = firstChange.value || {};
   const firstMessage = Array.isArray(value.messages) ? value.messages[0] || {} : {};
+  const firstStatus = Array.isArray(value.statuses) ? value.statuses[0] || {} : {};
   return {
     bodyEntryLength: entries.length,
     changesLength: entries.reduce((total, entry) => total + (Array.isArray(entry?.changes) ? entry.changes.length : 0), 0),
     field: firstChange.field || "",
     phoneNumberIdReceived: value.metadata?.phone_number_id || "",
     messagesLength: Array.isArray(value.messages) ? value.messages.length : 0,
+    statusesLength: Array.isArray(value.statuses) ? value.statuses.length : 0,
+    statusId: firstStatus.id || "",
+    status: firstStatus.status || "",
+    statusRecipientId: firstStatus.recipient_id || "",
     textBody: firstMessage.text?.body || "",
     from: firstMessage.from || value.contacts?.[0]?.wa_id || payload.from || "",
     messageId: firstMessage.id || payload.eventId || payload.messageId || ""
@@ -1599,6 +1767,121 @@ function summarizeWhatsAppPostPayload(payload = {}) {
 
 function isMetaWhatsAppEnvelope(payload = {}) {
   return Array.isArray(payload.entry);
+}
+
+function extractMetaWhatsAppStatuses(payload = {}) {
+  const entries = Array.isArray(payload.entry) ? payload.entry : [];
+  return entries.flatMap((entry) => {
+    const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+    return changes.flatMap((change) => {
+      const statuses = Array.isArray(change?.value?.statuses) ? change.value.statuses : [];
+      return statuses.map((status) => ({
+        ...status,
+        phone_number_id: change?.value?.metadata?.phone_number_id || ""
+      }));
+    });
+  });
+}
+
+async function recordWhatsAppMetaStatuses(payload = {}, { whatsappMessageService, whatsappConversationService, auditService } = {}) {
+  const statuses = extractMetaWhatsAppStatuses(payload);
+  if (!statuses.length) return { ok: true, statuses: 0, updated: 0 };
+  let updated = 0;
+  const results = [];
+  for (const status of statuses) {
+    const messageResult = await whatsappMessageService?.recordMetaStatus?.(status);
+    const conversationResult = await whatsappConversationService?.recordMetaStatus?.(status);
+    const wasUpdated = Boolean(messageResult?.updated || conversationResult?.updated);
+    if (wasUpdated) updated += 1;
+    results.push({
+      id: status.id || "",
+      status: status.status || "",
+      recipientId: status.recipient_id || "",
+      updated: wasUpdated
+    });
+  }
+  await safeAuditRecord(auditService, {
+    type: "whatsapp_meta_status_callback",
+    status: updated > 0 ? "info" : "warning",
+    source: "meta_whatsapp",
+    message: "Callback de status WhatsApp registrado",
+    context: { statuses: results.length, updated, results }
+  });
+  return { ok: true, statuses: statuses.length, updated, results };
+}
+
+async function recordIntentDetected(auditService, conversationResult = {}) {
+  const detected = conversationResult.intentEngine || {};
+  if (!detected.intent) return;
+  await safeAuditRecord(auditService, {
+    type: "intent_detected",
+    status: detected.intent === "unknown" ? "info" : "success",
+    source: "intent_engine",
+    message: "Intent Engine classificou mensagem WhatsApp",
+    context: {
+      intent: detected.intent,
+      confidence: Number(detected.confidence || 0),
+      destination: detected.destination || "unknown",
+      messageType: conversationResult.message?.type || ""
+    },
+    dedupeKey: conversationResult.message?.id ? `intent:${conversationResult.message.id}` : undefined
+  });
+}
+
+async function recordOperationRoute(auditService, conversationResult = {}) {
+  const route = conversationResult.operationRoute || {};
+  if (!route.module) return;
+  await safeAuditRecord(auditService, {
+    type: "operation_router",
+    status: "info",
+    source: "operation_router",
+    message: "Router Operacional definiu destino da conversa",
+    context: {
+      intent: conversationResult.intentEngine?.intent || "unknown",
+      module: route.module,
+      queue: route.queue,
+      priority: route.priority,
+      requiresHuman: Boolean(route.requiresHuman),
+      nextAction: route.nextAction,
+      messageType: conversationResult.message?.type || ""
+    },
+    dedupeKey: conversationResult.message?.id ? `operation-route:${conversationResult.message.id}` : undefined
+  });
+}
+
+async function routeCallCenterIfNeeded({ conversationResult = {}, callCenterService = null, whatsappConversationService = null, auditService = null } = {}) {
+  const route = conversationResult.operationRoute || {};
+  if (!route.requiresHuman || !callCenterService) return null;
+  const routed = await callCenterService.routeIncoming(conversationResult.conversa || {});
+  if (!routed.ok) return routed;
+  const patched = await whatsappConversationService?.patchConversation?.(
+    conversationResult.conversa?.id || conversationResult.conversa?.telefone || "",
+    routed.conversationPatch || {}
+  );
+  if (patched?.ok) conversationResult.conversa = patched.conversa;
+  await safeAuditRecord(auditService, {
+    type: "call_center_routed",
+    status: routed.operator?.fallback ? "warning" : "success",
+    source: "call_center",
+    message: routed.operator?.fallback ? "Conversa enviada ao responsavel principal" : "Conversa atribuida a atendente disponivel",
+    context: {
+      conversationId: conversationResult.conversa?.id || "",
+      intent: conversationResult.intentEngine?.intent || "unknown",
+      module: route.module || "",
+      operatorId: routed.operator?.id || "",
+      operatorPhone: maskPhone(routed.operator?.phone || ""),
+      fallback: Boolean(routed.operator?.fallback),
+      alertId: routed.alert?.alert?.id || ""
+    },
+    dedupeKey: conversationResult.message?.id ? `call-center:${conversationResult.message.id}` : undefined
+  });
+  return {
+    ok: true,
+    operator: routed.operator,
+    alert: routed.alert?.alert || null,
+    suppressed: Boolean(routed.alert?.suppressed),
+    patched: Boolean(patched?.ok)
+  };
 }
 
 async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRuntimeConfig(), fetchImpl = globalThis.fetch, auditService = null, conversation = null } = {}) {
@@ -2830,6 +3113,12 @@ function safeAuditUsername(username = "") {
   return String(username || "").trim().toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, 80);
 }
 
+function maskPhone(phone = "") {
+  const digits = String(phone || "").replace(/\D/g, "");
+  if (!digits) return "";
+  return `${"*".repeat(Math.max(0, digits.length - 4))}${digits.slice(-4)}`;
+}
+
 function requireAdminUser(req, activeAuthMode) {
   if (activeAuthMode === "mock") return { ok: true };
   if (!req.sambahUser) return { ok: false, statusCode: 401, error: "auth_required" };
@@ -2849,7 +3138,7 @@ function sendJson(res, statusCode, payload) {
 
 function corsHeaders(origin = "") {
   const headers = {
-    "access-control-allow-methods": "GET,POST,PATCH,OPTIONS",
+    "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS",
     "access-control-allow-headers": "content-type"
   };
   headers["access-control-allow-origin"] = origin && isAllowedCorsOrigin(origin) ? origin : "*";

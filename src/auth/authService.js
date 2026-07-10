@@ -24,7 +24,8 @@ export class SambahAuthService {
 
   async login({ username = "", password = "" } = {}) {
     await this.ensureLoaded();
-    const user = this.users.find((item) => item.username === String(username).trim().toLowerCase());
+    const candidates = loginUsernameCandidates(username);
+    const user = this.users.find((item) => candidates.has(item.username));
     if (!user || user.active === false || !this.verifyPassword(user, password)) {
       return { ok: false, statusCode: 401, error: "invalid_credentials", message: "Usuario ou senha invalidos" };
     }
@@ -56,7 +57,7 @@ export class SambahAuthService {
     const normalizedUsername = normalizeUsername(username);
     if (!normalizedUsername) return authValidation("invalid_username", "Informe um usuario valido");
     if (this.users.some((user) => user.username === normalizedUsername)) return authValidation("user_already_exists", "Usuario ja cadastrado");
-    if (!validPassword(password)) return authValidation("invalid_password", "Senha deve ter pelo menos 8 caracteres");
+    if (!validPassword(password)) return authValidation("invalid_password", "Senha deve ter pelo menos 4 caracteres");
     const user = {
       username: normalizedUsername,
       displayName: cleanDisplayName(displayName) || normalizedUsername,
@@ -98,7 +99,7 @@ export class SambahAuthService {
     await this.ensureLoaded();
     const user = this.findUser(username);
     if (!user) return { ok: false, statusCode: 404, error: "user_not_found", message: "Usuario nao encontrado" };
-    if (!validPassword(password)) return authValidation("invalid_password", "Senha deve ter pelo menos 8 caracteres");
+    if (!validPassword(password)) return authValidation("invalid_password", "Senha deve ter pelo menos 4 caracteres");
     Object.assign(user, this.hashPassword(password), { updatedAt: this.now().toISOString() });
     this.dropUserSessions(user.username);
     await this.persist();
@@ -206,6 +207,13 @@ function normalizeUsername(username = "") {
   return String(username || "").trim().toLowerCase().replace(/[^a-z0-9._-]/g, "");
 }
 
+function loginUsernameCandidates(username = "") {
+  const raw = String(username || "").trim().toLowerCase();
+  const normalized = normalizeUsername(raw);
+  const separatorAsDot = normalizeUsername(raw.replace(/[,\s_-]+/g, "."));
+  return new Set([raw, normalized, separatorAsDot].filter(Boolean));
+}
+
 function normalizeRole(role = "ATENDENTE") {
   const value = String(role || "").trim().toUpperCase();
   return AUTH_ROLES.includes(value) ? value : "ATENDENTE";
@@ -216,7 +224,7 @@ function cleanDisplayName(value = "") {
 }
 
 function validPassword(password = "") {
-  return String(password || "").length >= 8;
+  return String(password || "").length >= 4;
 }
 
 function authValidation(error, message) {
