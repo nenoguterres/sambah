@@ -1,24 +1,37 @@
 import crypto from "node:crypto";
 import { assertWhatsAppV2ResponseContract } from "./responseContract.js";
 import { InMemoryWhatsAppV2ConversationRepository, InMemoryWhatsAppV2OutboxRepository } from "./inMemoryRepositories.js";
-import { FakeWhatsAppV2MetaSender } from "./fakeMetaSender.js";
 import { routePortalInsanoMessage } from "./portalInsanoEngine.js";
 
 export function createWhatsAppV2LabEngine(options = {}) {
   const operationLog = [];
   const conversationRepository = options.conversationRepository || new InMemoryWhatsAppV2ConversationRepository({ operationLog });
   const outboxRepository = options.outboxRepository || new InMemoryWhatsAppV2OutboxRepository({ operationLog });
-  const sender = options.sender || new FakeWhatsAppV2MetaSender();
+  const sender = options.sender;
+  if (!sender) throw new Error("WHATSAPP_V2_LAB_SENDER_REQUIRED");
   const processor = new WhatsAppV2LabProcessor({ conversationRepository, outboxRepository, sender, observeOnly: options.observeOnly === true });
   return { processor, conversationRepository, outboxRepository, sender, operationLog };
 }
 
+export function createWhatsAppV2OperationalEngine(options = {}) {
+  const operationLog = [];
+  const conversationRepository = options.conversationRepository || new InMemoryWhatsAppV2ConversationRepository({ operationLog });
+  const processor = new WhatsAppV2LabProcessor({
+    conversationRepository,
+    outboxRepository: null,
+    sender: null,
+    externalDelivery: true
+  });
+  return { processor, conversationRepository, operationLog };
+}
+
 export class WhatsAppV2LabProcessor {
-  constructor({ conversationRepository, outboxRepository, sender, observeOnly = false }) {
+  constructor({ conversationRepository, outboxRepository, sender, observeOnly = false, externalDelivery = false }) {
     this.conversationRepository = conversationRepository;
     this.outboxRepository = outboxRepository;
     this.sender = sender;
     this.observeOnly = observeOnly;
+    this.externalDelivery = externalDelivery;
   }
 
   async handleIncoming(payload = {}) {
@@ -41,7 +54,7 @@ export class WhatsAppV2LabProcessor {
 
       let outboxItem = null;
       let repliesSent = 0;
-      if (result.replies.length === 1 && !this.observeOnly) {
+      if (result.replies.length === 1 && !this.observeOnly && !this.externalDelivery) {
         outboxItem = await this.outboxRepository.add({
           conversationId: message.conversationId,
           messageId: message.messageId,
@@ -60,10 +73,12 @@ export class WhatsAppV2LabProcessor {
         traceId,
         source: result.source,
         repliesObserved: result.replies.length,
+        replies: result.replies,
+        actions: result.actions,
         repliesSent,
         state: nextState,
         outboxId: outboxItem?.id || null,
-        mode: this.observeOnly ? "observe_only" : "lab_send_fake"
+        mode: this.externalDelivery ? "operational" : this.observeOnly ? "observe_only" : "lab_send_fake"
       };
     } catch (error) {
       await this.conversationRepository.markMessageFailed(message.messageId, error);

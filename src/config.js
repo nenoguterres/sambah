@@ -50,7 +50,7 @@ export function getRuntimeConfig(env = globalThis.process?.env || {}) {
       sendEnabled: env.WHATSAPP_SEND_ENABLED === "true",
       aiEnabled: env.WHATSAPP_AI_ENABLED === "true",
       autoReplyEnabled: env.WHATSAPP_AUTO_REPLY_ENABLED === "true",
-      mode: "observe_only"
+      mode: "operational"
     },
     perolaInstagram: {
       enabled: firstEnv(env, localEnv, ["PEROLA_INSTAGRAM_ENABLED"]) === "true",

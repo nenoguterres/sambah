@@ -1,4 +1,4 @@
-import { response } from "./responseContract.js";
+import { response, responseWithReplies } from "./responseContract.js";
 import { portalInsanoContract } from "./portalInsanoContract.js";
 
 export function routePortalInsanoMessage({ state, message, contract = portalInsanoContract }) {
@@ -18,6 +18,26 @@ export function routePortalInsanoMessage({ state, message, contract = portalInsa
 export function renderMenu(menu) {
   if (!menu) return "Nao consegui localizar o menu atual. Digita inicio para voltar ao Portal Insano.";
   return `${menu.title}\n${menu.body}\n${menu.fallbackText || menu.options.map((item) => `${item.order}. ${item.title}`).join("\n")}`;
+}
+
+export function renderMenuReply(menu) {
+  if (!menu) return { type: "text", text: renderMenu(menu) };
+  return {
+    type: "menu",
+    text: renderMenu(menu),
+    menu: {
+      id: menu.id,
+      title: menu.title,
+      body: menu.body,
+      options: menu.options.map((item) => ({
+        id: item.id,
+        order: item.order,
+        title: item.title,
+        description: item.description || "",
+        fallbackText: `${item.order}. ${item.title}`
+      }))
+    }
+  };
 }
 
 export function resolveMenuOption(menu, text) {
@@ -48,7 +68,11 @@ function executeAction(state, contract, action, source) {
 
 function openMenu(state, contract, menuId, source, stack = state.menuStack || []) {
   const menu = contract.menus[menuId];
-  return response(source, { ...state, activeMenu: menuId, activeFlow: null, activeStep: null, menuStack: stack, awaitingInput: false }, renderMenu(menu));
+  return responseWithReplies(
+    source,
+    { ...state, activeMenu: menuId, activeFlow: null, activeStep: null, menuStack: stack, awaitingInput: false },
+    [renderMenuReply(menu)]
+  );
 }
 
 function startFlow(state, contract, flowId, source) {

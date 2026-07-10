@@ -134,9 +134,14 @@ export class WhatsAppConversationService {
     const now = this.now().toISOString();
     const text = String(body.text || body.message || "").trim();
     if (!text) return { ok: false, error: "Resposta vazia" };
+    const correlationId = String(body.correlationId || "").trim();
+    if (correlationId) {
+      const existing = (data.conversas[index].mensagens || []).find((message) => message.direction === "out" && message.correlationId === correlationId);
+      if (existing) return { ok: true, duplicate: true, enviado: existing.status === "sent", reason: existing.status, conversa: this.#withPriority(data.conversas[index]), message: existing };
+    }
     const sendResult = body.sendResult || null;
     const sendStatus = body.status || sendResult?.status || "registrada";
-    const providerMessageId = sendResult?.response?.messages?.[0]?.id || "";
+    const providerMessageId = sendResult?.providerMessageId || sendResult?.response?.messages?.[0]?.id || "";
     const message = {
       id: `msg_${crypto.randomUUID()}`,
       direction: "out",
@@ -144,9 +149,12 @@ export class WhatsAppConversationService {
       text,
       createdAt: now,
       status: sendStatus,
+      correlationId,
       providerMessageId,
       httpStatus: sendResult?.httpStatus || null,
-      response: sendResult?.response || null
+      response: sendResult?.response || null,
+      metaMessageType: sendResult?.metaMessageType || body.metaMessageType || "",
+      fallbackUsed: Boolean(sendResult?.fallbackUsed)
     };
     const updated = {
       ...data.conversas[index],

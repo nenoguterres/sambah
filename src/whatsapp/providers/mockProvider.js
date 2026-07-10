@@ -15,6 +15,10 @@ export class MockWhatsAppProvider {
   }
 
   async sendText({ to, text, metadata = {} } = {}) {
+    return this.sendMessage({ to, message: { type: "text", text }, metadata });
+  }
+
+  async sendMessage({ to, message = {}, metadata = {} } = {}) {
     const safeTo = maskPhone(to);
     this.logger.info?.("[whatsapp:mock] mensagem registrada", {
       to: safeTo,
@@ -26,7 +30,8 @@ export class MockWhatsAppProvider {
       provider: this.name,
       sent: false,
       status: "mock_logged",
-      to: safeTo
+      to: safeTo,
+      metaMessageType: message.type || "text"
     };
   }
 }

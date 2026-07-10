@@ -5,12 +5,12 @@ import { createRequire } from "node:module";
 import { dirname, extname, join, normalize } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { AuditService } from "./auditService.js";
+import { CallCenterService } from "./callCenterService.js";
 import { CrmService } from "./crmService.js";
 import { EventScheduleService } from "./eventScheduleService.js";
 import { InsanoWorkhubController } from "./insanoWorkhubController.js";
 import { InsanoWorkhubService } from "./insanoWorkhubService.js";
 import { buildMesaOrder, MesaIntegrationService } from "./mesaIntegrationService.js";
-import { MesaConnectorService } from "./mesaConnectorService.js";
 import { MenuSyncService } from "./menuSyncService.js";
 import { OrderDraftService } from "./orderDraftService.js";
 import { OrderTrackingService } from "./orderTrackingService.js";
@@ -20,8 +20,6 @@ import { PayPerolaBridgeService } from "./payPerolaBridgeService.js";
 import { SambahPerolaBridgeService } from "./sambahPerolaBridgeService.js";
 import { SambahConversationService } from "./sambahConversationService.js";
 import { WhatsAppConversationService } from "./whatsappConversationService.js";
-import { WhatsAppCatalogService } from "./whatsappCatalogService.js";
-import { WhatsAppOrderService } from "./whatsappOrderService.js";
 import { getPublicConfig, getRuntimeConfig, isAllowedCorsOrigin } from "./config.js";
 import { createSambahPayModule } from "./sambahPay/index.js";
 import { PayPerolaBridgeController } from "./sambahPay/controllers/payPerolaBridgeController.js";
@@ -30,33 +28,32 @@ import { createWhatsAppProvider } from "./whatsapp/whatsappProvider.js";
 import { WhatsAppMessageService } from "./whatsapp/whatsappMessageService.js";
 import { whatsappMaintenanceHandler } from "./whatsapp/whatsappMaintenanceHandler.js";
 import { InstagramPublisher } from "./services/instagramPublisher.js";
-<<<<<<< HEAD
-import { buildMesaComandaUrl, buildSambahAutoReply } from "./sambahPersonality.js";
-=======
 import { AiMetricsService } from "./ai/aiMetricsService.js";
 import { AiAuditService } from "./ai/aiAuditService.js";
 import { AiPerformanceService } from "./ai/aiPerformanceService.js";
 import { AiConversionService } from "./ai/aiConversionService.js";
->>>>>>> f5fe16d (refactor: remove compromised whatsapp v1 engine)
 
 const require = createRequire(import.meta.url);
 const packageJson = require("../package.json");
-const WEBHOOK_MESSAGE_TTL_MS = 10 * 60 * 1000;
-const processedWebhookMessages = new Map();
 const publicDir = fileURLToPath(new URL("../public/", import.meta.url));
 const runtimeConfig = getRuntimeConfig();
 const dataFile = (name) => join(runtimeConfig.dataDir, name);
 const audit = new AuditService({ filePath: dataFile("audit-logs.json") });
 const mesa = new MesaIntegrationService({ queueFile: dataFile("mesa-queue.json") });
-const mesaConnector = new MesaConnectorService({ integrationService: mesa });
 const menu = new MenuSyncService({ cacheFile: dataFile("menu-cache.json") });
 const conversation = new SambahConversationService({ scriptsFile: dataFile("sambah-scripts.json") });
-const whatsappCatalog = new WhatsAppCatalogService({ filePath: dataFile("whatsapp-catalog.json"), menuService: menu });
-const whatsappOrders = new WhatsAppOrderService({ filePath: dataFile("whatsapp-orders.json") });
-const whatsappConversations = new WhatsAppConversationService({ filePath: dataFile("whatsapp-conversas.json"), orderService: whatsappOrders });
+const whatsappConversations = new WhatsAppConversationService({
+  filePath: dataFile("whatsapp-conversas.json"),
+  messagesFile: dataFile("whatsapp-messages.json")
+});
 const drafts = new OrderDraftService({ draftsFile: dataFile("order-drafts.json"), rulesFile: dataFile("sambah-menu-rules.json") });
 const events = new EventScheduleService({ leadsFile: dataFile("event-leads.json"), servicesFile: dataFile("insano-services.json") });
 const tracking = new OrderTrackingService({ filePath: dataFile("order-tracking.json") });
+const callCenter = new CallCenterService({
+  operatorsFile: dataFile("call-center-operators.json"),
+  alertsFile: dataFile("call-center-alerts.json"),
+  alertUrl: `${runtimeConfig.publicBaseUrl || runtimeConfig.baseUrl || "https://api.insanofoodtruck.com.br"}/conversas`
+});
 const insanoWorkhub = new InsanoWorkhubService();
 const insanoWorkhubController = new InsanoWorkhubController({ workhubService: insanoWorkhub });
 const instagramPublisher = new InstagramPublisher(runtimeConfig.perolaInstagram);
@@ -77,6 +74,10 @@ const whatsappMessages = new WhatsAppMessageService({
   sessionsFile: dataFile("whatsapp-sessions.json"),
   messagesFile: dataFile("whatsapp-messages.json")
 });
+const aiMetrics = new AiMetricsService({ filePath: dataFile("controlled-ai-metrics.json") });
+const aiAudit = new AiAuditService({ filePath: dataFile("controlled-ai-audit.json") });
+const aiPerformance = new AiPerformanceService({ filePath: dataFile("controlled-ai-performance.json") });
+const aiConversion = new AiConversionService({ filePath: dataFile("controlled-ai-conversion.json") });
 const crm = new CrmService({
   files: {
     clientes: dataFile("clientes.json"),
@@ -104,12 +105,9 @@ const MIME_TYPES = {
 export function createApp({
   auditService = audit,
   mesaService = mesa,
-  mesaConnectorService = mesaConnector,
   menuService = menu,
   conversationService = conversation,
-  whatsappCatalogService = whatsappCatalog,
   whatsappConversationService = whatsappConversations,
-  whatsappOrderService = whatsappOrders,
   draftService = drafts,
   eventService = events,
   trackingService = tracking,
@@ -120,6 +118,13 @@ export function createApp({
   sambahPayModule = sambahPay,
   authService = auth,
   whatsappMessageService = whatsappMessages,
+  callCenterService = callCenter,
+  aiMetricsService = aiMetrics,
+  aiAuditService = aiAudit,
+  aiPerformanceService = aiPerformance,
+  aiConversionService = aiConversion,
+  whatsappProvider: appWhatsappProvider = whatsappProvider,
+  runtimeConfig: appRuntimeConfig = null,
   whatsappSendFetch = globalThis.fetch,
   authMode = globalThis.process?.env?.SAMBAH_AUTH_MODE || "session"
 } = {}) {
@@ -394,8 +399,8 @@ export function createApp({
           ok: true,
           service: "sambah",
           provider: runtimeConfig.whatsappBusiness.provider,
-          version: process.env.APP_VERSION || packageJson.version || "unknown",
-          commit: process.env.RENDER_GIT_COMMIT || process.env.COMMIT_SHA || process.env.GIT_COMMIT || "unknown"
+          commit: buildCommitVersion(),
+          version: buildAppVersion()
         });
       }
 
@@ -417,6 +422,24 @@ export function createApp({
           limit,
           items
         });
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/sambah-ai/metrics") {
+        return sendJson(res, 200, await aiMetricsService.summary());
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/sambah-ai/audit") {
+        return sendJson(res, 200, await aiAuditService.list({
+          limit: Math.min(Math.max(Number(url.searchParams.get("limit")) || 50, 1), 200)
+        }));
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/sambah-ai/performance") {
+        return sendJson(res, 200, await aiPerformanceService.summary());
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/sambah-ai/conversion") {
+        return sendJson(res, 200, await aiConversionService.summary());
       }
 
       if (req.method === "GET" && url.pathname === "/api/config") {
@@ -519,6 +542,16 @@ export function createApp({
       if (req.method === "GET" && url.pathname === "/sambah-observability") {
         if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
         return serveStatic(res, "sambah-observability.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/sambah-ai") {
+        if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
+        return serveStatic(res, "sambah-ai.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/sambah-ai-performance") {
+        if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
+        return serveStatic(res, "sambah-ai-performance.html");
       }
 
       if (req.method === "GET" && url.pathname === "/sambah-security") {
@@ -626,6 +659,42 @@ export function createApp({
         return sendJson(res, 200, whatsappMessageService.status());
       }
 
+      if (req.method === "GET" && url.pathname === "/api/call-center/operators") {
+        return sendJson(res, 200, await callCenterService.listOperators());
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/call-center/operators/login") {
+        const result = await callCenterService.login(await readJson(req, { requireBody: true }));
+        if (!result.ok) return sendJson(res, result.statusCode || 400, result);
+        await safeAuditRecord(auditService, {
+          type: "call_center_operator_login",
+          status: "info",
+          source: "call_center",
+          message: "Atendente entrou na fila do SamBah",
+          context: { operatorId: result.operator.id, operatorPhone: maskPhone(result.operator.phone), operatorStatus: result.operator.status }
+        });
+        return sendJson(res, 200, result);
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/call-center/operators/status") {
+        const body = await readJson(req, { requireBody: true });
+        const result = await callCenterService.setStatus(body.phone || body.telefone || "", body.status || "available");
+        return sendJson(res, result.ok ? 200 : result.statusCode || 400, result);
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/call-center/alerts") {
+        return sendJson(res, 200, await callCenterService.listAlerts({
+          phone: url.searchParams.get("phone") || url.searchParams.get("telefone") || "",
+          unreadOnly: url.searchParams.get("unreadOnly") === "true"
+        }));
+      }
+
+      const callCenterAlertReadMatch = url.pathname.match(/^\/api\/call-center\/alerts\/([^/]+)\/read$/);
+      if (req.method === "POST" && callCenterAlertReadMatch) {
+        const result = await callCenterService.markAlertRead(decodeURIComponent(callCenterAlertReadMatch[1]));
+        return sendJson(res, result.ok ? 200 : result.statusCode || 404, result);
+      }
+
       if (req.method === "GET" && url.pathname === "/admin/whatsapp/sessions") {
         return sendJson(res, 200, await whatsappMessageService.sessions());
       }
@@ -655,52 +724,41 @@ export function createApp({
         return sendJson(res, 200, await whatsappConversationService.list());
       }
 
-      if (req.method === "GET" && url.pathname === "/api/sambah/cardapio") {
-        return sendJson(res, 200, await whatsappCatalogService.list());
-      }
-
-      if (req.method === "POST" && url.pathname === "/api/sambah/cardapio/mesa") {
-        const body = await readJson(req, { requireBody: true });
-        const result = await whatsappCatalogService.upsertFromMesaStock(body);
-        await safeAuditRecord(auditService, {
-          type: "sambah_catalog_updated",
-          status: result.ok ? "success" : "warning",
-          source: "mesa_stock",
-          message: "Cardapio SamBah atualizado pelo Mesa",
-          context: { count: result.products?.length || 0, error: result.error || "" }
-        });
-        return sendJson(res, result.ok ? 200 : 400, result);
-      }
-
-      if (req.method === "POST" && url.pathname === "/api/sambah/cardapio/sync-mesa") {
-        const result = await whatsappCatalogService.syncFromMesaMenu();
-        await safeAuditRecord(auditService, {
-          type: "sambah_catalog_synced_from_mesa",
-          status: result.ok ? "success" : "warning",
-          source: "mesa_menu",
-          message: result.ok ? "Cardapio WhatsApp sincronizado pelo Mesa" : "Falha ao sincronizar cardapio WhatsApp pelo Mesa",
-          context: { count: result.products?.length || 0, error: result.error || "" }
-        });
-        return sendJson(res, result.ok ? 200 : 502, result);
-      }
-
       const conversaMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)$/);
       if (req.method === "GET" && conversaMatch) {
         const result = await whatsappConversationService.get(decodeURIComponent(conversaMatch[1]));
         return sendJson(res, result.ok ? 200 : 404, result);
       }
 
+      if (req.method === "DELETE" && conversaMatch) {
+        const adminCheck = requireAdminUser(req, activeAuthMode);
+        if (!adminCheck.ok) return sendJson(res, adminCheck.statusCode, { ok: false, error: adminCheck.error });
+        const conversationId = decodeURIComponent(conversaMatch[1]);
+        const result = await whatsappConversationService.deleteConversation(conversationId);
+        if (result.ok) {
+          await safeAuditRecord(auditService, {
+            type: "conversation_deleted",
+            status: "warning",
+            source: "admin",
+            message: "Conversa sem uso excluida por administrador",
+            context: {
+              conversationId: result.conversationId,
+              adminUser: safeAuditUsername(req.sambahUser?.username || "mock"),
+              timestamp: new Date().toISOString(),
+              reason: result.reason || ""
+            },
+            dedupeKey: `conversation-delete:${result.conversationId}`
+          });
+        }
+        return sendJson(res, result.statusCode || (result.ok ? 200 : 400), result);
+      }
+
       const conversaResponderMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/responder$/);
       if (req.method === "POST" && conversaResponderMatch) {
         const body = await readJson(req, { requireBody: true });
-        const activeRuntimeConfig = getRuntimeConfig();
-        const activeWhatsappProvider = createWhatsAppProvider({
-          config: activeRuntimeConfig.whatsappBusiness,
-          fetchImpl: whatsappSendFetch
-        });
         const result = await whatsappConversationService.addOutgoing(decodeURIComponent(conversaResponderMatch[1]), body, {
-          runtimeConfig: activeRuntimeConfig,
-          whatsappProvider: activeWhatsappProvider
+          runtimeConfig: appRuntimeConfig || getRuntimeConfig(),
+          whatsappProvider: appWhatsappProvider
         });
         return sendJson(res, result.ok ? 200 : 404, result);
       }
@@ -717,93 +775,28 @@ export function createApp({
         return sendJson(res, result.ok ? 200 : 404, result);
       }
 
-      const conversaOrderItemMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/pedido\/item$/);
-      if (req.method === "POST" && conversaOrderItemMatch) {
-        const id = decodeURIComponent(conversaOrderItemMatch[1]);
-        const conversationResult = await whatsappConversationService.get(id);
-        if (!conversationResult.ok) return sendJson(res, 404, conversationResult);
-        const draft = await whatsappOrderService.createDraftOrderFromConversation(conversationResult.conversa);
-        const body = await readJson(req, { requireBody: true });
-        const result = draft.ok ? await whatsappOrderService.addItemToOrder(id, body) : draft;
-        if (result.ok) await whatsappConversationService.attachWhatsappOrder(id, result.order);
-        await safeAuditRecord(auditService, {
-          type: "item_added",
-          status: result.ok ? "info" : "warning",
-          source: "whatsapp_sambah",
-          message: "Item adicionado a comanda WhatsApp",
-          context: { conversationId: id, error: result.error || "" }
-        });
-        return sendJson(res, result.ok ? 200 : 400, result);
-      }
-
-      const conversaOrderSendMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/pedido\/enviar-mesa$/);
-      if (req.method === "POST" && conversaOrderSendMatch) {
-        const id = decodeURIComponent(conversaOrderSendMatch[1]);
-        const result = await whatsappOrderService.sendOrderToMesa(id, {
-          mesaConnector: mesaConnectorService,
-          mesaService
-        });
-        let conversationResult = null;
-        if (result.ok) conversationResult = await whatsappConversationService.attachWhatsappOrder(id, result.order);
-        await safeAuditRecord(auditService, {
-          type: "sent_to_mesa",
-          status: result.sent ? "success" : "warning",
-          source: "whatsapp_sambah",
-          message: result.sent ? "Comanda WhatsApp enviada ao Mesa" : "Comanda WhatsApp mantida pendente para Mesa",
-          context: { conversationId: id, mesaOrderId: result.order?.mesaOrderId || "", error: result.error || result.mesa?.error || "" }
-        });
-        return sendJson(res, result.ok ? 200 : 400, { ...result, conversa: conversationResult?.conversa || null });
-      }
-
-      const conversaOrderCancelMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/pedido\/cancelar$/);
-      if (req.method === "POST" && conversaOrderCancelMatch) {
-        const id = decodeURIComponent(conversaOrderCancelMatch[1]);
-        const body = await readJson(req, { requireBody: false });
-        const result = await whatsappOrderService.cancelOrder(id, body.reason || body.motivo || "Cancelado pelo atendimento");
-        if (result.ok) await whatsappConversationService.attachWhatsappOrder(id, result.order);
-        await safeAuditRecord(auditService, {
-          type: "order_cancelled",
-          status: result.ok ? "info" : "warning",
-          source: "whatsapp_sambah",
-          message: "Comanda WhatsApp cancelada",
-          context: { conversationId: id, error: result.error || "" }
-        });
-        return sendJson(res, result.ok ? 200 : 400, result);
-      }
-
-      if (req.method === "POST" && url.pathname === "/api/conversas/mesa-pedido") {
-        const body = await readJson(req, { requireBody: true });
-        const result = await whatsappConversationService.linkMesaOrderByReference(body);
-        if (result.ok && result.mesaPedido?.id) {
-          await mesaService.updateFinancialStatus?.(result.mesaPedido.id, {
-            statusFinanceiro: result.mesaPedido.statusFinanceiro,
-            correlationId: result.mesaPedido.correlationId
-          });
-        }
-        return sendJson(res, result.ok ? 200 : 400, result);
-      }
-
-      const conversaMesaPedidoMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/mesa-pedido$/);
-      if (req.method === "POST" && conversaMesaPedidoMatch) {
-        const body = await readJson(req, { requireBody: true });
-        const result = await whatsappConversationService.linkMesaOrder(decodeURIComponent(conversaMesaPedidoMatch[1]), body);
-        if (result.ok && result.mesaPedido?.id) {
-          await mesaService.updateFinancialStatus?.(result.mesaPedido.id, {
-            statusFinanceiro: result.mesaPedido.statusFinanceiro,
-            correlationId: result.mesaPedido.correlationId
-          });
-        }
-        return sendJson(res, result.ok ? 200 : 404, result);
-      }
-
-      const conversaPagamentoConfirmadoMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/pagamento-confirmado$/);
-      if (req.method === "POST" && conversaPagamentoConfirmadoMatch) {
-        const body = await readJson(req, { requireBody: false });
-        const result = await whatsappConversationService.markPaymentConfirmed(decodeURIComponent(conversaPagamentoConfirmadoMatch[1]), body);
-        if (result.ok && result.conversa?.mesaPedido?.id) {
-          await mesaService.updateFinancialStatus?.(result.conversa.mesaPedido.id, {
-            statusFinanceiro: "PAGAMENTO_EFETUADO",
-            correlationId: result.conversa.mesaPedido.correlationId
+      const conversaMensagemMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/mensagens\/([^/]+)$/);
+      if (req.method === "DELETE" && conversaMensagemMatch) {
+        const adminCheck = requireAdminUser(req, activeAuthMode);
+        if (!adminCheck.ok) return sendJson(res, adminCheck.statusCode, { ok: false, error: adminCheck.error });
+        const conversationId = decodeURIComponent(conversaMensagemMatch[1]);
+        const messageId = decodeURIComponent(conversaMensagemMatch[2]);
+        const result = await whatsappConversationService.deleteMessage(conversationId, messageId);
+        if (result.ok) {
+          await safeAuditRecord(auditService, {
+            type: "whatsapp_conversation_message_deleted",
+            status: "warning",
+            source: "admin",
+            message: "Mensagem da Central de Conversas excluida por administrador",
+            context: {
+              conversationId,
+              messageId,
+              username: req.sambahUser?.username || "mock",
+              role: req.sambahUser?.role || "ADMIN",
+              direction: result.removed?.direction || "",
+              messageType: result.removed?.type || ""
+            },
+            dedupeKey: `wa-message-delete:${conversationId}:${messageId}`
           });
         }
         return sendJson(res, result.ok ? 200 : 404, result);
@@ -1317,7 +1310,7 @@ export function createApp({
       }
 
       if (req.method === "POST" && ["/webhook/whatsapp", "/webhook/site"].includes(url.pathname)) {
-        return handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappMessageService, whatsappSendFetch, sambahPayModule, whatsappCatalogService);
+        return handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappMessageService, callCenterService, whatsappSendFetch, appWhatsappProvider, appRuntimeConfig);
       }
 
       if (req.method === "POST" && url.pathname === "/webhooks/meta") {
@@ -1405,7 +1398,7 @@ function summarizeMetaWebhookPayload(payload = {}) {
   };
 }
 
-async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappMessageService, whatsappSendFetch = globalThis.fetch, sambahPayModule = null, whatsappCatalogService = null) {
+async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappMessageService, callCenterService = null, whatsappSendFetch = globalThis.fetch, appWhatsappProvider = whatsappProvider, appRuntimeConfig = null) {
   let body = {};
   try {
     body = await readJson(req, { requireBody: true });
@@ -1472,128 +1465,14 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
           reason: "meta_webhook_without_messages"
         });
       }
-<<<<<<< HEAD
-      const dedupe = claimWebhookMessage(metaSummary);
-      if (dedupe.duplicate) {
-        console.info("whatsapp.webhook.message.deduped", {
-          messageId: metaSummary.messageId,
-          from: metaSummary.from,
-          timestamp: dedupe.firstProcessedAt,
-          type: metaSummary.type || "",
-          text: metaSummary.textBody || "",
-          count: dedupe.count
-        });
-        return sendJson(res, 200, {
-          ok: true,
-          duplicate: true,
-          messageId: metaSummary.messageId,
-          reason: "message_already_processed"
-        });
-      }
-      const conversationResult = await whatsappConversationService.recordIncoming(body, {
-        runtimeConfig: getRuntimeConfig(),
-        crmService
-      });
-      if (conversationResult.aiDecision) {
-        const aiAudit = conversationResult.conversa?.aiAuditTrail?.at(-1) || null;
-        await safeAuditRecord(auditService, {
-          type: "sambah_ai_decision",
-          status: "info",
-          source: "whatsapp_ai_core",
-          message: "Decisao controlada do SamBah AI Core",
-          context: {
-            conversationId: conversationResult.conversa?.id || "",
-            phone: conversationResult.conversa?.telefone || metaSummary.from || "",
-            messageType: conversationResult.message?.type || "",
-            intent: conversationResult.aiDecision.intent,
-            confidence: conversationResult.aiDecision.confidence,
-            conversationState: conversationResult.aiDecision.conversationState || conversationResult.aiDecision.state || "",
-            allowedAction: conversationResult.aiDecision.allowedAction,
-            requiresHuman: conversationResult.aiDecision.requiresHuman === true,
-            auditReason: conversationResult.aiDecision.auditReason || conversationResult.aiDecision.reason || "",
-            timestamp: aiAudit?.at || new Date().toISOString(),
-            aiDecision: conversationResult.aiDecision,
-            aiAudit
-          }
-        });
-      }
-      const paymentSync = await syncWhatsAppOrderPaymentState({
-        conversationResult,
-        whatsappConversationService,
-        mesaService,
-        sambahPayModule,
-        auditService
-      });
-      if (paymentSync?.conversa) conversationResult.conversa = paymentSync.conversa;
-      const conversaAtualizada = conversationResult?.conversa || null;
-      const directAutoReply = await sendWhatsAppCloudAutoReply(body, {
-        runtimeConfig: getRuntimeConfig(),
-        fetchImpl: whatsappSendFetch,
-        auditService,
-        conversation: conversaAtualizada,
-        mesaComandaUrl: getRuntimeConfig().mesaComandaUrl,
-        whatsappCatalogService
-      });
-      if (directAutoReply.sent || directAutoReply.status === "meta_error" || directAutoReply.status === "request_failed") {
-        await recordDirectWhatsAppAutoReply(whatsappMessageService, body, directAutoReply);
-        await whatsappConversationService.recordOutgoing(conversationResult.conversa?.id || metaSummary.from, {
-          text: directAutoReply.text,
-          sendResult: directAutoReply
-        });
-        return sendJson(res, 200, {
-          ok: true,
-          conversa: conversationResult.conversa,
-          intent: conversationResult.intent,
-          respostaSugerida: conversationResult.respostaSugerida,
-          enviado: directAutoReply.sent,
-          automaticoAtivo: conversationResult.sendEnabled,
-          directAutoReply
-        });
-      }
-      const autoResult = await whatsappMessageService.handleIncoming(body, {
-        conversationService,
-        menuService,
-        draftService,
-        eventService,
-        mesaService,
-        auditService
-      });
-      if (isMetaWhatsAppPayload(body)) {
-        return sendJson(res, 200, {
-          ok: true,
-          conversa: conversationResult.conversa,
-          intent: conversationResult.intent,
-          respostaSugerida: conversationResult.respostaSugerida,
-          enviado: autoResult.sent,
-          automaticoAtivo: conversationResult.sendEnabled,
-          provider: autoResult.provider,
-          normalized: autoResult.normalized,
-          autoIntent: autoResult.intent,
-          responseText: autoResult.responseText,
-          directAutoReply,
-          draft: autoResult.draft,
-          mesa: autoResult.mesa,
-          route: autoResult.route
-        });
-      }
-      return sendJson(res, 202, {
-        ok: true,
-        intent: autoResult.intent,
-        route: autoResult.route,
-        responseText: autoResult.responseText,
-        draft: autoResult.draft,
-        mesa: autoResult.mesa,
-        whatsapp: autoResult.whatsapp,
-        sent: autoResult.sent
-      });
-=======
       const maintenanceResult = await whatsappMaintenanceHandler(body, {
         conversationService: whatsappConversationService,
         messageService: whatsappMessageService,
-        auditService
+        auditService,
+        whatsappProvider: appWhatsappProvider,
+        runtimeConfig: appRuntimeConfig || getRuntimeConfig()
       });
       return sendJson(res, 200, maintenanceResult);
->>>>>>> f5fe16d (refactor: remove compromised whatsapp v1 engine)
     }
 
     const crmResult = await safeCrmRecord(crmService, {
@@ -1813,41 +1692,10 @@ function summarizeWhatsAppPostPayload(payload = {}) {
     statusId: firstStatus.id || "",
     status: firstStatus.status || "",
     statusRecipientId: firstStatus.recipient_id || "",
-    timestamp: firstMessage.timestamp || firstStatus.timestamp || "",
-    type: firstMessage.type || payload.messageType || payload.type || "",
     textBody: firstMessage.text?.body || "",
     from: firstMessage.from || value.contacts?.[0]?.wa_id || payload.from || "",
     messageId: firstMessage.id || payload.eventId || payload.messageId || ""
   };
-}
-
-function claimWebhookMessage(summary = {}, now = Date.now()) {
-  pruneProcessedWebhookMessages(now);
-  const messageId = String(summary.messageId || "").trim();
-  if (!messageId) return { duplicate: false, count: 1, firstProcessedAt: new Date(now).toISOString() };
-  const current = processedWebhookMessages.get(messageId);
-  if (current && current.expiresAt > now) {
-    const next = { ...current, count: current.count + 1 };
-    processedWebhookMessages.set(messageId, next);
-    return {
-      duplicate: true,
-      count: next.count,
-      firstProcessedAt: next.firstProcessedAt
-    };
-  }
-  const item = {
-    count: 1,
-    firstProcessedAt: new Date(now).toISOString(),
-    expiresAt: now + WEBHOOK_MESSAGE_TTL_MS
-  };
-  processedWebhookMessages.set(messageId, item);
-  return { duplicate: false, count: 1, firstProcessedAt: item.firstProcessedAt };
-}
-
-function pruneProcessedWebhookMessages(now = Date.now()) {
-  for (const [messageId, item] of processedWebhookMessages.entries()) {
-    if (!item || item.expiresAt <= now) processedWebhookMessages.delete(messageId);
-  }
 }
 
 function isMetaWhatsAppEnvelope(payload = {}) {
@@ -1895,292 +1743,6 @@ async function recordWhatsAppMetaStatuses(payload = {}, { whatsappMessageService
   return { ok: true, statuses: statuses.length, updated, results };
 }
 
-<<<<<<< HEAD
-async function syncWhatsAppOrderPaymentState({ conversationResult, whatsappConversationService, mesaService, sambahPayModule, auditService } = {}) {
-  const conversa = conversationResult?.conversa || null;
-  const mesaPedido = conversa?.mesaPedido || null;
-  if (!conversa?.id || !mesaPedido?.id) return null;
-
-  if (conversa.statusCobranca === "A_COBRAR" || conversa.atendimentoEstado === "A_COBRAR") {
-    await mesaService.updateFinancialStatus?.(mesaPedido.id, {
-      statusFinanceiro: "A_COBRAR",
-      correlationId: mesaPedido.correlationId
-    });
-    await safeAuditRecord(auditService, {
-      type: "whatsapp_mesa_payment_pending",
-      status: "info",
-      source: "whatsapp_sambah",
-      message: "Pagamento marcado como A_COBRAR para pedido Mesa",
-      context: {
-        conversationId: conversa.id,
-        mesaOrderId: mesaPedido.id
-      },
-      dedupeKey: `wa-mesa-a-cobrar:${conversa.id}:${mesaPedido.id}`
-    });
-    return null;
-  }
-
-  if (conversa.atendimentoEstado !== "COBRANCA_ENVIADA" || conversa.sambahPay?.paymentId) {
-    return null;
-  }
-
-  let payment = null;
-  try {
-    const paymentResult = await sambahPayModule?.services?.coreService?.createPayment?.({
-      amount: 0,
-      method: "pix",
-      status: "pending",
-      channel: "whatsapp_sambah",
-      source: "whatsapp_sambah",
-      customer_id: conversa.telefone || conversa.id,
-      metadata: {
-        conversationId: conversa.id,
-        mesaOrderId: mesaPedido.id,
-        origin: "WHATSAPP_SAMBAH"
-      }
-    });
-    payment = paymentResult?.payment || null;
-  } catch (error) {
-    await safeAuditRecord(auditService, {
-      type: "whatsapp_sambah_pay_charge_failed",
-      status: "warning",
-      source: "whatsapp_sambah",
-      message: "Falha ao criar cobranca pendente no SamBah Pay",
-      context: {
-        conversationId: conversa.id,
-        mesaOrderId: mesaPedido.id,
-        error: error.message
-      },
-      dedupeKey: `wa-pay-fail:${conversa.id}:${mesaPedido.id}`
-    });
-  }
-
-  await mesaService.updateFinancialStatus?.(mesaPedido.id, {
-    statusFinanceiro: "A_COBRAR",
-    correlationId: mesaPedido.correlationId
-  });
-
-  if (!payment) return null;
-  return whatsappConversationService.recordSambahPayCharge(conversa.id, payment);
-}
-
-async function sendWhatsAppCloudAutoReply(payload = {}, { runtimeConfig = getRuntimeConfig(), fetchImpl = globalThis.fetch, auditService = null, conversation = null, mesaComandaUrl = "", whatsappCatalogService = null } = {}) {
-  const summary = summarizeWhatsAppPostPayload(payload);
-  const config = runtimeConfig.whatsappBusiness || {};
-  if (config.sendEnabled !== true) {
-    return { ok: true, sent: false, status: "disabled" };
-  }
-  const humanWaitReply = getPendingHumanWaitReply(conversation);
-  if (conversation?.aiDecision?.allowedAction === "NO_ACTION" && !humanWaitReply) {
-    return { ok: true, sent: false, status: "ai_no_action" };
-  }
-  if ((summary.field && summary.field !== "messages") || !summary.from || !summary.textBody) {
-    return { ok: true, sent: false, status: "ignored_non_text_message" };
-  }
-  const sendPhoneNumberId = summary.phoneNumberIdReceived || config.phoneNumberId;
-  if (!config.accessToken || !sendPhoneNumberId) {
-    return { ok: false, sent: false, status: "missing_meta_config" };
-  }
-
-  const endpoint = `https://graph.facebook.com/v25.0/${encodeURIComponent(sendPhoneNumberId)}/messages`;
-  const autoReplyText = humanWaitReply || await resolveControlledWhatsAppReply(summary.textBody, {
-    conversation,
-    mesaComandaUrl: mesaComandaUrl || runtimeConfig.mesaComandaUrl,
-    whatsappCatalogService
-  });
-  const baseRequestBody = {
-    messaging_product: "whatsapp",
-    type: "text",
-    text: { body: autoReplyText }
-  };
-  try {
-    const firstAttempt = await sendMetaTextMessage(fetchImpl, endpoint, config.accessToken, {
-      ...baseRequestBody,
-      to: summary.from
-    });
-    let attempt = firstAttempt;
-    const retryTo = metaBrazilianAllowedListRetryNumber(summary.from, attempt.response);
-    if (!attempt.ok && retryTo) {
-      const retryAttempt = await sendMetaTextMessage(fetchImpl, endpoint, config.accessToken, {
-        ...baseRequestBody,
-        to: retryTo
-      });
-      attempt = {
-        ...retryAttempt,
-        retried: true,
-        originalTo: summary.from,
-        retryTo,
-        firstResponse: sanitizeMetaResponse(firstAttempt.response, config.accessToken)
-      };
-    }
-    const result = {
-      ok: attempt.ok,
-      sent: attempt.ok,
-      status: attempt.ok ? "sent" : "meta_error",
-      text: autoReplyText,
-      httpStatus: attempt.httpStatus,
-      response: sanitizeMetaResponse(attempt.response, config.accessToken),
-      ...(attempt.retried ? {
-        retried: true,
-        originalTo: attempt.originalTo,
-        retryTo: attempt.retryTo,
-        firstResponse: attempt.firstResponse
-      } : {})
-    };
-    console.info("whatsapp.webhook.auto_reply.sent", {
-      sent: result.sent,
-      status: result.status,
-      httpStatus: result.httpStatus,
-      to: result.retryTo || summary.from,
-      originalTo: result.originalTo,
-      phoneNumberId: sendPhoneNumberId,
-      messageId: summary.messageId
-    });
-    await safeAuditRecord(auditService, {
-      type: "whatsapp_cloud_auto_reply",
-      status: result.sent ? "success" : "warning",
-      source: "meta_whatsapp",
-      message: result.sent ? "Resposta automatica WhatsApp enviada" : "Falha no envio automatico WhatsApp",
-      context: { to: result.retryTo || summary.from, originalTo: result.originalTo, httpStatus: result.httpStatus, messageId: summary.messageId, phoneNumberId: sendPhoneNumberId, retried: result.retried },
-      dedupeKey: summary.messageId ? `wa-auto-reply:${summary.messageId}` : undefined
-    });
-    return result;
-  } catch (error) {
-    console.info("whatsapp.webhook.auto_reply.failed", {
-      status: "request_failed",
-      to: summary.from,
-      phoneNumberId: sendPhoneNumberId,
-      messageId: summary.messageId,
-      error: sanitizeMetaText(error.message, config.accessToken)
-    });
-    await safeAuditRecord(auditService, {
-      type: "whatsapp_cloud_auto_reply",
-      status: "error",
-      source: "meta_whatsapp",
-      message: "Erro ao enviar resposta automatica WhatsApp",
-      context: { to: summary.from, messageId: summary.messageId, phoneNumberId: sendPhoneNumberId, error: sanitizeMetaText(error.message, config.accessToken) },
-      dedupeKey: summary.messageId ? `wa-auto-reply:${summary.messageId}` : undefined
-    });
-    return { ok: false, sent: false, status: "request_failed", text: autoReplyText, error: sanitizeMetaText(error.message, config.accessToken) };
-  }
-}
-
-function getPendingHumanWaitReply(conversation = null) {
-  if (!conversation || conversation.atendimentoEstado !== "HUMANO") return "";
-  const handoff = conversation.humanHandoff || {};
-  if (handoff.status && handoff.status !== "pendente") return "";
-  if (handoff.waitMessageSentAt) return "";
-  if (handoff.pendingNoticeDue !== true) return "";
-  const text = String(conversation.respostaSugerida || "").trim();
-  return text.includes("atendimento humano") ? text : "";
-}
-
-async function resolveControlledWhatsAppReply(text = "", { conversation = null, mesaComandaUrl = "", whatsappCatalogService = null } = {}) {
-  const suggestedReply = String(conversation?.respostaSugerida || "").trim();
-  const modeReason = String(conversation?.aiDecision?.modeReason || "");
-  const eventQuoteStatus = String(conversation?.eventQuote?.status || "");
-  const activeFlowType = String(conversation?.activeFlow?.type || "");
-  const conversationIntent = String(conversation?.intencao || "");
-  if (suggestedReply && (["human_requested", "human_waiting", "human_waiting_greeting", "human_cancelled"].includes(modeReason)
-    || conversationIntent === "reset"
-    || conversationIntent === "humano"
-    || conversation?.atendimentoEstado === "HUMANO"
-    || eventQuoteStatus === "details_received"
-    || activeFlowType === "evento")) {
-    return suggestedReply;
-  }
-  const aiSafeReply = String(conversation?.aiDecision?.safeReply || "").trim();
-  if (!aiSafeReply) {
-    return buildSambahAutoReply(text, { conversation, mesaComandaUrl });
-  }
-  if (aiSafeReply.includes("{SAMBAH_CARDAPIO}") && whatsappCatalogService?.formatForWhatsApp) {
-    return aiSafeReply.replaceAll("{SAMBAH_CARDAPIO}", await whatsappCatalogService.formatForWhatsApp());
-  }
-  const mesaUrl = buildMesaComandaUrl(mesaComandaUrl, conversation);
-  return aiSafeReply.replaceAll("{MESA_COMANDA_URL}", mesaUrl);
-}
-
-async function sendMetaTextMessage(fetchImpl, endpoint, accessToken, requestBody) {
-  const response = await fetchImpl(endpoint, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${accessToken}`,
-      "content-type": "application/json"
-    },
-    body: JSON.stringify(requestBody)
-  });
-  const responseBody = await readResponseBody(response);
-  return {
-    ok: response.ok,
-    httpStatus: response.status,
-    response: responseBody
-  };
-}
-
-function metaBrazilianAllowedListRetryNumber(phone = "", responseBody = {}) {
-  const digits = String(phone || "").replace(/\D/g, "");
-  if (!digits.startsWith("55") || digits.length !== 12) return "";
-  if (responseBody?.error?.code !== 131030) return "";
-  return `${digits.slice(0, 4)}9${digits.slice(4)}`;
-}
-
-async function recordDirectWhatsAppAutoReply(whatsappMessageService, payload = {}, sendResult = {}) {
-  try {
-    const normalized = parseWhatsAppWebhookPayload(payload);
-    await whatsappMessageService.appendMessage({ direction: "in", normalized });
-    await whatsappMessageService.appendMessage({
-      direction: "out",
-      normalized,
-      text: sendResult.text || buildSambahAutoReply(normalized.message),
-      sendResult: {
-        ok: sendResult.ok,
-        sent: sendResult.sent,
-        status: sendResult.status,
-        httpStatus: sendResult.httpStatus,
-        response: sendResult.response
-      }
-    });
-  } catch (error) {
-    console.info("whatsapp.webhook.history.failed", {
-      status: "history_failed",
-      error: String(error?.message || error)
-    });
-  }
-}
-
-async function readResponseBody(response) {
-  try {
-    const text = await response.text();
-    if (!text) return null;
-    try {
-      return JSON.parse(text);
-    } catch {
-      return { raw: text };
-    }
-  } catch {
-    return null;
-  }
-}
-
-function sanitizeMetaResponse(value, accessToken = "") {
-  if (Array.isArray(value)) return value.map((item) => sanitizeMetaResponse(item, accessToken));
-  if (!value || typeof value !== "object") return sanitizeMetaText(value, accessToken);
-  return Object.fromEntries(Object.entries(value).map(([key, item]) => [
-    key,
-    /token|authorization|secret|password|credential/i.test(key) ? "[masked]" : sanitizeMetaResponse(item, accessToken)
-  ]));
-}
-
-function sanitizeMetaText(value, accessToken = "") {
-  if (typeof value !== "string") return value;
-  let text = accessToken ? value.split(accessToken).join("[masked]") : value;
-  return text
-    .replace(/(access_token=)[^&\s]+/gi, "$1[masked]")
-    .replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]+/g, "$1[masked]");
-}
-
-=======
->>>>>>> f5fe16d (refactor: remove compromised whatsapp v1 engine)
 async function handlePreOrderWebhook(body, { auditService, mesaService, trackingService, crmService }) {
   const validation = validatePreOrderPayload(body);
   if (!validation.ok) {
@@ -2352,7 +1914,7 @@ function getInsanoSiteCardapio() {
     "Burgers",
     "Assados & Buteco",
     "Pizzas",
-    "Porções",
+    "PorÃ§Ãµes",
     "Espetinhos",
     "Bebidas",
     "Eventos"
@@ -2366,16 +1928,16 @@ function getInsanoSiteCardapio() {
     ["Pizza da Casa", "Pizzas", ["pizza"], false],
     ["Pizza Insana", "Pizzas", ["pizza", "insano"], true],
     ["Pizza para Eventos", "Pizzas", ["pizza", "eventos"], false],
-    ["Fritas", "Porções", ["porção", "buteco"], false],
-    ["Polenta", "Porções", ["porção", "buteco"], false],
-    ["Frango", "Porções", ["porção", "frango"], false],
-    ["Porção de Boteco Insana", "Porções", ["porção", "buteco", "insano"], true],
+    ["Fritas", "PorÃ§Ãµes", ["porÃ§Ã£o", "buteco"], false],
+    ["Polenta", "PorÃ§Ãµes", ["porÃ§Ã£o", "buteco"], false],
+    ["Frango", "PorÃ§Ãµes", ["porÃ§Ã£o", "frango"], false],
+    ["PorÃ§Ã£o de Boteco Insana", "PorÃ§Ãµes", ["porÃ§Ã£o", "buteco", "insano"], true],
     ["Espetinho de Fraldinha", "Espetinhos", ["espetinho", "fraldinha"], false],
     ["Espetinho de Frango", "Espetinhos", ["espetinho", "frango"], false],
     ["Espetinho Misto", "Espetinhos", ["espetinho"], false],
-    ["Espetinho de Coração", "Espetinhos", ["espetinho", "coração"], false],
+    ["Espetinho de CoraÃ§Ã£o", "Espetinhos", ["espetinho", "coraÃ§Ã£o"], false],
     ["Refrigerantes", "Bebidas", ["bebida"], false],
-    ["Água", "Bebidas", ["bebida"], false],
+    ["Ãgua", "Bebidas", ["bebida"], false],
     ["Cervejas", "Bebidas", ["bebida", "cerveja"], false],
     ["Chope Artesanal Insano / Beerlina", "Bebidas", ["bebida", "chope"], true],
     ["Food Truck para Eventos", "Eventos", ["evento", "food truck"], true],
@@ -3238,6 +2800,12 @@ function safeAuditUsername(username = "") {
   return String(username || "").trim().toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, 80);
 }
 
+function maskPhone(phone = "") {
+  const digits = String(phone || "").replace(/\D/g, "");
+  if (!digits) return "";
+  return `${"*".repeat(Math.max(0, digits.length - 4))}${digits.slice(-4)}`;
+}
+
 function requireAdminUser(req, activeAuthMode) {
   if (activeAuthMode === "mock") return { ok: true };
   if (!req.sambahUser) return { ok: false, statusCode: 401, error: "auth_required" };
@@ -3257,7 +2825,7 @@ function sendJson(res, statusCode, payload) {
 
 function corsHeaders(origin = "") {
   const headers = {
-    "access-control-allow-methods": "GET,POST,PATCH,OPTIONS",
+    "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS",
     "access-control-allow-headers": "content-type"
   };
   headers["access-control-allow-origin"] = origin && isAllowedCorsOrigin(origin) ? origin : "*";
@@ -3320,6 +2888,18 @@ function formatDraftSummary(draft) {
     const note = item.note ? ` (${item.note})` : "";
     return `${item.qty || 1}x ${item.name || item.productId}${note}`;
   }).join("\n");
+}
+
+function buildCommitVersion() {
+  return process.env.RENDER_GIT_COMMIT
+    || process.env.GIT_COMMIT
+    || process.env.COMMIT_SHA
+    || process.env.SOURCE_VERSION
+    || "";
+}
+
+function buildAppVersion() {
+  return process.env.APP_VERSION || packageJson.version || "guided-event-flow-state";
 }
 
 const isCliRun = globalThis.process?.argv?.[1] && import.meta.url === pathToFileURL(globalThis.process.argv[1]).href;
