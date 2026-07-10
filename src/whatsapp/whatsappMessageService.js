@@ -77,7 +77,7 @@ export class WhatsAppMessageService {
       normalized,
       duplicate: appendResult.duplicate,
       engine: "disabled",
-      reason: "whatsapp_engine_disabled",
+      reason: "whatsapp_v2_disabled",
       responseText: "",
       sent: false,
       automaticReplyCreated: false

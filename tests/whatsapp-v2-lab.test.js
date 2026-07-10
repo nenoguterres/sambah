@@ -57,6 +57,20 @@ test("WhatsApp V2 lab sender fake falha sem chamar servico real e deixa outbox f
   assert.equal(outbox.lastError, "FAKE_WHATSAPP_V2_SENDER_FAILURE");
 });
 
+test("WhatsApp V2 lab observeOnly observa resposta sem criar outbox ou chamar sender", async () => {
+  const sender = new FakeWhatsAppV2MetaSender();
+  const engine = createWhatsAppV2LabEngine({ sender, observeOnly: true });
+  const result = await engine.processor.handleIncoming({ messageId: "wamid-v2-observe-1", from: "5551000000005", text: "oi" });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, "observe_only");
+  assert.equal(result.repliesObserved, 1);
+  assert.equal(result.repliesSent, 0);
+  assert.equal(result.outboxId, null);
+  assert.equal(sender.sent.length, 0);
+  assert.equal(engine.outboxRepository.list().length, 0);
+});
+
 function metaPayload(message = {}) {
   return {
     object: "whatsapp_business_account",

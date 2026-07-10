@@ -131,7 +131,11 @@ test("webhook site nao derruba servidor com auditoria corrompida, body vazio ou 
   const auditFile = join(dir, "audit-logs.json");
   await writeFile(auditFile, "[\n  {}\n]\n\"broken\"", "utf8");
   const audit = new AuditService({ filePath: auditFile });
-  const server = createApp({ auditService: audit, crmService: tempCrm(dir) });
+  const server = createApp({
+    auditService: audit,
+    crmService: tempCrm(dir),
+    whatsappConversationService: new WhatsAppConversationService({ filePath: join(dir, "whatsapp-conversas.json") })
+  });
   await new Promise((resolve) => server.listen(0, resolve));
   const { port } = server.address();
   try {
@@ -181,7 +185,7 @@ test("webhook site nao derruba servidor com auditoria corrompida, body vazio ou 
     assert.equal(whatsappResponse.status, 200);
     const whatsappBody = await whatsappResponse.json();
     assert.equal(whatsappBody.ok, true);
-    assert.equal(whatsappBody.reason, "whatsapp_engine_disabled");
+    assert.equal(whatsappBody.reason, "whatsapp_v2_disabled");
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await rm(dir, { recursive: true, force: true });
@@ -230,7 +234,7 @@ test("Central de Conversas recebe texto e audio do WhatsApp sem envio automatico
     assert.equal(textResponse.status, 200);
     assert.equal(textBody.ok, true);
     assert.equal(textBody.engine, "disabled");
-    assert.equal(textBody.reason, "whatsapp_engine_disabled");
+    assert.equal(textBody.reason, "whatsapp_v2_disabled");
     assert.equal(textBody.automaticReplyCreated, false);
     assert.equal(textBody.sent, false);
 
@@ -299,7 +303,7 @@ test("Central de Conversas recebe texto e audio do WhatsApp sem envio automatico
     assert.equal(eventResponse.conversa.nextAction, undefined);
 
     const auditEvents = JSON.parse(await readFile(auditFile, "utf8"));
-    assert.ok(auditEvents.some((event) => event.type === "whatsapp_engine_disabled"));
+    assert.ok(auditEvents.some((event) => event.type === "whatsapp_v2_disabled"));
     assert.equal(auditEvents.some((event) => event.type === "intent_detected"), false);
     assert.equal(auditEvents.some((event) => event.type === "operation_router"), false);
     assert.equal(auditEvents.some((event) => event.type === "whatsapp_cloud_auto_reply"), false);
