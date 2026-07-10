@@ -70,11 +70,12 @@ export class WhatsAppMessageService {
 
   async handleIncoming(payload) {
     const normalized = parseWhatsAppWebhookPayload(payload);
-    await this.appendMessage({ direction: "in", normalized });
+    const appendResult = await this.appendMessage({ direction: "in", normalized });
     return {
       ok: true,
       provider: this.provider.name,
       normalized,
+      duplicate: appendResult.duplicate,
       engine: "disabled",
       reason: "whatsapp_engine_disabled",
       responseText: "",
@@ -110,22 +111,29 @@ export class WhatsAppMessageService {
 
   async appendMessage({ direction, normalized, text, sendResult }) {
     const messages = await this.readMessages();
+    const messageId = String(normalized.messageId || "").trim();
+    if (direction === "in" && messageId) {
+      const existing = messages.find((item) => item.direction === "in" && item.messageId === messageId);
+      if (existing) return { ok: true, duplicate: true, message: existing };
+    }
     const providerMessageId = sendResult?.response?.messages?.[0]?.id || "";
-    messages.unshift({
+    const message = {
       id: `${direction}_${this.now().getTime()}_${Math.random().toString(16).slice(2)}`,
       direction,
       provider: normalized.provider,
       phone: normalized.from,
       customerName: normalized.customer?.name || "",
-      messageId: normalized.messageId,
+      messageId,
       providerMessageId,
       text: text || normalized.message,
       status: sendResult?.status || "received",
       httpStatus: sendResult?.httpStatus || null,
       response: sendResult?.response || null,
       createdAt: this.now().toISOString()
-    });
+    };
+    messages.unshift(message);
     await this.writeMessages(messages.slice(0, 200));
+    return { ok: true, duplicate: false, message };
   }
 
   async readSessions() {

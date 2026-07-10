@@ -11,10 +11,7 @@ import { MesaIntegrationService } from "../src/mesaIntegrationService.js";
 import { OrderDraftService } from "../src/orderDraftService.js";
 import { SambahConversationService } from "../src/sambahConversationService.js";
 import { createApp } from "../src/server.js";
-<<<<<<< HEAD
-=======
 import { WhatsAppConversationService } from "../src/whatsappConversationService.js";
->>>>>>> f5fe16d (refactor: remove compromised whatsapp v1 engine)
 import { MockWhatsAppProvider } from "../src/whatsapp/providers/mockProvider.js";
 import { WhatsAppMessageService } from "../src/whatsapp/whatsappMessageService.js";
 
@@ -46,14 +43,7 @@ test("POST /webhook/whatsapp registra entrada Meta sem auto-resposta ou provider
 
   const graphCalls = [];
   const providerCalls = [];
-<<<<<<< HEAD
-  const logs = [];
-  const previousConsoleInfo = console.info;
-  console.info = (...args) => logs.push(args);
-  const { server, base, auditFile, messagesFile, conversationsFile, cleanup } = await createTestServer({
-=======
   const { server, base, messagesFile, conversationsFile, auditFile, cleanup } = await createTestServer({
->>>>>>> f5fe16d (refactor: remove compromised whatsapp v1 engine)
     provider: {
       name: "meta-test-provider",
       status: () => ({ provider: "meta-test-provider", configured: true }),
@@ -92,47 +82,6 @@ test("POST /webhook/whatsapp registra entrada Meta sem auto-resposta ou provider
     assert.equal(body.normalized.message, "quero o cardapio");
     assert.equal(graphCalls.length, 0);
     assert.equal(providerCalls.length, 0);
-<<<<<<< HEAD
-    assert.equal(graphCalls[0].url, "https://graph.facebook.com/v25.0/1234567890/messages");
-    assert.equal(graphCalls[0].options.method, "POST");
-    assert.equal(graphCalls[0].options.headers.authorization, "Bearer meta-token-teste");
-    const sentBody = JSON.parse(graphCalls[0].options.body);
-    assert.deepEqual(sentBody, {
-      messaging_product: "whatsapp",
-      to: "5551999999999",
-      type: "text",
-      text: { body: sentBody.text.body }
-    });
-    assert.match(sentBody.text.body, /Aqui e o SamBah/);
-    assert.doesNotMatch(sentBody.text.body, /1 - Fazer pedido|6 - Falar com atendente/);
-    const receivedLog = logs.find(([event]) => event === "whatsapp.webhook.post.received");
-    assert.ok(receivedLog);
-    assert.equal(receivedLog[1].bodyEntryLength, 1);
-    assert.equal(receivedLog[1].changesLength, 1);
-    assert.equal(receivedLog[1].field, "messages");
-    assert.equal(receivedLog[1].phoneNumberIdReceived, "1234567890");
-    assert.equal(receivedLog[1].messagesLength, 1);
-    assert.equal(receivedLog[1].textBody, "Oi SamBah");
-    assert.equal(receivedLog[1].from, "5551999999999");
-    const audit = JSON.parse(await readFile(auditFile, "utf8"));
-    const aiEvent = audit.find((event) => event.type === "sambah_ai_decision");
-    assert.ok(aiEvent);
-    assert.equal(aiEvent.source, "whatsapp_ai_core");
-    assert.equal(aiEvent.context.phone, "[masked]");
-    assert.equal(aiEvent.context.intent, "saudacao");
-    assert.equal(aiEvent.context.allowedAction, "ANSWER_INFO");
-    assert.equal(aiEvent.context.requiresHuman, false);
-    assert.match(aiEvent.context.auditReason, /Saudacao/);
-    const history = JSON.parse(await readFile(messagesFile, "utf8"));
-    assert.equal(history.length, 2);
-    assert.equal(history[0].direction, "out");
-    assert.equal(history[0].text, sentBody.text.body);
-    assert.equal(history[0].status, "sent");
-    assert.equal(history[0].httpStatus, 200);
-    assert.equal(history[0].response.messages[0].id, "wamid-auto-reply");
-    assert.equal(history[1].direction, "in");
-    assert.equal(history[1].text, "Oi SamBah");
-=======
 
     const messages = JSON.parse(await readFile(messagesFile, "utf8"));
     assert.equal(messages.length, 1);
@@ -140,530 +89,10 @@ test("POST /webhook/whatsapp registra entrada Meta sem auto-resposta ou provider
     assert.equal(messages[0].text, "quero o cardapio");
     assert.equal(messages[0].status, "received");
 
->>>>>>> f5fe16d (refactor: remove compromised whatsapp v1 engine)
     const conversations = JSON.parse(await readFile(conversationsFile, "utf8"));
     assert.equal(conversations.conversas.length, 1);
     assert.equal(conversations.conversas[0].mensagens.length, 1);
     assert.equal(conversations.conversas[0].mensagens[0].direction, "in");
-<<<<<<< HEAD
-    assert.equal(conversations.conversas[0].mensagens[1].direction, "out");
-    assert.equal(conversations.conversas[0].mensagens[1].text, sentBody.text.body);
-  } finally {
-    console.info = previousConsoleInfo;
-    await close(server);
-    await cleanup();
-    if (previousSendEnabled === undefined) delete process.env.WHATSAPP_SEND_ENABLED;
-    else process.env.WHATSAPP_SEND_ENABLED = previousSendEnabled;
-    if (previousAccessToken === undefined) delete process.env.META_ACCESS_TOKEN;
-    else process.env.META_ACCESS_TOKEN = previousAccessToken;
-    if (previousPhoneNumberId === undefined) delete process.env.WHATSAPP_PHONE_NUMBER_ID;
-    else process.env.WHATSAPP_PHONE_NUMBER_ID = previousPhoneNumberId;
-  }
-});
-
-test("POST /webhook/whatsapp responde fluxo humano quando cliente pede atendente", async () => {
-  const previousSendEnabled = process.env.WHATSAPP_SEND_ENABLED;
-  const previousAccessToken = process.env.META_ACCESS_TOKEN;
-  const previousPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-  process.env.WHATSAPP_SEND_ENABLED = "true";
-  process.env.META_ACCESS_TOKEN = "meta-token-teste";
-  process.env.WHATSAPP_PHONE_NUMBER_ID = "1234567890";
-
-  const graphCalls = [];
-  const { server, base, cleanup } = await createTestServer({
-    whatsappSendFetch: async (url, options) => {
-      graphCalls.push({ url, options });
-      return new Response(JSON.stringify({
-        messaging_product: "whatsapp",
-        contacts: [{ input: "5551999999999", wa_id: "5551999999999" }],
-        messages: [{ id: "wamid-human-reply" }]
-      }), {
-        status: 200,
-        headers: { "content-type": "application/json" }
-      });
-    }
-  });
-  try {
-    const response = await fetch(`${base}/webhook/whatsapp`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(metaPayload({
-        from: "5551999999999",
-        id: "wamid-human-request",
-        type: "text",
-        text: { body: "quero falar com atendente" }
-      }, { phoneNumberId: "1234567890" }))
-    });
-    const body = await response.json();
-    assert.equal(response.status, 200);
-    assert.equal(body.directAutoReply.sent, true);
-    assert.equal(graphCalls.length, 1);
-    const sentBody = JSON.parse(graphCalls[0].options.body);
-    assert.deepEqual(sentBody, {
-      messaging_product: "whatsapp",
-      to: "5551999999999",
-      type: "text",
-      text: { body: sentBody.text.body }
-    });
-    assert.match(sentBody.text.body, /atendimento humano/);
-    assert.doesNotMatch(sentBody.text.body, /1.*Continuar com o SamBah/s);
-  } finally {
-    await close(server);
-    await cleanup();
-    if (previousSendEnabled === undefined) delete process.env.WHATSAPP_SEND_ENABLED;
-    else process.env.WHATSAPP_SEND_ENABLED = previousSendEnabled;
-    if (previousAccessToken === undefined) delete process.env.META_ACCESS_TOKEN;
-    else process.env.META_ACCESS_TOKEN = previousAccessToken;
-    if (previousPhoneNumberId === undefined) delete process.env.WHATSAPP_PHONE_NUMBER_ID;
-    else process.env.WHATSAPP_PHONE_NUMBER_ID = previousPhoneNumberId;
-  }
-});
-
-test("POST /webhook/whatsapp em AGUARDANDO_HUMANO cancela e retoma automatico", async () => {
-  const previousSendEnabled = process.env.WHATSAPP_SEND_ENABLED;
-  const previousAccessToken = process.env.META_ACCESS_TOKEN;
-  const previousPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-  process.env.WHATSAPP_SEND_ENABLED = "true";
-  process.env.META_ACCESS_TOKEN = "meta-token-teste";
-  process.env.WHATSAPP_PHONE_NUMBER_ID = "1234567890";
-
-  const graphCalls = [];
-  const { server, base, cleanup, conversationsFile } = await createTestServer({
-    whatsappSendFetch: async (url, options) => {
-      graphCalls.push({ url, options });
-      return new Response(JSON.stringify({
-        messaging_product: "whatsapp",
-        contacts: [{ input: "5551999999999", wa_id: "5551999999999" }],
-        messages: [{ id: `wamid-human-${graphCalls.length}` }]
-      }), {
-        status: 200,
-        headers: { "content-type": "application/json" }
-      });
-    }
-  });
-  try {
-    await fetch(`${base}/webhook/whatsapp`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(metaPayload({
-        from: "5551999999999",
-        id: "wamid-human-start",
-        type: "text",
-        text: { body: "humano" }
-      }))
-    });
-    await fetch(`${base}/webhook/whatsapp`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(metaPayload({
-        from: "5551999999999",
-        id: "wamid-human-cancelar",
-        type: "text",
-        text: { body: "cancelar" }
-      }))
-    });
-    await fetch(`${base}/webhook/whatsapp`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(metaPayload({
-        from: "5551999999999",
-        id: "wamid-human-oi",
-        type: "text",
-        text: { body: "oi" }
-      }))
-    });
-
-    assert.equal(graphCalls.length, 3);
-    const cancelBody = JSON.parse(graphCalls[1].options.body);
-    assert.match(cancelBody.text.body, /Cancelei a espera/);
-    assert.doesNotMatch(cancelBody.text.body, /Fazer pedido|Cardapio|Cardápio/);
-    const helloBody = JSON.parse(graphCalls[2].options.body);
-    assert.doesNotMatch(helloBody.text.body, /fila do atendimento humano|Aguarda um instante/);
-
-    const conversations = JSON.parse(await readFile(conversationsFile, "utf8"));
-    const conversa = conversations.conversas[0];
-    assert.equal(conversa.mode, "AUTO");
-    assert.equal(conversa.atendimentoEstado, "");
-    assert.equal(conversa.humanHandoff.status, "cancelado");
-    assert.equal(conversa.mensagens.filter((message) => message.direction === "in").length, 3);
-  } finally {
-    await close(server);
-    await cleanup();
-    if (previousSendEnabled === undefined) delete process.env.WHATSAPP_SEND_ENABLED;
-    else process.env.WHATSAPP_SEND_ENABLED = previousSendEnabled;
-    if (previousAccessToken === undefined) delete process.env.META_ACCESS_TOKEN;
-    else process.env.META_ACCESS_TOKEN = previousAccessToken;
-    if (previousPhoneNumberId === undefined) delete process.env.WHATSAPP_PHONE_NUMBER_ID;
-    else process.env.WHATSAPP_PHONE_NUMBER_ID = previousPhoneNumberId;
-  }
-});
-
-test("POST /webhook/whatsapp mantem contexto de evento ao enviar para Meta", async () => {
-  const previousSendEnabled = process.env.WHATSAPP_SEND_ENABLED;
-  const previousAccessToken = process.env.META_ACCESS_TOKEN;
-  const previousPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-  process.env.WHATSAPP_SEND_ENABLED = "true";
-  process.env.META_ACCESS_TOKEN = "meta-token-teste";
-  process.env.WHATSAPP_PHONE_NUMBER_ID = "1234567890";
-
-  const graphCalls = [];
-  const { server, base, cleanup, conversationsFile } = await createTestServer({
-    whatsappSendFetch: async (url, options) => {
-      graphCalls.push({ url, body: JSON.parse(options.body) });
-      return new Response(JSON.stringify({
-        messaging_product: "whatsapp",
-        contacts: [{ input: "5551999999999", wa_id: "5551999999999" }],
-        messages: [{ id: `wamid-event-${graphCalls.length}` }]
-      }), {
-        status: 200,
-        headers: { "content-type": "application/json" }
-      });
-    }
-  });
-  try {
-    const send = (id, text) => fetch(`${base}/webhook/whatsapp`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(metaPayload({
-        from: "5551999999999",
-        id,
-        type: "text",
-        text: { body: text }
-      }))
-    });
-
-    await send("wamid-event-start", "evento");
-    await send("wamid-event-details", "01/08/26, porto, 20h, 1000");
-    await send("wamid-event-complement", "porto alegre, 1000 pessoas");
-
-    assert.equal(graphCalls.length, 3);
-    assert.match(graphCalls[0].body.text.body, /data, cidade|data, local/);
-    assert.match(graphCalls[1].body.text.body, /Recebi os dados iniciais/);
-    assert.doesNotMatch(graphCalls[1].body.text.body, /me passa data/i);
-    assert.match(graphCalls[2].body.text.body, /complemento do evento/);
-    assert.doesNotMatch(graphCalls[2].body.text.body, /me passa data/i);
-
-    const conversations = JSON.parse(await readFile(conversationsFile, "utf8"));
-    assert.equal(conversations.conversas[0].eventQuote.status, "details_received");
-  } finally {
-    await close(server);
-    await cleanup();
-    if (previousSendEnabled === undefined) delete process.env.WHATSAPP_SEND_ENABLED;
-    else process.env.WHATSAPP_SEND_ENABLED = previousSendEnabled;
-    if (previousAccessToken === undefined) delete process.env.META_ACCESS_TOKEN;
-    else process.env.META_ACCESS_TOKEN = previousAccessToken;
-    if (previousPhoneNumberId === undefined) delete process.env.WHATSAPP_PHONE_NUMBER_ID;
-    else process.env.WHATSAPP_PHONE_NUMBER_ID = previousPhoneNumberId;
-  }
-});
-
-test("POST /webhook/whatsapp usa conversa atualizada apos reset forte", async () => {
-  const previousSendEnabled = process.env.WHATSAPP_SEND_ENABLED;
-  const previousAccessToken = process.env.META_ACCESS_TOKEN;
-  const previousPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-  process.env.WHATSAPP_SEND_ENABLED = "true";
-  process.env.META_ACCESS_TOKEN = "meta-token-teste";
-  process.env.WHATSAPP_PHONE_NUMBER_ID = "1234567890";
-
-  const graphCalls = [];
-  const { server, base, cleanup, conversationsFile } = await createTestServer({
-    whatsappSendFetch: async (url, options) => {
-      graphCalls.push({ url, body: JSON.parse(options.body) });
-      return new Response(JSON.stringify({
-        messaging_product: "whatsapp",
-        contacts: [{ input: "5551999999999", wa_id: "5551999999999" }],
-        messages: [{ id: "wamid-reset-ok" }]
-      }), {
-        status: 200,
-        headers: { "content-type": "application/json" }
-      });
-    }
-  });
-  try {
-    await writeFile(conversationsFile, JSON.stringify({
-      conversas: [{
-        id: "wa_5551999999999",
-        nome: "Cliente Meta",
-        telefone: "5551999999999",
-        activeFlow: {
-          type: "evento",
-          status: "collecting",
-          slots: { date: null, city: "Porto Alegre", time: "20h", people: "2026", eventType: null },
-          updatedAt: "2026-07-09T10:00:00.000Z"
-        },
-        activeStep: "askDate",
-        flowData: { people: "2026" },
-        flowUpdatedAt: "2026-07-09T10:00:00.000Z",
-        draftId: "draft-antigo",
-        draft: { id: "draft-antigo" },
-        mensagens: [],
-        createdAt: "2026-07-09T10:00:00.000Z",
-        updatedAt: "2026-07-09T10:00:00.000Z"
-      }]
-    }), "utf8");
-
-    const response = await fetch(`${base}/webhook/whatsapp`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(metaPayload({
-        from: "5551999999999",
-        id: "wamid-reset",
-        type: "text",
-        text: { body: "reset" }
-      }))
-    });
-    const body = await response.json();
-
-    assert.equal(response.status, 200);
-    assert.equal(body.directAutoReply.sent, true);
-    assert.equal(graphCalls.length, 1);
-    assert.equal(graphCalls[0].body.text.body, "Atendimento reiniciado. Me manda um oi para começarmos de novo.");
-    assert.equal(body.conversa.activeFlow, null);
-    assert.equal(body.conversa.activeStep, "");
-    assert.equal(body.conversa.flowData, null);
-    assert.equal(body.conversa.flowUpdatedAt, "");
-    assert.equal(body.conversa.draftId, "");
-
-    const conversations = JSON.parse(await readFile(conversationsFile, "utf8"));
-    assert.equal(conversations.conversas[0].activeFlow, null);
-    assert.equal(conversations.conversas[0].flowData, null);
-    assert.equal(conversations.conversas[0].mensagens.at(-1).direction, "out");
-  } finally {
-    await close(server);
-    await cleanup();
-    if (previousSendEnabled === undefined) delete process.env.WHATSAPP_SEND_ENABLED;
-    else process.env.WHATSAPP_SEND_ENABLED = previousSendEnabled;
-    if (previousAccessToken === undefined) delete process.env.META_ACCESS_TOKEN;
-    else process.env.META_ACCESS_TOKEN = previousAccessToken;
-    if (previousPhoneNumberId === undefined) delete process.env.WHATSAPP_PHONE_NUMBER_ID;
-    else process.env.WHATSAPP_PHONE_NUMBER_ID = previousPhoneNumberId;
-  }
-});
-
-test("POST /webhook/whatsapp deduplica mesmo messageId antes de reenviar Meta", async () => {
-  const previousSendEnabled = process.env.WHATSAPP_SEND_ENABLED;
-  const previousAccessToken = process.env.META_ACCESS_TOKEN;
-  const previousPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-  process.env.WHATSAPP_SEND_ENABLED = "true";
-  process.env.META_ACCESS_TOKEN = "meta-token-teste";
-  process.env.WHATSAPP_PHONE_NUMBER_ID = "1234567890";
-
-  const graphCalls = [];
-  const { server, base, cleanup, conversationsFile } = await createTestServer({
-    whatsappSendFetch: async (url, options) => {
-      graphCalls.push({ url, body: JSON.parse(options.body) });
-      return new Response(JSON.stringify({
-        messaging_product: "whatsapp",
-        contacts: [{ input: "5551999999999", wa_id: "5551999999999" }],
-        messages: [{ id: "wamid-dedupe-ok" }]
-      }), {
-        status: 200,
-        headers: { "content-type": "application/json" }
-      });
-    }
-  });
-  try {
-    const payload = metaPayload({
-      from: "5551999999999",
-      id: "wamid-same-message",
-      timestamp: "1783660000",
-      type: "text",
-      text: { body: "oi" }
-    });
-    const send = () => fetch(`${base}/webhook/whatsapp`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload)
-    }).then((response) => response.json());
-
-    const first = await send();
-    const second = await send();
-    const third = await send();
-
-    assert.equal(first.ok, true);
-    assert.equal(second.duplicate, true);
-    assert.equal(third.duplicate, true);
-    assert.equal(graphCalls.length, 1);
-
-    const conversations = JSON.parse(await readFile(conversationsFile, "utf8"));
-    assert.equal(conversations.conversas.length, 1);
-    assert.equal(conversations.conversas[0].mensagens.filter((message) => message.direction === "out").length, 1);
-  } finally {
-    await close(server);
-    await cleanup();
-    if (previousSendEnabled === undefined) delete process.env.WHATSAPP_SEND_ENABLED;
-    else process.env.WHATSAPP_SEND_ENABLED = previousSendEnabled;
-    if (previousAccessToken === undefined) delete process.env.META_ACCESS_TOKEN;
-    else process.env.META_ACCESS_TOKEN = previousAccessToken;
-    if (previousPhoneNumberId === undefined) delete process.env.WHATSAPP_PHONE_NUMBER_ID;
-    else process.env.WHATSAPP_PHONE_NUMBER_ID = previousPhoneNumberId;
-  }
-});
-
-test("manual reply in HUMANO state uses Meta provider and succeeds", async () => {
-  const previousSendEnabled = process.env.WHATSAPP_SEND_ENABLED;
-  const previousAccessToken = process.env.META_ACCESS_TOKEN;
-  const previousPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-  process.env.WHATSAPP_SEND_ENABLED = "true";
-  process.env.META_ACCESS_TOKEN = "meta-token-teste";
-  process.env.WHATSAPP_PHONE_NUMBER_ID = "1234567890";
-
-  const graphCalls = [];
-  const { server, base, cleanup, conversationsFile } = await createTestServer({
-    whatsappSendFetch: async (url, options) => {
-      const body = JSON.parse(options.body);
-      graphCalls.push({ url, body, authorization: options.headers.authorization });
-      if (graphCalls.length === 1) {
-        return new Response(JSON.stringify({
-          error: {
-            message: "(#131030) Recipient phone number not in allowed list",
-            code: 131030
-          }
-        }), {
-          status: 400,
-          headers: { "content-type": "application/json" }
-        });
-      }
-      return new Response(JSON.stringify({
-        messaging_product: "whatsapp",
-        contacts: [{ input: body.to, wa_id: body.to }],
-        messages: [{ id: "wamid-manual-human-ok" }]
-      }), {
-        status: 200,
-        headers: { "content-type": "application/json" }
-      });
-    }
-  });
-  try {
-    await writeFile(conversationsFile, JSON.stringify({
-      conversas: [{
-        id: "wa_5551981675115",
-        nome: "Teste SamBah",
-        telefone: "5551981675115",
-        status: "aguardando_humano",
-        atendimentoEstado: "HUMANO",
-        intencao: "humano",
-        humanHandoff: {
-          status: "pendente",
-          requestedAt: "2026-07-08T10:00:00.000Z",
-          lastCustomerMessageAt: "2026-07-08T10:00:00.000Z",
-          waitMessageSentAt: "",
-          pendingNoticeDue: false
-        },
-        mensagens: [{ id: "msg-in", direction: "in", type: "text", text: "humano", createdAt: "2026-07-08T10:00:00.000Z", status: "recebida" }],
-        createdAt: "2026-07-08T10:00:00.000Z",
-        updatedAt: "2026-07-08T10:00:00.000Z"
-      }]
-    }), "utf8");
-
-    const response = await fetch(`${base}/api/conversas/wa_5551981675115/responder`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text: "ola, teste humano" })
-    });
-    const body = await response.json();
-
-    assert.equal(response.status, 200);
-    assert.equal(body.ok, true);
-    assert.equal(body.enviado, true);
-    assert.equal(body.message.status, "sent");
-    assert.equal(body.sendResult.retried, true);
-    assert.equal(body.sendResult.originalTo, "5551981675115");
-    assert.equal(body.sendResult.retryTo, "555181675115");
-    assert.equal(graphCalls.length, 2);
-    assert.equal(graphCalls[0].url, "https://graph.facebook.com/v25.0/1234567890/messages");
-    assert.equal(graphCalls[0].body.to, "5551981675115");
-    assert.equal(graphCalls[1].body.to, "555181675115");
-    assert.equal(graphCalls[1].body.text.body, "ola, teste humano");
-    assert.match(graphCalls[1].authorization, /^Bearer /);
-
-    const conversations = JSON.parse(await readFile(conversationsFile, "utf8"));
-    const sentMessage = conversations.conversas[0].mensagens.at(-1);
-    assert.equal(sentMessage.direction, "out");
-    assert.equal(sentMessage.status, "sent");
-    assert.equal(sentMessage.response.messages[0].id, "wamid-manual-human-ok");
-    assert.equal(conversations.conversas[0].humanHandoff.status, "em_atendimento");
-  } finally {
-    await close(server);
-    await cleanup();
-    if (previousSendEnabled === undefined) delete process.env.WHATSAPP_SEND_ENABLED;
-    else process.env.WHATSAPP_SEND_ENABLED = previousSendEnabled;
-    if (previousAccessToken === undefined) delete process.env.META_ACCESS_TOKEN;
-    else process.env.META_ACCESS_TOKEN = previousAccessToken;
-    if (previousPhoneNumberId === undefined) delete process.env.WHATSAPP_PHONE_NUMBER_ID;
-    else process.env.WHATSAPP_PHONE_NUMBER_ID = previousPhoneNumberId;
-  }
-});
-
-test("manual reply in HUMANO state persists Meta retry diagnostics when both attempts fail", async () => {
-  const previousSendEnabled = process.env.WHATSAPP_SEND_ENABLED;
-  const previousAccessToken = process.env.META_ACCESS_TOKEN;
-  const previousPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-  process.env.WHATSAPP_SEND_ENABLED = "true";
-  process.env.META_ACCESS_TOKEN = "meta-token-teste";
-  process.env.WHATSAPP_PHONE_NUMBER_ID = "1234567890";
-
-  const graphCalls = [];
-  const { server, base, cleanup, conversationsFile } = await createTestServer({
-    whatsappSendFetch: async (url, options) => {
-      const body = JSON.parse(options.body);
-      graphCalls.push({ url, body });
-      return new Response(JSON.stringify({
-        error: {
-          message: "(#131030) Recipient phone number not in allowed list",
-          code: 131030,
-          error_data: { details: "destinatario fora da lista" }
-        }
-      }), {
-        status: 400,
-        headers: { "content-type": "application/json" }
-      });
-    }
-  });
-  try {
-    await writeFile(conversationsFile, JSON.stringify({
-      conversas: [{
-        id: "wa_5551981675115",
-        nome: "Teste SamBah",
-        telefone: "5551981675115",
-        status: "aguardando_humano",
-        atendimentoEstado: "HUMANO",
-        intencao: "humano",
-        humanHandoff: { status: "pendente", requestedAt: "2026-07-08T10:00:00.000Z" },
-        mensagens: [],
-        createdAt: "2026-07-08T10:00:00.000Z",
-        updatedAt: "2026-07-08T10:00:00.000Z"
-      }]
-    }), "utf8");
-
-    const response = await fetch(`${base}/api/conversas/wa_5551981675115/responder`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text: "teste" })
-    });
-    const body = await response.json();
-
-    assert.equal(response.status, 200);
-    assert.equal(body.ok, true);
-    assert.equal(body.enviado, false);
-    assert.equal(body.message.status, "meta_error");
-    assert.equal(body.sendResult.retried, true);
-    assert.equal(body.sendResult.originalTo, "5551981675115");
-    assert.equal(body.sendResult.retryTo, "555181675115");
-    assert.equal(body.sendResult.attempts.length, 2);
-    assert.equal(graphCalls[0].body.to, "5551981675115");
-    assert.equal(graphCalls[1].body.to, "555181675115");
-
-    const conversations = JSON.parse(await readFile(conversationsFile, "utf8"));
-    const failedMessage = conversations.conversas[0].mensagens.at(-1);
-    assert.equal(failedMessage.status, "meta_error");
-    assert.equal(failedMessage.retried, true);
-    assert.equal(failedMessage.originalTo, "5551981675115");
-    assert.equal(failedMessage.retryTo, "555181675115");
-    assert.equal(failedMessage.attempts.length, 2);
-    assert.equal(failedMessage.attempts[0].response.error.code, 131030);
-    assert.equal(failedMessage.attempts[1].response.error.code, 131030);
-=======
     assert.equal(conversations.conversas[0].whatsappEngine, "disabled");
 
     const audit = JSON.parse(await readFile(auditFile, "utf8"));
@@ -671,7 +100,6 @@ test("manual reply in HUMANO state persists Meta retry diagnostics when both att
     assert.equal(audit.some((event) => event.type === "intent_detected"), false);
     assert.equal(audit.some((event) => event.type === "operation_router"), false);
     assert.equal(audit.some((event) => event.type === "whatsapp_cloud_auto_reply"), false);
->>>>>>> f5fe16d (refactor: remove compromised whatsapp v1 engine)
   } finally {
     await close(server);
     await cleanup();
@@ -746,54 +174,72 @@ test("POST /webhook/whatsapp preserva callback de status Meta sem envio", async 
   }
 });
 
-test("POST /api/conversas/mesa-pedido vincula pedido Mesa por conversationId", async () => {
-  const { server, base, conversationsFile, cleanup } = await createTestServer();
+test("POST /webhook/whatsapp ignora duplicata por messageId sem auto-resposta", async () => {
+  const graphCalls = [];
+  const providerCalls = [];
+  const { server, base, messagesFile, conversationsFile, cleanup } = await createTestServer({
+    provider: {
+      name: "meta-test-provider",
+      status: () => ({ provider: "meta-test-provider", configured: true }),
+      sendText: async (input) => {
+        providerCalls.push(input);
+        return { ok: true, sent: true, status: "sent_by_provider" };
+      }
+    },
+    whatsappSendFetch: async (url, options) => {
+      graphCalls.push({ url, options });
+      return new Response("{}", { status: 200 });
+    }
+  });
   try {
-    await writeFile(conversationsFile, JSON.stringify({
-      conversas: [{
-        id: "wa_55517776666",
-        nome: "Cliente Mesa",
-        telefone: "55517776666",
-        atendimentoEstado: "AGUARDANDO_PEDIDO_MESA",
-        status: "aguardando_cliente",
-        mensagens: [],
-        createdAt: "2026-07-04T12:00:00.000Z",
-        updatedAt: "2026-07-04T12:00:00.000Z"
-      }]
-    }), "utf8");
+    const payload = metaPayload({
+      from: "5551888888888",
+      id: "wamid-duplicate-neutral",
+      type: "text",
+      text: { body: "oi" }
+    });
 
-    const missingReference = await fetch(`${base}/api/conversas/mesa-pedido`, {
+    const first = await fetch(`${base}/webhook/whatsapp`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        mesaOrderId: "mesa-sem-referencia",
-        customerName: "Cliente Mesa",
-        origin: "WHATSAPP_SAMBAH"
-      })
+      body: JSON.stringify(payload)
     });
-    const missingBody = await missingReference.json();
-    assert.equal(missingReference.status, 400);
-    assert.equal(missingBody.ok, false);
-    assert.equal(missingBody.error, "conversation_reference_required");
-
-    const response = await fetch(`${base}/api/conversas/mesa-pedido`, {
+    const second = await fetch(`${base}/webhook/whatsapp`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        conversationId: "wa_55517776666",
-        mesaOrderId: "mesa-789",
-        customerName: "Cliente Mesa",
-        mode: "retirada",
-        total: 42,
-        origin: "WHATSAPP_SAMBAH"
-      })
+      body: JSON.stringify(payload)
     });
-    const body = await response.json();
-    assert.equal(response.status, 200);
-    assert.equal(body.ok, true);
-    assert.equal(body.conversa.atendimentoEstado, "PEDIDO_MESA_RECEBIDO");
-    assert.equal(body.mesaPedido.id, "mesa-789");
-    assert.equal(body.mesaPedido.origem, "WHATSAPP_SAMBAH");
+    const firstBody = await first.json();
+    const secondBody = await second.json();
+
+    assert.equal(first.status, 200);
+    assert.equal(second.status, 200);
+    assert.equal(firstBody.automaticReplyCreated, false);
+    assert.equal(secondBody.automaticReplyCreated, false);
+    assert.equal(secondBody.handled, false);
+    assert.equal(secondBody.engine, "disabled");
+    assert.equal(secondBody.conversa.mensagens.length, 1);
+    assert.equal(secondBody.message.id, "wamid-duplicate-neutral");
+    assert.equal(graphCalls.length, 0);
+    assert.equal(providerCalls.length, 0);
+
+    const messages = JSON.parse(await readFile(messagesFile, "utf8"));
+    assert.equal(messages.length, 1);
+    assert.equal(messages[0].messageId, "wamid-duplicate-neutral");
+
+    const conversations = JSON.parse(await readFile(conversationsFile, "utf8"));
+    assert.equal(conversations.conversas.length, 1);
+    assert.equal(conversations.conversas[0].mensagens.length, 1);
+    assert.equal(conversations.conversas[0].mensagens[0].id, "wamid-duplicate-neutral");
+    assert.equal(conversations.conversas[0].automaticReplyCreated, false);
+    assert.equal(conversations.conversas[0].whatsappEngine, "disabled");
+
+    const inbox = await fetch(`${base}/api/conversas`);
+    const inboxBody = await inbox.json();
+    assert.equal(inbox.status, 200);
+    assert.equal(inboxBody.count, 1);
+    assert.equal(inboxBody.items[0].mensagens.length, 1);
+    assert.equal(inboxBody.items[0].mensagens[0].id, "wamid-duplicate-neutral");
   } finally {
     await close(server);
     await cleanup();
