@@ -1,4 +1,5 @@
 const EVENT_REQUIRED_SLOTS = ["date", "city", "time", "people"];
+const FLOW_TTL_MS = 30 * 60 * 1000;
 
 const EVENT_SLOT_LABELS = {
   date: "data",
@@ -17,6 +18,14 @@ export function resolveConversationFlow({ conversation = {}, text = "", intent =
   }
 
   if (currentFlow?.type === "evento") {
+    if (isExpiredFlow(currentFlow, now)) {
+      return {
+        handled: true,
+        activeFlow: currentFlow,
+        nextAction: conversation.nextAction || "",
+        reply: "Tu quer continuar o orçamento anterior ou começar de novo?\n\n1. Continuar orçamento anterior\n2. Começar novo atendimento\n3. Falar com humano"
+      };
+    }
     return resolveEventFlowContinuation({ flow: currentFlow, text, normalized, now });
   }
 
@@ -43,7 +52,7 @@ export function extractEventSlots(text = "") {
   const peopleMatches = [...normalized.matchAll(/\b(\d{1,5})\s*(?:pessoas|pessoa|convidados|convidado|pax)?\b/g)];
   for (const match of peopleMatches) {
     const number = Number(match[1]);
-    if (Number.isFinite(number) && number > 0 && !looksLikeDateOrTimeNumber(raw, match[1])) {
+    if (Number.isFinite(number) && number > 0 && !isLikelyYear(number) && !looksLikeDateOrTimeNumber(raw, match[1])) {
       slots.people = String(number);
     }
   }
@@ -143,11 +152,17 @@ function normalizeActiveFlow(flow = null) {
       date: flow.slots?.date || null,
       city: flow.slots?.city || null,
       time: flow.slots?.time || null,
-      people: flow.slots?.people || null,
+      people: normalizePeopleSlot(flow.slots?.people),
       eventType: flow.slots?.eventType || null
     },
     updatedAt: flow.updatedAt || ""
   };
+}
+
+function normalizePeopleSlot(value) {
+  const number = Number(value);
+  if (Number.isFinite(number) && isLikelyYear(number)) return null;
+  return value || null;
 }
 
 function missingEventSlots(slots = {}) {
@@ -194,6 +209,17 @@ function extractEventType(raw = "", normalized = "") {
 function looksLikeDateOrTimeNumber(raw = "", value = "") {
   const escaped = String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`\\b${escaped}[/-]`).test(raw) || new RegExp(`\\b${escaped}(?::|h)`).test(raw);
+}
+
+function isLikelyYear(number) {
+  return number >= 1900 && number <= 2100;
+}
+
+function isExpiredFlow(flow = {}, nowIso = "") {
+  const updatedAt = Date.parse(flow.updatedAt || "");
+  const now = Date.parse(nowIso || "");
+  if (!Number.isFinite(updatedAt) || !Number.isFinite(now)) return false;
+  return now - updatedAt > FLOW_TTL_MS;
 }
 
 function isCancel(normalized = "") {
