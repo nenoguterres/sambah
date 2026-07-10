@@ -8,15 +8,16 @@ export function createWhatsAppV2LabEngine(options = {}) {
   const conversationRepository = options.conversationRepository || new InMemoryWhatsAppV2ConversationRepository({ operationLog });
   const outboxRepository = options.outboxRepository || new InMemoryWhatsAppV2OutboxRepository({ operationLog });
   const sender = options.sender || new FakeWhatsAppV2MetaSender();
-  const processor = new WhatsAppV2LabProcessor({ conversationRepository, outboxRepository, sender });
+  const processor = new WhatsAppV2LabProcessor({ conversationRepository, outboxRepository, sender, observeOnly: options.observeOnly === true });
   return { processor, conversationRepository, outboxRepository, sender, operationLog };
 }
 
 export class WhatsAppV2LabProcessor {
-  constructor({ conversationRepository, outboxRepository, sender }) {
+  constructor({ conversationRepository, outboxRepository, sender, observeOnly = false }) {
     this.conversationRepository = conversationRepository;
     this.outboxRepository = outboxRepository;
     this.sender = sender;
+    this.observeOnly = observeOnly;
   }
 
   async handleIncoming(payload = {}) {
@@ -39,7 +40,7 @@ export class WhatsAppV2LabProcessor {
 
       let outboxItem = null;
       let repliesSent = 0;
-      if (result.replies.length === 1) {
+      if (result.replies.length === 1 && !this.observeOnly) {
         outboxItem = await this.outboxRepository.add({
           conversationId: message.conversationId,
           messageId: message.messageId,
@@ -52,7 +53,17 @@ export class WhatsAppV2LabProcessor {
       }
 
       await this.conversationRepository.markMessageProcessed(message.messageId);
-      return { ok: true, duplicate: false, traceId, source: result.source, repliesSent, state: nextState, outboxId: outboxItem?.id || null };
+      return {
+        ok: true,
+        duplicate: false,
+        traceId,
+        source: result.source,
+        repliesObserved: result.replies.length,
+        repliesSent,
+        state: nextState,
+        outboxId: outboxItem?.id || null,
+        mode: this.observeOnly ? "observe_only" : "lab_send_fake"
+      };
     } catch (error) {
       await this.conversationRepository.markMessageFailed(message.messageId, error);
       throw error;

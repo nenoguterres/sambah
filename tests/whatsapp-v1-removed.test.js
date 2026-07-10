@@ -25,8 +25,7 @@ const forbiddenRuntimePatterns = [
   "directAutoReply",
   "autoIntent",
   "legacyHandler",
-  "WHATSAPP_ENGINE_VERSION",
-  "whatsapp-v2"
+  "WHATSAPP_ENGINE_VERSION"
 ];
 
 test("arquivos exclusivos do WhatsApp V1 nao existem mais", async () => {
@@ -52,7 +51,7 @@ test("webhook Meta aponta para handler neutro de manutencao", async () => {
   const handler = await readFile(new URL("src/whatsapp/whatsappMaintenanceHandler.js", repoRoot), "utf8");
   assert.match(server, /whatsappMaintenanceHandler\(body/);
   assert.match(handler, /engine:\s*"disabled"/);
-  assert.match(handler, /reason:\s*"whatsapp_engine_disabled"/);
+  assert.match(handler, /reason:\s*"whatsapp_v2_disabled"/);
   assert.match(handler, /automaticReplyCreated:\s*false/);
   assert.doesNotMatch(handler, /sendText|fetch\(|buildMesaOrder/);
 });

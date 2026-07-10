@@ -72,7 +72,7 @@ test("POST /webhook/whatsapp registra entrada Meta sem auto-resposta ou provider
     assert.equal(response.status, 200);
     assert.equal(body.ok, true);
     assert.equal(body.engine, "disabled");
-    assert.equal(body.reason, "whatsapp_engine_disabled");
+    assert.equal(body.reason, "whatsapp_v2_disabled");
     assert.equal(body.automaticReplyCreated, false);
     assert.equal(body.sent, false);
     assert.equal(body.handled, false);
@@ -96,7 +96,7 @@ test("POST /webhook/whatsapp registra entrada Meta sem auto-resposta ou provider
     assert.equal(conversations.conversas[0].whatsappEngine, "disabled");
 
     const audit = JSON.parse(await readFile(auditFile, "utf8"));
-    assert.ok(audit.some((event) => event.type === "whatsapp_engine_disabled"));
+    assert.ok(audit.some((event) => event.type === "whatsapp_v2_disabled"));
     assert.equal(audit.some((event) => event.type === "intent_detected"), false);
     assert.equal(audit.some((event) => event.type === "operation_router"), false);
     assert.equal(audit.some((event) => event.type === "whatsapp_cloud_auto_reply"), false);
@@ -243,6 +243,160 @@ test("POST /webhook/whatsapp ignora duplicata por messageId sem auto-resposta", 
   } finally {
     await close(server);
     await cleanup();
+  }
+});
+
+test("POST /webhook/whatsapp integra V2 em observe_only sem sender, IA ou auto-reply", async () => {
+  const previousV2 = process.env.WHATSAPP_V2_ENABLED;
+  const previousSend = process.env.WHATSAPP_SEND_ENABLED;
+  const previousAi = process.env.WHATSAPP_AI_ENABLED;
+  const previousAutoReply = process.env.WHATSAPP_AUTO_REPLY_ENABLED;
+  process.env.WHATSAPP_V2_ENABLED = "true";
+  process.env.WHATSAPP_SEND_ENABLED = "false";
+  process.env.WHATSAPP_AI_ENABLED = "false";
+  process.env.WHATSAPP_AUTO_REPLY_ENABLED = "false";
+
+  const providerCalls = [];
+  const { server, base, messagesFile, conversationsFile, auditFile, cleanup } = await createTestServer({
+    provider: {
+      name: "meta-test-provider",
+      status: () => ({ provider: "meta-test-provider", configured: true }),
+      sendText: async (input) => {
+        providerCalls.push(input);
+        return { ok: true, sent: true, status: "sent_by_provider" };
+      }
+    }
+  });
+  try {
+    const response = await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(metaPayload({
+        from: "5551777777777",
+        id: "wamid-v2-observe-only",
+        type: "text",
+        text: { body: "oi" }
+      }))
+    });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.handled, true);
+    assert.equal(body.engine, "v2");
+    assert.equal(body.mode, "observe_only");
+    assert.equal(body.automaticReplyCreated, false);
+    assert.equal(body.sent, false);
+    assert.equal(body.aiCalled, false);
+    assert.equal(body.senderCalled, false);
+    assert.equal(body.outboxCreated, false);
+    assert.equal(providerCalls.length, 0);
+
+    const messages = JSON.parse(await readFile(messagesFile, "utf8"));
+    assert.equal(messages.length, 1);
+    const conversations = JSON.parse(await readFile(conversationsFile, "utf8"));
+    assert.equal(conversations.conversas.length, 1);
+    assert.equal(conversations.conversas[0].mensagens.length, 1);
+
+    const audit = JSON.parse(await readFile(auditFile, "utf8"));
+    assert.equal(audit.filter((event) => event.type === "whatsapp_v2_observe_only").length, 1);
+    assert.equal(audit.some((event) => event.type === "intent_detected"), false);
+    assert.equal(audit.some((event) => event.type === "operation_router"), false);
+    assert.equal(audit.some((event) => event.type === "whatsapp_cloud_auto_reply"), false);
+  } finally {
+    await close(server);
+    await cleanup();
+    restoreEnv("WHATSAPP_V2_ENABLED", previousV2);
+    restoreEnv("WHATSAPP_SEND_ENABLED", previousSend);
+    restoreEnv("WHATSAPP_AI_ENABLED", previousAi);
+    restoreEnv("WHATSAPP_AUTO_REPLY_ENABLED", previousAutoReply);
+  }
+});
+
+test("POST /webhook/whatsapp com V2 observe_only ignora duplicata antes do motor", async () => {
+  const previousV2 = process.env.WHATSAPP_V2_ENABLED;
+  process.env.WHATSAPP_V2_ENABLED = "true";
+  const { server, base, messagesFile, conversationsFile, auditFile, cleanup } = await createTestServer();
+  try {
+    const payload = metaPayload({
+      from: "5551666666666",
+      id: "wamid-v2-duplicate-observe",
+      type: "text",
+      text: { body: "oi" }
+    });
+    const first = await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const second = await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const firstBody = await first.json();
+    const secondBody = await second.json();
+
+    assert.equal(firstBody.engine, "v2");
+    assert.equal(firstBody.mode, "observe_only");
+    assert.equal(second.status, 200);
+    assert.equal(secondBody.ok, true);
+    assert.equal(secondBody.handled, false);
+    assert.equal(secondBody.duplicate, true);
+    assert.equal(secondBody.reason, "duplicate_message");
+    assert.equal(secondBody.automaticReplyCreated, false);
+    assert.equal(secondBody.sent, false);
+
+    const messages = JSON.parse(await readFile(messagesFile, "utf8"));
+    assert.equal(messages.length, 1);
+    const conversations = JSON.parse(await readFile(conversationsFile, "utf8"));
+    assert.equal(conversations.conversas[0].mensagens.length, 1);
+    const audit = JSON.parse(await readFile(auditFile, "utf8"));
+    assert.equal(audit.filter((event) => event.type === "whatsapp_v2_observe_only").length, 1);
+  } finally {
+    await close(server);
+    await cleanup();
+    restoreEnv("WHATSAPP_V2_ENABLED", previousV2);
+  }
+});
+
+test("POST /webhook/whatsapp status Meta nao entra na V2 observe_only", async () => {
+  const previousV2 = process.env.WHATSAPP_V2_ENABLED;
+  process.env.WHATSAPP_V2_ENABLED = "true";
+  const { server, base, messagesFile, conversationsFile, auditFile, cleanup } = await createTestServer();
+  try {
+    await writeFile(messagesFile, JSON.stringify([{
+      id: "out_1",
+      direction: "out",
+      provider: "meta",
+      phone: "5551999999999",
+      providerMessageId: "wamid-status-only",
+      text: "Resposta manual",
+      status: "sent",
+      response: { messages: [{ id: "wamid-status-only" }] },
+      createdAt: "2026-07-03T10:00:00.000Z"
+    }]), "utf8");
+    await writeFile(conversationsFile, JSON.stringify({
+      conversas: [{
+        id: "wa_5551999999999",
+        telefone: "5551999999999",
+        mensagens: [{ id: "msg_out_1", direction: "out", providerMessageId: "wamid-status-only", response: { messages: [{ id: "wamid-status-only" }] }, status: "sent" }]
+      }]
+    }), "utf8");
+
+    const response = await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(statusPayload())
+    });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.reason, "meta_status_callback");
+    const audit = JSON.parse(await readFile(auditFile, "utf8"));
+    assert.equal(audit.some((event) => event.type === "whatsapp_v2_observe_only"), false);
+  } finally {
+    await close(server);
+    await cleanup();
+    restoreEnv("WHATSAPP_V2_ENABLED", previousV2);
   }
 });
 

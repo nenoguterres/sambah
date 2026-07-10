@@ -17,7 +17,7 @@ test("WhatsAppMessageService registra inbound sem draft, Mesa ou resposta automa
 
     assert.equal(result.ok, true);
     assert.equal(result.engine, "disabled");
-    assert.equal(result.reason, "whatsapp_engine_disabled");
+    assert.equal(result.reason, "whatsapp_v2_disabled");
     assert.equal(result.sent, false);
     assert.equal(result.automaticReplyCreated, false);
     assert.equal(result.responseText, "");

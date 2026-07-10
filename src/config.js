@@ -45,6 +45,13 @@ export function getRuntimeConfig(env = globalThis.process?.env || {}) {
       apiBaseUrl: env.WHATSAPP_API_BASE_URL || "https://graph.facebook.com",
       publicWebhookUrl: firstEnv(env, localEnv, ["WEBHOOK_PUBLIC_URL", "SAMBAH_PUBLIC_WEBHOOK_URL"])
     },
+    whatsappV2: {
+      enabled: env.WHATSAPP_V2_ENABLED === "true",
+      sendEnabled: env.WHATSAPP_SEND_ENABLED === "true",
+      aiEnabled: env.WHATSAPP_AI_ENABLED === "true",
+      autoReplyEnabled: env.WHATSAPP_AUTO_REPLY_ENABLED === "true",
+      mode: "observe_only"
+    },
     perolaInstagram: {
       enabled: firstEnv(env, localEnv, ["PEROLA_INSTAGRAM_ENABLED"]) === "true",
       accessToken: firstEnv(env, localEnv, ["PEROLA_INSTAGRAM_ACCESS_TOKEN"]),
