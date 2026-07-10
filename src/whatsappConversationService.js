@@ -51,6 +51,7 @@ const ORDER_STATES = new Set([
   "HUMANO"
 ]);
 const ORDER_CONTEXT_TTL_MS = 2 * 60 * 60 * 1000;
+const FLOW_TTL_MS = 30 * 60 * 1000;
 const EXPIRABLE_ORDER_STATES = new Set(["AGUARDANDO_NOME", "COMANDA_EM_ANDAMENTO", "COMANDA_PRONTA", "ENVIADO_PARA_MESA_COMANDA", "AGUARDANDO_PEDIDO_MESA"]);
 const HARD_RESET_REPLY = "Atendimento reiniciado. Me manda um oi para começarmos de novo.";
 const EXPIRED_FLOW_REPLY = "Tu quer continuar o orcamento anterior ou comecar de novo?\n\n1. Continuar orcamento anterior\n2. Comecar novo atendimento\n3. Falar com humano";
@@ -169,8 +170,9 @@ export class WhatsAppConversationService {
         voiceReplyEnabled: runtimeConfig.ai?.voiceReplyEnabled === true
       };
     }
+    const contextForExpiredChoice = buildImplicitExpiredFlowDecisionContext(contextBase, textForIntent, now);
     const expiredFlowChoice = await resolvePendingExpiredFlowDecision({
-      conversation: contextBase,
+      conversation: contextForExpiredChoice,
       incoming,
       message,
       text: textForIntent,
@@ -993,12 +995,35 @@ function hasPendingExpiredFlowDecision(conversation = {}) {
     || conversation.flowData?.pendingExpiredFlowDecision === true;
 }
 
+function buildImplicitExpiredFlowDecisionContext(conversation = {}, text = "", nowIso = new Date().toISOString()) {
+  if (hasPendingExpiredFlowDecision(conversation)) return conversation;
+  if (!normalizeExpiredFlowChoice(text)) return conversation;
+  if (!isExpiredActiveFlowConversation(conversation, nowIso)) return conversation;
+  return {
+    ...conversation,
+    activeStep: "confirmExpiredFlow",
+    flowData: {
+      ...(conversation.flowData && typeof conversation.flowData === "object" ? conversation.flowData : {}),
+      pendingExpiredFlowDecision: true,
+      expiredFlowSnapshot: conversation.activeFlow
+    }
+  };
+}
+
 function normalizeExpiredFlowChoice(text = "") {
   const normalized = normalizeText(text);
   if (normalized === "1" || normalized.includes("continuar")) return "continue";
   if (normalized === "2" || normalized.includes("comecar") || normalized.includes("começar") || normalized.includes("novo")) return "restart";
   if (normalized === "3" || normalized.includes("humano") || normalized.includes("atendente")) return "human";
   return "";
+}
+
+function isExpiredActiveFlowConversation(conversation = {}, nowIso = new Date().toISOString()) {
+  if (!conversation?.activeFlow || typeof conversation.activeFlow !== "object") return false;
+  const updatedAt = Date.parse(conversation.flowUpdatedAt || conversation.activeFlow.updatedAt || "");
+  const now = Date.parse(nowIso);
+  if (!Number.isFinite(updatedAt) || !Number.isFinite(now)) return false;
+  return now - updatedAt > FLOW_TTL_MS;
 }
 
 function clearExpiredFlowDecisionData(flowData = null) {

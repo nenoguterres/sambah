@@ -278,6 +278,29 @@ test("opcao 2 em decisao pendente limpa fluxo e nao repete menu de TTL", async (
   }
 });
 
+test("opcao 2 em fluxo vencido legado limpa sem repetir menu de TTL", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-flow-expired-legacy-new-"));
+  const filePath = join(dir, "conversas.json");
+  await writeExpiredEventConversation(filePath, { pending: false });
+  const service = new WhatsAppConversationService({
+    filePath,
+    now: () => new Date("2026-07-09T12:32:00.000Z")
+  });
+
+  try {
+    const result = await service.recordIncoming({ from: "5551999999999", text: "2", messageId: "expired-legacy-new-1" });
+
+    assert.equal(result.conversa.activeFlow, null);
+    assert.equal(result.conversa.activeStep, "");
+    assert.equal(result.conversa.flowData, null);
+    assert.equal(result.conversa.flowUpdatedAt, "");
+    assert.doesNotMatch(result.respostaSugerida, /Continuar orcamento anterior/);
+    assert.match(result.respostaSugerida, /Atendimento reiniciado/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("opcao 1 em decisao pendente retoma fluxo e atualiza horario", async () => {
   const dir = await mkdtemp(join(tmpdir(), "sambha-flow-expired-continue-"));
   const filePath = join(dir, "conversas.json");
