@@ -1,4 +1,6 @@
 import { createWhatsAppV2State } from "./conversationState.js";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 
 export class InMemoryWhatsAppV2ConversationRepository {
   constructor({ operationLog = [] } = {}) {
@@ -33,6 +35,65 @@ export class InMemoryWhatsAppV2ConversationRepository {
   async markMessageFailed(messageId, error) {
     this.operations.push("markFailed");
     this.messageStatuses.set(messageId, { status: "failed", error: String(error?.message || error), updatedAt: new Date().toISOString() });
+  }
+}
+
+export class FileWhatsAppV2ConversationRepository extends InMemoryWhatsAppV2ConversationRepository {
+  constructor({ filePath, operationLog = [] } = {}) {
+    super({ operationLog });
+    this.filePath = filePath;
+    this.loaded = false;
+  }
+
+  async reserveMessage(messageId) {
+    await this.load();
+    return super.reserveMessage(messageId);
+  }
+
+  async get(conversationId) {
+    await this.load();
+    return super.get(conversationId);
+  }
+
+  async save(state) {
+    await this.load();
+    const saved = await super.save(state);
+    await this.persist();
+    return saved;
+  }
+
+  async markMessageProcessed(messageId) {
+    await this.load();
+    await super.markMessageProcessed(messageId);
+    await this.persist();
+  }
+
+  async markMessageFailed(messageId, error) {
+    await this.load();
+    await super.markMessageFailed(messageId, error);
+    await this.persist();
+  }
+
+  async load() {
+    if (this.loaded) return;
+    this.loaded = true;
+    if (!this.filePath) return;
+    try {
+      const data = JSON.parse(await readFile(this.filePath, "utf8"));
+      this.states = new Map(Object.entries(data.states || {}));
+      this.messageStatuses = new Map(Object.entries(data.messageStatuses || {}));
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
+
+  async persist() {
+    if (!this.filePath) return;
+    await mkdir(dirname(this.filePath), { recursive: true });
+    await writeFile(this.filePath, JSON.stringify({
+      states: Object.fromEntries(this.states.entries()),
+      messageStatuses: Object.fromEntries(this.messageStatuses.entries())
+    }, null, 2));
   }
 }
 
