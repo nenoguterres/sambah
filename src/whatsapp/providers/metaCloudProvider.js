@@ -17,24 +17,30 @@ export class MetaCloudWhatsAppProvider {
   }
 
   async sendText({ to, text } = {}) {
+    return this.sendMessage({ to, message: { type: "text", text } });
+  }
+
+  async sendMessage({ to, message } = {}) {
     if (!this.config.phoneNumberId || !this.config.accessToken) {
       return {
         ok: false,
         provider: this.name,
         sent: false,
-        status: "missing_meta_config",
-        error: "missing_meta_config"
+        status: "meta_configuration_incomplete",
+        error: "meta_configuration_incomplete"
       };
     }
 
     const version = this.config.apiVersion || "v25.0";
     const endpoint = `https://graph.facebook.com/${version}/${encodeURIComponent(this.config.phoneNumberId)}/messages`;
     try {
-      const firstAttempt = await sendMetaText(this.fetch, endpoint, this.config.accessToken, { to, text });
+      const outbound = buildMetaMessagePayload({ to, message });
+      const firstAttempt = await sendMetaPayload(this.fetch, endpoint, this.config.accessToken, outbound.body);
       let attempt = firstAttempt;
       const retryTo = metaBrazilianAllowedListRetryNumber(to, firstAttempt.body);
       if (!firstAttempt.response.ok && retryTo) {
-        const retryAttempt = await sendMetaText(this.fetch, endpoint, this.config.accessToken, { to: retryTo, text });
+        const retryOutbound = buildMetaMessagePayload({ to: retryTo, message });
+        const retryAttempt = await sendMetaPayload(this.fetch, endpoint, this.config.accessToken, retryOutbound.body);
         attempt = {
           ...retryAttempt,
           retried: true,
@@ -43,6 +49,11 @@ export class MetaCloudWhatsAppProvider {
           firstResponse: sanitizeMetaPayload(firstAttempt.body, this.config.accessToken)
         };
       }
+      let fallback = null;
+      if (!attempt.response.ok && outbound.interactive && !attempt.retried) {
+        fallback = await sendMetaPayload(this.fetch, endpoint, this.config.accessToken, buildTextPayload({ to, text: outbound.fallbackText }));
+        attempt = fallback;
+      }
       return {
         ok: attempt.response.ok,
         provider: this.name,
@@ -50,6 +61,9 @@ export class MetaCloudWhatsAppProvider {
         status: attempt.response.ok ? "sent" : "meta_error",
         httpStatus: attempt.response.status,
         response: sanitizeMetaPayload(attempt.body, this.config.accessToken),
+        providerMessageId: extractProviderMessageId(attempt.body),
+        metaMessageType: fallback?.response?.ok ? "text_fallback" : outbound.type,
+        fallbackUsed: Boolean(fallback?.response?.ok),
         ...(attempt.retried ? {
           retried: true,
           originalTo: attempt.originalTo,
@@ -69,23 +83,105 @@ export class MetaCloudWhatsAppProvider {
   }
 }
 
-async function sendMetaText(fetchImpl, endpoint, accessToken, { to, text }) {
+async function sendMetaPayload(fetchImpl, endpoint, accessToken, body) {
   const response = await fetchImpl(endpoint, {
     method: "POST",
     headers: {
       "authorization": `Bearer ${accessToken}`,
       "content-type": "application/json"
     },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      recipient_type: "individual",
-      to,
-      type: "text",
-      text: { preview_url: false, body: text }
-    })
+    body: JSON.stringify(body)
   });
-  const body = await readBody(response);
-  return { response, body };
+  const responseBody = await readBody(response);
+  return { response, body: responseBody };
+}
+
+function buildMetaMessagePayload({ to, message = {} } = {}) {
+  if (message.type === "menu" && Array.isArray(message.menu?.options) && message.menu.options.length > 0) {
+    const options = message.menu.options;
+    const fallbackText = message.text || options.map((item) => item.fallbackText || item.title).join("\n");
+    if (options.length <= 3) {
+      return {
+        type: "interactive_button",
+        interactive: true,
+        fallbackText,
+        body: {
+          messaging_product: "whatsapp",
+          recipient_type: "individual",
+          to,
+          type: "interactive",
+          interactive: {
+            type: "button",
+            body: { text: trimMetaText(message.menu.body || message.text || "Escolha uma opcao:") },
+            action: {
+              buttons: options.map((item) => ({
+                type: "reply",
+                reply: { id: String(item.id).slice(0, 256), title: trimMetaButtonTitle(item.title) }
+              }))
+            }
+          }
+        }
+      };
+    }
+    return {
+      type: "interactive_list",
+      interactive: true,
+      fallbackText,
+      body: {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to,
+        type: "interactive",
+        interactive: {
+          type: "list",
+          body: { text: trimMetaText(message.menu.body || message.text || "Escolha uma opcao:") },
+          action: {
+            button: trimMetaButtonTitle(message.menu.title || "Opcoes"),
+            sections: [{
+              title: trimMetaButtonTitle(message.menu.title || "Menu"),
+              rows: options.map((item) => ({
+                id: String(item.id).slice(0, 200),
+                title: trimMetaButtonTitle(item.title),
+                description: trimMetaDescription(item.description || "")
+              }))
+            }]
+          }
+        }
+      }
+    };
+  }
+  return {
+    type: "text",
+    interactive: false,
+    fallbackText: String(message.text || ""),
+    body: buildTextPayload({ to, text: String(message.text || "") })
+  };
+}
+
+function buildTextPayload({ to, text }) {
+  return {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to,
+    type: "text",
+    text: { preview_url: false, body: String(text || "") }
+  };
+}
+
+function trimMetaText(value = "") {
+  return String(value || "").slice(0, 1024);
+}
+
+function trimMetaButtonTitle(value = "") {
+  return String(value || "Opcao").slice(0, 20);
+}
+
+function trimMetaDescription(value = "") {
+  return String(value || "").slice(0, 72);
+}
+
+function extractProviderMessageId(body = {}) {
+  return body?.messages?.[0]?.id || "";
 }
 
 function metaBrazilianAllowedListRetryNumber(phone = "", responseBody = {}) {

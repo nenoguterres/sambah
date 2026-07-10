@@ -116,7 +116,7 @@ export class WhatsAppMessageService {
       const existing = messages.find((item) => item.direction === "in" && item.messageId === messageId);
       if (existing) return { ok: true, duplicate: true, message: existing };
     }
-    const providerMessageId = sendResult?.response?.messages?.[0]?.id || "";
+    const providerMessageId = sendResult?.providerMessageId || sendResult?.response?.messages?.[0]?.id || "";
     const message = {
       id: `${direction}_${this.now().getTime()}_${Math.random().toString(16).slice(2)}`,
       direction,
@@ -125,8 +125,9 @@ export class WhatsAppMessageService {
       customerName: normalized.customer?.name || "",
       messageId,
       providerMessageId,
+      correlationId: normalized.correlationId || "",
       text: text || normalized.message,
-      status: sendResult?.status || "received",
+      status: sendResult?.status || (direction === "out" ? "registrada_sem_envio" : "received"),
       httpStatus: sendResult?.httpStatus || null,
       response: sendResult?.response || null,
       createdAt: this.now().toISOString()

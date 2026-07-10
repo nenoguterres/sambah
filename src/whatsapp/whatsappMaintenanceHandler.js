@@ -1,10 +1,10 @@
 import { parseWhatsAppIncoming } from "../whatsappConversationService.js";
 import { getRuntimeConfig } from "../config.js";
-import { createWhatsAppV2LabEngine } from "./v2/whatsappV2LabEngine.js";
+import { createWhatsAppV2OperationalEngine } from "./v2/whatsappV2LabEngine.js";
 import { FileWhatsAppV2ConversationRepository } from "./v2/inMemoryRepositories.js";
 import { join } from "node:path";
 
-export async function whatsappMaintenanceHandler(payload = {}, { conversationService, messageService, auditService, runtimeConfig = getRuntimeConfig() } = {}) {
+export async function whatsappMaintenanceHandler(payload = {}, { conversationService, messageService, auditService, whatsappProvider = null, runtimeConfig = getRuntimeConfig() } = {}) {
   const incoming = parseWhatsAppIncoming(payload);
   const conversationResult = await conversationService.recordNeutralIncoming(incoming);
   const messageResult = messageService ? await messageService.handleIncoming(payload) : null;
@@ -37,44 +37,152 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
   }
 
   if (runtimeConfig.whatsappV2?.enabled === true) {
-    const observed = await observeWhatsAppV2(incoming, runtimeConfig);
+    const processed = await processWhatsAppV2(incoming, runtimeConfig);
+    const reply = processed.replies?.[0] || null;
+    if (!reply) {
+      await safeAuditRecord(auditService, {
+        type: "whatsapp_v2_no_automatic_reply",
+        status: "info",
+        source: "meta_whatsapp",
+        message: "WhatsApp V2 processou entrada sem resposta automatica",
+        context: {
+          messageId: incoming.messageId || "",
+          phone: maskPhone(incoming.telefone || ""),
+          mode: "operational",
+          source: processed.source || "",
+          reason: processed.source === "humanState" ? "human_state_blocks_automation" : "no_reply_created"
+        },
+        dedupeKey: incoming.messageId ? `whatsapp-v2-no-reply:${incoming.messageId}` : undefined
+      });
+      return {
+        ok: true,
+        handled: true,
+        engine: "v2",
+        mode: "operational",
+        reason: processed.source === "humanState" ? "human_state_blocks_automation" : "no_reply_created",
+        automaticReplyCreated: false,
+        sent: false,
+        aiCalled: false,
+        senderCalled: false,
+        conversa: conversationResult.conversa,
+        message: conversationResult.message,
+        normalized: messageResult?.normalized || null
+      };
+    }
+
+    if (runtimeConfig.whatsappV2?.autoReplyEnabled !== true) {
+      await safeAuditRecord(auditService, {
+        type: "whatsapp_v2_auto_reply_disabled",
+        status: "warning",
+        source: "meta_whatsapp",
+        message: "WhatsApp V2 gerou resposta mas auto-reply esta desativado",
+        context: {
+          messageId: incoming.messageId || "",
+          phone: maskPhone(incoming.telefone || ""),
+          mode: "operational",
+          source: processed.source || "",
+          sent: false
+        },
+        dedupeKey: incoming.messageId ? `whatsapp-v2-auto-disabled:${incoming.messageId}` : undefined
+      });
+      return {
+        ok: true,
+        handled: true,
+        engine: "v2",
+        mode: "operational",
+        reason: "whatsapp_auto_reply_disabled",
+        automaticReplyCreated: false,
+        sent: false,
+        aiCalled: false,
+        senderCalled: false,
+        conversa: conversationResult.conversa,
+        message: conversationResult.message,
+        normalized: messageResult?.normalized || null
+      };
+    }
+
+    const correlationId = incoming.messageId ? `wa-v2-reply:${incoming.messageId}` : "";
+    let sendResult = null;
+    let sendAttempted = false;
+    let reason = "whatsapp_sender_disabled";
+    if (runtimeConfig.whatsappV2?.sendEnabled === true) {
+      sendAttempted = true;
+      if (!runtimeConfig.whatsappBusiness?.accessToken || !runtimeConfig.whatsappBusiness?.phoneNumberId) {
+        sendResult = { ok: false, sent: false, status: "meta_configuration_incomplete", error: "meta_configuration_incomplete" };
+        reason = "meta_configuration_incomplete";
+      } else if (typeof whatsappProvider?.sendMessage !== "function") {
+        sendResult = { ok: false, sent: false, status: "meta_provider_unavailable", error: "meta_provider_unavailable" };
+        reason = "meta_send_failed";
+      } else {
+        sendResult = await whatsappProvider?.sendMessage?.({ to: incoming.telefone, message: reply });
+        reason = sendResult?.sent ? "sent" : "meta_send_failed";
+      }
+    }
+    const outboundResult = await conversationService.recordOutgoing(conversationResult.conversa.id, {
+      text: reply.text || "",
+      correlationId,
+      sendResult,
+      status: sendResult?.sent ? "sent" : sendResult?.status || reason,
+      metaMessageType: sendResult?.metaMessageType || reply.type || "text"
+    });
+    if (messageService?.appendMessage) {
+      await messageService.appendMessage({
+        direction: "out",
+        normalized: {
+          provider: "meta",
+          from: incoming.telefone || "",
+          customer: { name: incoming.nome || incoming.profileName || "", phone: incoming.telefone || "" },
+          messageId: correlationId,
+          correlationId,
+          message: reply.text || ""
+        },
+        text: reply.text || "",
+        sendResult
+      });
+    }
     await safeAuditRecord(auditService, {
-      type: "whatsapp_v2_observe_only",
-      status: "info",
+      type: sendResult?.sent ? "whatsapp_v2_operational_reply_sent" : "whatsapp_v2_operational_reply_not_sent",
+      status: sendResult?.sent ? "info" : "warning",
       source: "meta_whatsapp",
-      message: "WhatsApp V2 observou entrada local sem resposta automatica",
+      message: sendResult?.sent ? "WhatsApp V2 respondeu pelo provider Meta" : "WhatsApp V2 gerou resposta sem envio Meta",
       context: {
         messageId: incoming.messageId || "",
         phone: maskPhone(incoming.telefone || ""),
-        mode: "observe_only",
-        source: observed.source || "",
-        repliesObserved: observed.repliesObserved || 0,
-        automaticReplyCreated: false,
-        sent: false,
+        mode: "operational",
+        source: processed.source || "",
+        automaticReplyCreated: true,
+        sent: Boolean(sendResult?.sent),
+        reason,
         aiEnabled: false,
-        autoReplyEnabled: false,
-        sendEnabled: false
+        autoReplyEnabled: true,
+        sendEnabled: runtimeConfig.whatsappV2?.sendEnabled === true,
+        senderCalled: sendAttempted,
+        providerStatus: sendResult?.status || ""
       },
-      dedupeKey: incoming.messageId ? `whatsapp-v2-observe:${incoming.messageId}` : undefined
+      dedupeKey: incoming.messageId ? `whatsapp-v2-operational:${incoming.messageId}` : undefined
     });
     return {
-      ok: true,
+      ok: sendResult?.sent || !sendAttempted,
       handled: true,
       engine: "v2",
-      mode: "observe_only",
-      reason: "whatsapp_v2_observe_only",
-      automaticReplyCreated: false,
-      sent: false,
+      mode: "operational",
+      reason,
+      automaticReplyCreated: true,
+      sent: Boolean(sendResult?.sent),
       aiCalled: false,
-      senderCalled: false,
-      outboxCreated: false,
-      conversa: conversationResult.conversa,
+      senderCalled: sendAttempted,
+      outboxCreated: true,
+      messageId: outboundResult.message?.id || "",
+      providerMessageId: sendResult?.providerMessageId || "",
+      conversa: outboundResult.conversa || conversationResult.conversa,
       message: conversationResult.message,
+      outboundMessage: outboundResult.message || null,
       normalized: messageResult?.normalized || null,
-      observed: {
-        source: observed.source || "",
-        repliesObserved: observed.repliesObserved || 0,
-        duplicate: observed.duplicate === true
+      operational: {
+        source: processed.source || "",
+        replyType: reply.type || "text",
+        metaMessageType: sendResult?.metaMessageType || reply.type || "text",
+        fallbackUsed: Boolean(sendResult?.fallbackUsed)
       }
     };
   }
@@ -105,9 +213,8 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
   };
 }
 
-async function observeWhatsAppV2(incoming = {}, runtimeConfig = getRuntimeConfig()) {
-  const engine = createWhatsAppV2LabEngine({
-    observeOnly: true,
+async function processWhatsAppV2(incoming = {}, runtimeConfig = getRuntimeConfig()) {
+  const engine = createWhatsAppV2OperationalEngine({
     conversationRepository: new FileWhatsAppV2ConversationRepository({
       filePath: join(runtimeConfig.dataDir || "data", "whatsapp-v2-state.json")
     })

@@ -37,6 +37,7 @@ test("provider meta envia para endpoint oficial sem vazar token no retorno", asy
   const result = await provider.sendText({ to: "5551999999999", text: "Buenas" });
   assert.equal(result.ok, true);
   assert.equal(result.sent, true);
+  assert.equal(result.providerMessageId, "wamid-1");
   assert.equal(request.url, "https://graph.facebook.com/v21.0/12345/messages");
   assert.match(request.options.headers.authorization, /^Bearer /);
   assert.doesNotMatch(JSON.stringify(result), /token-secreto/);
@@ -84,6 +85,80 @@ test("erro de envio Meta nao vaza access token", async () => {
   assert.doesNotMatch(serialized, /token-super-secreto/);
   assert.doesNotMatch(serialized, /Bearer token/i);
   assert.match(serialized, /\[masked\]/);
+});
+
+test("provider meta envia menu com ate tres opcoes como botoes", async () => {
+  let request = null;
+  const provider = createWhatsAppProvider({
+    config: { provider: "meta", phoneNumberId: "12345", accessToken: "token-secreto" },
+    fetchImpl: async (url, options) => {
+      request = { url, body: JSON.parse(options.body) };
+      return new Response(JSON.stringify({ messages: [{ id: "wamid-buttons" }] }), { status: 200 });
+    }
+  });
+  const result = await provider.sendMessage({
+    to: "5551999999999",
+    message: menuMessage([{ id: "a", title: "A" }, { id: "b", title: "B" }, { id: "c", title: "C" }])
+  });
+  assert.equal(result.sent, true);
+  assert.equal(result.metaMessageType, "interactive_button");
+  assert.equal(request.body.type, "interactive");
+  assert.equal(request.body.interactive.type, "button");
+  assert.equal(request.body.interactive.action.buttons.length, 3);
+  assert.equal(request.body.interactive.action.buttons[0].reply.id, "a");
+});
+
+test("provider meta envia menu com mais de tres opcoes como lista", async () => {
+  let request = null;
+  const provider = createWhatsAppProvider({
+    config: { provider: "meta", phoneNumberId: "12345", accessToken: "token-secreto" },
+    fetchImpl: async (url, options) => {
+      request = { url, body: JSON.parse(options.body) };
+      return new Response(JSON.stringify({ messages: [{ id: "wamid-list" }] }), { status: 200 });
+    }
+  });
+  const result = await provider.sendMessage({
+    to: "5551999999999",
+    message: menuMessage([
+      { id: "portal.foodtruck", title: "Insano Food Truck" },
+      { id: "portal.xeriffe", title: "Xeriffe Obirici" },
+      { id: "portal.granja", title: "Granja" },
+      { id: "portal.tecnologia", title: "Tecnologia" }
+    ])
+  });
+  assert.equal(result.sent, true);
+  assert.equal(result.metaMessageType, "interactive_list");
+  assert.equal(request.body.interactive.type, "list");
+  assert.equal(request.body.interactive.action.sections[0].rows.length, 4);
+  assert.equal(request.body.interactive.action.sections[0].rows[0].id, "portal.foodtruck");
+});
+
+test("provider meta usa texto numerado quando lista interativa falha", async () => {
+  const requests = [];
+  const provider = createWhatsAppProvider({
+    config: { provider: "meta", phoneNumberId: "12345", accessToken: "token-secreto" },
+    fetchImpl: async (url, options) => {
+      requests.push(JSON.parse(options.body));
+      if (requests.length === 1) return new Response(JSON.stringify({ error: { code: 100, message: "invalid interactive" } }), { status: 400 });
+      return new Response(JSON.stringify({ messages: [{ id: "wamid-fallback" }] }), { status: 200 });
+    }
+  });
+  const result = await provider.sendMessage({
+    to: "5551999999999",
+    message: menuMessage([
+      { id: "1", title: "Um", fallbackText: "1. Um" },
+      { id: "2", title: "Dois", fallbackText: "2. Dois" },
+      { id: "3", title: "Tres", fallbackText: "3. Tres" },
+      { id: "4", title: "Quatro", fallbackText: "4. Quatro" }
+    ])
+  });
+  assert.equal(result.sent, true);
+  assert.equal(result.fallbackUsed, true);
+  assert.equal(result.metaMessageType, "text_fallback");
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].type, "interactive");
+  assert.equal(requests[1].type, "text");
+  assert.match(requests[1].text.body, /1\. Um/);
 });
 
 test("provider meta tenta nono digito brasileiro quando Meta recusa destinatario", async () => {
@@ -135,6 +210,19 @@ test("parser normaliza payload da Meta Cloud API", () => {
   assert.equal(normalized.message, "quero cardapio");
 });
 
+test("parser usa action_id interativo como fonte da verdade", () => {
+  const normalized = parseWhatsAppWebhookPayload(metaPayload({
+    from: "5551999999999",
+    id: "wamid-meta-button",
+    type: "interactive",
+    interactive: {
+      type: "button_reply",
+      button_reply: { id: "portal.foodtruck", title: "Insano Food Truck" }
+    }
+  }));
+  assert.equal(normalized.message, "portal.foodtruck");
+});
+
 function metaPayload(message) {
   return {
     object: "whatsapp_business_account",
@@ -146,5 +234,18 @@ function metaPayload(message) {
         }
       }]
     }]
+  };
+}
+
+function menuMessage(options) {
+  return {
+    type: "menu",
+    text: options.map((item, index) => item.fallbackText || `${index + 1}. ${item.title}`).join("\n"),
+    menu: {
+      id: "menu.test",
+      title: "Menu Teste",
+      body: "Escolha uma opcao:",
+      options
+    }
   };
 }

@@ -34,13 +34,13 @@ export function extractWhatsAppMessageText(message = {}, payload = {}) {
   const nfmReply = interactive.nfm_reply || {};
   return firstText([
     message.text?.body,
-    message.button?.text,
     message.button?.payload,
-    interactive.button_reply?.title,
+    message.button?.text,
     interactive.button_reply?.id,
+    interactive.button_reply?.title,
+    interactive.list_reply?.id,
     interactive.list_reply?.title,
     interactive.list_reply?.description,
-    interactive.list_reply?.id,
     nfmReply.body,
     nfmReply.name,
     responseJsonText(nfmReply.response_json),

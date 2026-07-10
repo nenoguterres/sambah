@@ -123,6 +123,8 @@ export function createApp({
   aiAuditService = aiAudit,
   aiPerformanceService = aiPerformance,
   aiConversionService = aiConversion,
+  whatsappProvider: appWhatsappProvider = whatsappProvider,
+  runtimeConfig: appRuntimeConfig = null,
   whatsappSendFetch = globalThis.fetch,
   authMode = globalThis.process?.env?.SAMBAH_AUTH_MODE || "session"
 } = {}) {
@@ -755,8 +757,8 @@ export function createApp({
       if (req.method === "POST" && conversaResponderMatch) {
         const body = await readJson(req, { requireBody: true });
         const result = await whatsappConversationService.addOutgoing(decodeURIComponent(conversaResponderMatch[1]), body, {
-          runtimeConfig: getRuntimeConfig(),
-          whatsappProvider
+          runtimeConfig: appRuntimeConfig || getRuntimeConfig(),
+          whatsappProvider: appWhatsappProvider
         });
         return sendJson(res, result.ok ? 200 : 404, result);
       }
@@ -1308,7 +1310,7 @@ export function createApp({
       }
 
       if (req.method === "POST" && ["/webhook/whatsapp", "/webhook/site"].includes(url.pathname)) {
-        return handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappMessageService, callCenterService, whatsappSendFetch);
+        return handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappMessageService, callCenterService, whatsappSendFetch, appWhatsappProvider, appRuntimeConfig);
       }
 
       if (req.method === "POST" && url.pathname === "/webhooks/meta") {
@@ -1396,7 +1398,7 @@ function summarizeMetaWebhookPayload(payload = {}) {
   };
 }
 
-async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappMessageService, callCenterService = null, whatsappSendFetch = globalThis.fetch) {
+async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappMessageService, callCenterService = null, whatsappSendFetch = globalThis.fetch, appWhatsappProvider = whatsappProvider, appRuntimeConfig = null) {
   let body = {};
   try {
     body = await readJson(req, { requireBody: true });
@@ -1466,7 +1468,9 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
       const maintenanceResult = await whatsappMaintenanceHandler(body, {
         conversationService: whatsappConversationService,
         messageService: whatsappMessageService,
-        auditService
+        auditService,
+        whatsappProvider: appWhatsappProvider,
+        runtimeConfig: appRuntimeConfig || getRuntimeConfig()
       });
       return sendJson(res, 200, maintenanceResult);
     }

@@ -5,7 +5,6 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { adaptMetaWebhookV2 } from "../src/whatsapp/v2/metaWebhookAdapter.js";
 import { createWhatsAppV2LabEngine } from "../src/whatsapp/v2/whatsappV2LabEngine.js";
-import { FakeWhatsAppV2MetaSender } from "../src/whatsapp/v2/fakeMetaSender.js";
 import { FileWhatsAppV2ConversationRepository } from "../src/whatsapp/v2/inMemoryRepositories.js";
 
 test("WhatsApp V2 lab adapta payload Meta fake sem usar token ou webhook real", () => {
@@ -25,7 +24,7 @@ test("WhatsApp V2 lab trata status Meta como callback tecnico sem roteador", () 
 });
 
 test("WhatsApp V2 lab deduplica messageId e envia no maximo uma resposta fake", async () => {
-  const engine = createWhatsAppV2LabEngine();
+  const engine = createLabEngine();
   const message = { messageId: "wamid-v2-dedupe", from: "5551000000002", text: "oi", receivedAt: "2026-07-10T16:00:00.000Z" };
   const first = await engine.processor.handleIncoming(message);
   const second = await engine.processor.handleIncoming(message);
@@ -39,7 +38,7 @@ test("WhatsApp V2 lab deduplica messageId e envia no maximo uma resposta fake", 
 });
 
 test("WhatsApp V2 lab modo humano preserva contexto e bloqueia automacao apos motivo", async () => {
-  const engine = createWhatsAppV2LabEngine();
+  const engine = createLabEngine();
   const handoff = await engine.processor.handleIncoming({ messageId: "wamid-v2-human-1", from: "5551000000003", text: "humano" });
   const reason = await engine.processor.handleIncoming({ messageId: "wamid-v2-human-2", from: "5551000000003", text: "quero falar sobre evento" });
   const afterHuman = await engine.processor.handleIncoming({ messageId: "wamid-v2-human-3", from: "5551000000003", text: "oi" });
@@ -54,7 +53,7 @@ test("WhatsApp V2 lab modo humano preserva contexto e bloqueia automacao apos mo
 
 test("WhatsApp V2 lab sender fake falha sem chamar servico real e deixa outbox failed", async () => {
   const sender = new FakeWhatsAppV2MetaSender({ failNext: true });
-  const engine = createWhatsAppV2LabEngine({ sender });
+  const engine = createLabEngine({ sender });
   const result = await engine.processor.handleIncoming({ messageId: "wamid-v2-fail-1", from: "5551000000004", text: "oi" });
   const outbox = engine.outboxRepository.list()[0];
 
@@ -66,7 +65,7 @@ test("WhatsApp V2 lab sender fake falha sem chamar servico real e deixa outbox f
 
 test("WhatsApp V2 lab observeOnly observa resposta sem criar outbox ou chamar sender", async () => {
   const sender = new FakeWhatsAppV2MetaSender();
-  const engine = createWhatsAppV2LabEngine({ sender, observeOnly: true });
+  const engine = createLabEngine({ sender, observeOnly: true });
   const result = await engine.processor.handleIncoming({ messageId: "wamid-v2-observe-1", from: "5551000000005", text: "oi" });
 
   assert.equal(result.ok, true);
@@ -79,7 +78,7 @@ test("WhatsApp V2 lab observeOnly observa resposta sem criar outbox ou chamar se
 });
 
 test("Portal Insano menu principal roteia cada botao sem chamar IA", async () => {
-  const engine = createWhatsAppV2LabEngine({ observeOnly: true });
+  const engine = createLabEngine({ observeOnly: true });
   const cases = [
     ["1", "foodtruck_main_menu", "insano_food_truck"],
     ["2", "xeriffe_main_menu", "xeriffe_obirici"],
@@ -100,7 +99,7 @@ test("Portal Insano menu principal roteia cada botao sem chamar IA", async () =>
 });
 
 test("Portal Insano preserva area nos menus Foodtruck, Xeriffe, Granja e Tecnologia", async () => {
-  const engine = createWhatsAppV2LabEngine({ observeOnly: true });
+  const engine = createLabEngine({ observeOnly: true });
   const flows = [
     ["1", "3", "foodtruck_services_menu", "insano_food_truck"],
     ["2", "1", "xeriffe_catalog_menu", "xeriffe_obirici"],
@@ -119,7 +118,7 @@ test("Portal Insano preserva area nos menus Foodtruck, Xeriffe, Granja e Tecnolo
 });
 
 test("Portal Insano opcao invalida repete menu atual e comandos voltar/inicio navegam corretamente", async () => {
-  const engine = createWhatsAppV2LabEngine({ observeOnly: true });
+  const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000300";
   await engine.processor.handleIncoming({ messageId: "wamid-nav-1", from, text: "oi" });
   await engine.processor.handleIncoming({ messageId: "wamid-nav-2", from, text: "1" });
@@ -137,7 +136,7 @@ test("Portal Insano opcao invalida repete menu atual e comandos voltar/inicio na
 });
 
 test("Portal Insano resposta curta usa etapa ativa sem trocar area por texto livre", async () => {
-  const engine = createWhatsAppV2LabEngine({ observeOnly: true });
+  const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000400";
   await engine.processor.handleIncoming({ messageId: "wamid-flow-1", from, text: "oi" });
   await engine.processor.handleIncoming({ messageId: "wamid-flow-2", from, text: "1" });
@@ -149,7 +148,7 @@ test("Portal Insano resposta curta usa etapa ativa sem trocar area por texto liv
 });
 
 test("Portal Insano texto de pagamento nunca confirma pagamento", async () => {
-  const engine = createWhatsAppV2LabEngine({ observeOnly: true });
+  const engine = createLabEngine({ observeOnly: true });
   const first = await engine.processor.handleIncoming({ messageId: "wamid-pay-1", from: "5551000000500", text: "paguei" });
   const second = await engine.processor.handleIncoming({ messageId: "wamid-pay-2", from: "5551000000500", text: "pedido 123" });
 
@@ -160,7 +159,7 @@ test("Portal Insano texto de pagamento nunca confirma pagamento", async () => {
 });
 
 test("Portal Insano integracao desabilitada nao e chamada", async () => {
-  const engine = createWhatsAppV2LabEngine({ observeOnly: true });
+  const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000600";
   await engine.processor.handleIncoming({ messageId: "wamid-int-1", from, text: "oi" });
   await engine.processor.handleIncoming({ messageId: "wamid-int-2", from, text: "2" });
@@ -176,13 +175,13 @@ test("Portal Insano estado de fluxo persiste entre reinicios do repositorio", as
   try {
     const filePath = join(dir, "state.json");
     const firstRepo = new FileWhatsAppV2ConversationRepository({ filePath });
-    const first = createWhatsAppV2LabEngine({ conversationRepository: firstRepo, observeOnly: true });
+    const first = createLabEngine({ conversationRepository: firstRepo, observeOnly: true });
     await first.processor.handleIncoming({ messageId: "wamid-persist-1", from: "5551000000700", text: "oi" });
     await first.processor.handleIncoming({ messageId: "wamid-persist-2", from: "5551000000700", text: "1" });
     await first.processor.handleIncoming({ messageId: "wamid-persist-3", from: "5551000000700", text: "2" });
 
     const secondRepo = new FileWhatsAppV2ConversationRepository({ filePath });
-    const second = createWhatsAppV2LabEngine({ conversationRepository: secondRepo, observeOnly: true });
+    const second = createLabEngine({ conversationRepository: secondRepo, observeOnly: true });
     const answer = await second.processor.handleIncoming({ messageId: "wamid-persist-4", from: "5551000000700", text: "120 pessoas" });
 
     assert.equal(answer.state.areaId, "insano_food_truck");
@@ -208,4 +207,24 @@ function metaPayload(message = {}) {
       }]
     }]
   };
+}
+
+function createLabEngine(options = {}) {
+  return createWhatsAppV2LabEngine({ sender: options.sender || new FakeWhatsAppV2MetaSender(), ...options });
+}
+
+class FakeWhatsAppV2MetaSender {
+  constructor({ failNext = false } = {}) {
+    this.failNext = failNext;
+    this.sent = [];
+  }
+
+  async send(payload) {
+    if (this.failNext) {
+      this.failNext = false;
+      throw new Error("FAKE_WHATSAPP_V2_SENDER_FAILURE");
+    }
+    this.sent.push(structuredClone(payload));
+    return { ok: true, provider: "fake-whatsapp-v2", sent: true };
+  }
 }

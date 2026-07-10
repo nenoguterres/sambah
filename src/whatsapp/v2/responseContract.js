@@ -8,6 +8,16 @@ export function response(source, nextState, text = "", actions = []) {
   };
 }
 
+export function responseWithReplies(source, nextState, replies = [], actions = []) {
+  return {
+    handled: true,
+    source,
+    nextState,
+    replies,
+    actions
+  };
+}
+
 export function assertWhatsAppV2ResponseContract(result) {
   if (!result || result.handled !== true || !result.source || !result.nextState || !Array.isArray(result.replies) || !Array.isArray(result.actions)) {
     throw new Error("INVALID_WHATSAPP_V2_RESPONSE_CONTRACT");
