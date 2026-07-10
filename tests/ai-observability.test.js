@@ -48,7 +48,7 @@ test("observabilidade da IA registra metricas, auditoria, intencoes, bloqueios e
     assert.equal(summary.intentDetected.cardapio, 1);
     assert.equal(summary.intentDetected.outras, 1);
     assert.equal(summary.intentDetected.pedido, 1);
-    assert.equal(summary.averageConfidence, 0.6067);
+    assert.equal(summary.averageConfidence, 0.7167);
     assert.deepEqual(summary.intentRanking.map((item) => item.intent).sort(), ["Cardapio", "Outras", "Pedido"]);
     assert.ok(summary.blockReasons.some((item) => item.label === "preco sem fonte interna" && item.count === 1));
     assert.ok(summary.blockReasons.some((item) => item.label === "baixa confianca" && item.count >= 1));

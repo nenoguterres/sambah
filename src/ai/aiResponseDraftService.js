@@ -1,14 +1,7 @@
-import {
-  buildSambahEventMessage,
-  buildSambahHumanSupportMessage,
-  buildSambahInitialMessage,
-  buildSambahOrderMessage
-} from "../sambahPersonality.js";
-
 export class AiResponseDraftService {
   suggest({ classification = {}, route = {}, extractedData = {} } = {}) {
     if (classification.requiresHandoff || route.requiresHuman) {
-      return buildDraft(buildSambahHumanSupportMessage(), "human_handoff");
+      return buildDraft("Vou deixar isso com a equipe humana para seguir pelo canal certo.", "human_handoff");
     }
 
     switch (classification.intent) {
@@ -16,11 +9,11 @@ export class AiResponseDraftService {
       case "delivery":
       case "retirada":
       case "local":
-        return buildDraft(buildSambahOrderMessage(), "order_flow", extractedData);
+        return buildDraft("Posso organizar uma sugestao de atendimento para pedido, mas a confirmacao final fica com a equipe.", "order_flow", extractedData);
       case "cardapio":
         return buildDraft("Claro. Vou te ajudar com o cardapio. Me diz se tu quer ver lanches, assados, pizzas, pancho, hot dog, PanBagnat ou porcoes de boteco.", "menu_flow", extractedData);
       case "evento":
-        return buildDraft(buildSambahEventMessage(), "event_flow", extractedData);
+        return buildDraft("Posso registrar os dados principais do evento e encaminhar para a equipe continuar o atendimento.", "event_flow", extractedData);
       case "financeiro":
         return buildDraft("Certo. Vou encaminhar teu assunto para o financeiro do Insano conferir por fonte interna e seguir contigo.", "finance_flow", extractedData);
       case "horario":
@@ -28,7 +21,7 @@ export class AiResponseDraftService {
       case "localizacao":
         return buildDraft("Buenas! Vou buscar a localizacao oficial da operacao e te passo pelo canal certo.", "info_flow", extractedData);
       default:
-        return buildDraft(buildSambahInitialMessage(), "fallback", extractedData);
+        return buildDraft("Recebi tua mensagem e vou manter isso em atendimento assistido pela equipe.", "fallback", extractedData);
     }
   }
 }

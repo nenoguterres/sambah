@@ -1,4 +1,3 @@
-import { routeConversation } from "../operationRouter.js";
 import { AiGuardrailsService } from "./aiGuardrailsService.js";
 import { AiIntentClassifier } from "./aiIntentClassifier.js";
 import { AiResponseDraftService } from "./aiResponseDraftService.js";
@@ -8,7 +7,7 @@ export class ControlledAiService {
     classifier = new AiIntentClassifier(),
     guardrails = new AiGuardrailsService(),
     draftService = new AiResponseDraftService(),
-    router = routeConversation,
+    router = routeControlledAiDecision,
     auditService = null,
     metricsService = null,
     aiAuditService = null,
@@ -101,6 +100,44 @@ export function extractControlledData(message = "") {
     dates: extractDates(text),
     phoneNumbers: extractPhoneNumbers(text),
     mentionedProducts: extractProducts(text)
+  };
+}
+
+export function routeControlledAiDecision(classification = {}) {
+  const intent = classification.intent || "unknown";
+  if (intent === "humano" || intent === "unknown") {
+    return {
+      module: "human",
+      queue: "atendimento",
+      priority: intent === "humano" ? "high" : "normal",
+      requiresHuman: true,
+      nextAction: "human_review"
+    };
+  }
+  if (intent === "evento") {
+    return {
+      module: "crm",
+      queue: "eventos",
+      priority: "high",
+      requiresHuman: false,
+      nextAction: "review_event_request"
+    };
+  }
+  if (intent === "pedido" || intent === "delivery" || intent === "retirada" || intent === "local" || intent === "cardapio") {
+    return {
+      module: "assisted_service",
+      queue: "pedidos",
+      priority: "normal",
+      requiresHuman: false,
+      nextAction: "review_order_request"
+    };
+  }
+  return {
+    module: "support",
+    queue: "triagem",
+    priority: "normal",
+    requiresHuman: false,
+    nextAction: "review_message"
   };
 }
 

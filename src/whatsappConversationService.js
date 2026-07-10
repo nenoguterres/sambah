@@ -1,35 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import crypto from "node:crypto";
-import {
-  buildSambahEventMessage,
-  buildSambahHumanSupportMessage,
-  buildSambahInitialMessage,
-  buildSambahMenuMessage,
-  buildSambahOrderMessage
-} from "./sambahPersonality.js";
-import { detectIntent } from "./intentEngine.js";
-import { clearActiveFlowPatch, handleActiveFlow } from "./flowManager.js";
-import { routeConversation } from "./operationRouter.js";
 import { extractWhatsAppMessageText } from "./whatsapp/whatsappWebhookParser.js";
-
-const INTENT_RESPONSES = {
-  pedido: buildSambahOrderMessage(),
-  delivery: buildSambahOrderMessage(),
-  retirada: buildSambahOrderMessage(),
-  mesa: buildSambahOrderMessage(),
-  evento: buildSambahEventMessage(),
-  food_truck: buildSambahEventMessage(),
-  corporativo: buildSambahEventMessage(),
-  xeriffe: buildSambahEventMessage(),
-  reclamacao: buildSambahHumanSupportMessage(),
-  humano: buildSambahHumanSupportMessage(),
-  cardapio: buildSambahMenuMessage(),
-  desconhecido: buildSambahInitialMessage()
-};
-
-const HUMAN_INTENTS = new Set(["humano", "reclamacao"]);
-const OPPORTUNITY_INTENTS = new Set(["evento", "food_truck", "corporativo", "xeriffe", "reserva", "festa"]);
 
 export class WhatsAppConversationService {
   constructor({ filePath, messagesFile = "", now = () => new Date() } = {}) {
@@ -54,108 +26,60 @@ export class WhatsAppConversationService {
     return conversation ? { ok: true, conversa: this.#withPriority(conversation) } : { ok: false, error: "Conversa nao encontrada" };
   }
 
-  async recordIncoming(payload = {}, { runtimeConfig = {}, crmService = null } = {}) {
+  async recordIncoming(payload = {}) {
     const incoming = parseWhatsAppIncoming(payload);
+    return this.recordNeutralIncoming(incoming);
+  }
+
+  async recordNeutralIncoming(incoming = {}) {
     const now = this.now().toISOString();
-    const textForIntent = incoming.text || incoming.transcricao || incoming.caption || "";
-    const intentEngine = detectIntent(textForIntent);
-    const operationRoute = routeConversation(intentEngine);
-    const intent = detectWhatsAppIntent(textForIntent);
-    const respostaSugerida = suggestedWhatsAppResponse(intent);
-    const configStatus = computeConfigStatus(incoming, runtimeConfig);
-    const status = configStatus || (HUMAN_INTENTS.has(intent) ? "humano" : "aguardando_equipe");
     const data = await this.#read();
-    const id = incoming.telefone ? `wa_${incoming.telefone}` : `wa_${crypto.randomUUID()}`;
-    const existing = data.conversas.find((item) => item.id === id || item.telefone === incoming.telefone);
+    const telefone = normalizePhone(incoming.telefone || incoming.from || incoming.phone || "");
+    const id = telefone ? `wa_${telefone}` : `wa_${crypto.randomUUID()}`;
+    const existing = data.conversas.find((item) => item.id === id || item.telefone === telefone);
+    const text = String(incoming.text || incoming.message || incoming.transcricao || "").trim();
     const message = {
       id: incoming.messageId || `msg_${crypto.randomUUID()}`,
       direction: "in",
-      type: incoming.tipo,
-      text: incoming.text,
-      transcricao: incoming.transcricao,
-      mediaId: incoming.mediaId,
-      rawType: incoming.rawType,
+      type: incoming.tipo || incoming.type || "text",
+      text,
+      transcricao: incoming.transcricao || "",
+      mediaId: incoming.mediaId || "",
+      rawType: incoming.rawType || incoming.type || "text",
       createdAt: now,
-      status: configStatus || "recebida"
+      status: "recebida"
     };
     const base = existing || {
       id,
       nome: incoming.nome || incoming.profileName || "Cliente WhatsApp",
-      telefone: incoming.telefone,
+      telefone,
       operation: "Insano",
       origem: "whatsapp",
       mensagens: [],
       createdAt: now
     };
-    const flowBefore = {
-      activeFlow: base.activeFlow || "",
-      activeStep: base.activeStep || "",
-      flowData: base.flowData || {}
-    };
-    const flowResult = handleActiveFlow({
-      conversation: base,
-      text: textForIntent,
-      intent,
-      now: this.now()
-    });
-    const flowPatch = flowResult?.clearFlow ? clearActiveFlowPatch() : flowResult?.patch || {};
-    const flowResponse = flowResult?.responseText || respostaSugerida;
     const updated = {
       ...base,
       nome: base.nome || incoming.nome || incoming.profileName || "Cliente WhatsApp",
-      telefone: base.telefone || incoming.telefone,
-      ultimaMensagem: incoming.text || incoming.transcricao || describeMessageType(incoming.tipo),
+      telefone: base.telefone || telefone,
+      ultimaMensagem: text || describeMessageType(message.type),
       ultimaInteracao: now,
       updatedAt: now,
-      intent: intentEngine.intent,
-      intencao: intent,
-      intentEngine,
-      route: operationRoute,
-      currentModule: operationRoute.module,
-      nextAction: operationRoute.nextAction,
-      status: flowResult?.status || status,
-      respostaSugerida: flowResponse,
-      configuracaoPendente: Boolean(configStatus),
-      audio: incoming.tipo === "audio" ? {
-        mediaId: incoming.mediaId,
-        transcricao: incoming.transcricao || "",
-        status: configStatus || "transcricao_pendente"
-      } : base.audio || null,
-      ...flowPatch,
+      status: base.status || "aguardando_equipe",
+      respostaSugerida: "",
+      automaticReplyCreated: false,
+      whatsappEngine: "disabled",
       mensagens: [...(base.mensagens || []), message].slice(-60)
     };
-    if (existing) {
-      data.conversas = data.conversas.map((item) => (item.id === existing.id ? updated : item));
-    } else {
-      data.conversas.push(updated);
-    }
-    console.info("whatsapp.flow_manager.received", {
-      text: textForIntent,
-      activeFlowBefore: flowBefore.activeFlow,
-      activeStepBefore: flowBefore.activeStep,
-      flowDataBefore: flowBefore.flowData,
-      globalCommand: flowResult?.globalCommand || "",
-      responseText: flowResponse,
-      activeFlowAfter: updated.activeFlow || "",
-      activeStepAfter: updated.activeStep || "",
-      flowDataAfter: updated.flowData || {}
-    });
+    if (existing) data.conversas = data.conversas.map((item) => (item.id === existing.id ? updated : item));
+    else data.conversas.push(updated);
     await this.#write(data);
-
-    if (crmService && incoming.telefone) {
-      await updateCrmFromConversation(crmService, updated, incoming, intent);
-    }
-
     return {
       ok: true,
       conversa: this.#withPriority(updated),
       message,
-      intent,
-      intentEngine,
-      operationRoute,
-      respostaSugerida: flowResponse,
-      sendEnabled: runtimeConfig.whatsappBusiness?.sendEnabled === true,
-      voiceReplyEnabled: runtimeConfig.ai?.voiceReplyEnabled === true
+      engine: "disabled",
+      automaticReplyCreated: false
     };
   }
 
@@ -164,14 +88,9 @@ export class WhatsAppConversationService {
     const index = data.conversas.findIndex((item) => item.id === id || item.telefone === normalizePhone(id));
     if (index === -1) return { ok: false, error: "Conversa nao encontrada" };
     const now = this.now().toISOString();
-    const text = String(body.text || body.message || data.conversas[index].respostaSugerida || "").trim();
+    const text = String(body.text || body.message || "").trim();
     if (!text) return { ok: false, error: "Resposta vazia" };
-    const outgoing = await sendOutgoingIfReady({
-      conversation: data.conversas[index],
-      runtimeConfig,
-      whatsappProvider,
-      text
-    });
+    const outgoing = await sendOutgoingIfReady({ conversation: data.conversas[index], runtimeConfig, whatsappProvider, text });
     const message = {
       id: `msg_${crypto.randomUUID()}`,
       direction: "out",
@@ -234,7 +153,6 @@ export class WhatsAppConversationService {
     const data = await this.#read();
     let updated = false;
     const now = this.now().toISOString();
-
     data.conversas = data.conversas.map((conversation) => {
       const messages = Array.isArray(conversation.mensagens) ? conversation.mensagens : [];
       const hasPhoneMatch = recipientPhone && normalizePhone(conversation.telefone) === recipientPhone;
@@ -256,13 +174,8 @@ export class WhatsAppConversationService {
       });
       if (!conversationTouched && !hasPhoneMatch) return conversation;
       updated = true;
-      return {
-        ...conversation,
-        updatedAt: conversationTouched ? now : conversation.updatedAt,
-        mensagens: conversationTouched ? nextMessages : messages
-      };
+      return { ...conversation, updatedAt: conversationTouched ? now : conversation.updatedAt, mensagens: conversationTouched ? nextMessages : messages };
     });
-
     if (updated) await this.#write(data);
     return { ok: true, updated, providerMessageId, status: status.status || "" };
   }
@@ -314,13 +227,7 @@ export class WhatsAppConversationService {
     };
     data.conversas[index] = updated;
     await this.#write(data);
-    return {
-      ok: true,
-      deleted: true,
-      messageId: targetMessageId,
-      removed: sanitizeDeletedMessage(removed),
-      conversa: this.#withPriority(updated)
-    };
+    return { ok: true, deleted: true, messageId: targetMessageId, removed: sanitizeDeletedMessage(removed), conversa: this.#withPriority(updated) };
   }
 
   async deleteConversation(id) {
@@ -330,22 +237,11 @@ export class WhatsAppConversationService {
     const conversation = data.conversas[index];
     const eligibility = conversationDeletionEligibility(conversation);
     if (!eligibility.canDelete) {
-      return {
-        ok: false,
-        statusCode: 409,
-        error: "conversation_not_deletable",
-        message: "Conversa ativa ou com vinculo operacional nao pode ser excluida",
-        reason: eligibility.reason
-      };
+      return { ok: false, statusCode: 409, error: "conversation_not_deletable", message: "Conversa ativa nao pode ser excluida", reason: eligibility.reason };
     }
     data.conversas.splice(index, 1);
     await this.#write(data);
-    return {
-      ok: true,
-      deleted: true,
-      conversationId: conversation.id || id,
-      reason: eligibility.reason
-    };
+    return { ok: true, deleted: true, conversationId: conversation.id || id, reason: eligibility.reason };
   }
 
   async #updateStatus(id, status) {
@@ -367,12 +263,7 @@ export class WhatsAppConversationService {
     else if (minutes >= 30) prioridade = "alta";
     else if (minutes >= 15) prioridade = "media";
     else if (minutes >= 5) prioridade = "atencao";
-    return {
-      ...conversation,
-      tempoParadoMinutos: minutes,
-      prioridade,
-      whatsappUrl: conversation.telefone ? `https://wa.me/${conversation.telefone}` : null
-    };
+    return { ...conversation, tempoParadoMinutos: minutes, prioridade, whatsappUrl: conversation.telefone ? `https://wa.me/${conversation.telefone}` : null };
   }
 
   async #read() {
@@ -400,7 +291,6 @@ export class WhatsAppConversationService {
     const ordered = history
       .filter((message) => message && message.phone && message.createdAt)
       .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
-
     for (const historyMessage of ordered) {
       const phone = normalizePhone(historyMessage.phone);
       if (!phone) continue;
@@ -422,9 +312,6 @@ export class WhatsAppConversationService {
         createdAt: historyMessage.createdAt,
         status: normalizeHistoryStatus(historyMessage)
       };
-      const intent = detectWhatsAppIntent(text);
-      const intentEngine = detectIntent(text);
-      const operationRoute = routeConversation(intentEngine);
       const base = existing || {
         id,
         nome: historyMessage.customerName || "Cliente WhatsApp",
@@ -434,9 +321,7 @@ export class WhatsAppConversationService {
         mensagens: [],
         createdAt: historyMessage.createdAt
       };
-      const updatedMessages = [...messages, message]
-        .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
-        .slice(-60);
+      const updatedMessages = [...messages, message].sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))).slice(-60);
       const lastInbound = [...updatedMessages].reverse().find((item) => item.direction === "in");
       const lastMessage = updatedMessages[updatedMessages.length - 1];
       const updated = {
@@ -446,14 +331,10 @@ export class WhatsAppConversationService {
         ultimaMensagem: lastInbound?.text || lastMessage?.text || "Mensagem recebida",
         ultimaInteracao: lastInbound?.createdAt || lastMessage?.createdAt || historyMessage.createdAt,
         updatedAt: lastMessage?.createdAt || historyMessage.createdAt,
-        intent: base.intent || intentEngine.intent,
-        intencao: base.intencao || intent,
-        intentEngine: base.intentEngine || intentEngine,
-        route: base.route || operationRoute,
-        currentModule: base.currentModule || operationRoute.module,
-        nextAction: base.nextAction || operationRoute.nextAction,
-        status: base.status || (HUMAN_INTENTS.has(intent) ? "humano" : "aguardando_equipe"),
-        respostaSugerida: base.respostaSugerida || suggestedWhatsAppResponse(intent),
+        status: base.status || "aguardando_equipe",
+        respostaSugerida: base.respostaSugerida || "",
+        automaticReplyCreated: false,
+        whatsappEngine: "disabled",
         configuracaoPendente: Boolean(base.configuracaoPendente),
         audio: base.audio || null,
         mensagens: updatedMessages
@@ -484,9 +365,7 @@ export function parseWhatsAppIncoming(payload = {}) {
   const source = metaMessage || payload;
   const rawType = source.type || payload.messageType || "text";
   const tipo = normalizeMessageType(rawType);
-  const text = String(metaMessage
-    ? extractWhatsAppMessageText(metaMessage, payload)
-    : source.message || source.text || source.body || payload.message || payload.text || "").trim();
+  const text = String(metaMessage ? extractWhatsAppMessageText(metaMessage, payload) : source.message || source.text || source.body || payload.message || payload.text || "").trim();
   const audio = source.audio || payload.audio || {};
   return {
     messageId: source.id || payload.eventId || payload.messageId || "",
@@ -502,59 +381,10 @@ export function parseWhatsAppIncoming(payload = {}) {
   };
 }
 
-export function detectWhatsAppIntent(text = "") {
-  const normalized = normalizeText(text);
-  if (!normalized) return "desconhecido";
-  if (hasAny(normalized, ["reclamacao", "reclamar", "problema", "errado", "atrasou", "ruim"])) return "reclamacao";
-  if (hasAny(normalized, ["humano", "atendente", "falar com pessoa", "falar com alguem", "neno", "kazuko", "responsavel"])) return "humano";
-  if (hasAny(normalized, ["delivery", "entrega", "entregar"])) return "delivery";
-  if (hasAny(normalized, ["retirada", "retirar", "buscar", "pegar"])) return "retirada";
-  if (hasAny(normalized, ["estou no local", "mesa", "minha mesa", "na mesa"])) return "mesa";
-  if (hasAny(normalized, ["food truck", "foodtruck", "truck"])) return "food_truck";
-  if (hasAny(normalized, ["corporativo", "empresa", "coffee", "ativacao", "feira"])) return "corporativo";
-  if (hasAny(normalized, ["xeriffe", "obirici"])) return "xeriffe";
-  if (hasAny(normalized, ["reserva", "reservar"])) return "reserva";
-  if (hasAny(normalized, ["festa"])) return "festa";
-  if (hasAny(normalized, ["evento", "casamento", "aniversario", "confraternizacao", "orcamento"])) return "evento";
-  if (hasAny(normalized, ["cardapio", "menu", "preco", "valor"])) return "cardapio";
-  if (hasAny(normalized, ["pedido", "pedir", "quero", "hamburguer", "burger", "pizza", "batata", "porcao"])) return "pedido";
-  return "desconhecido";
-}
-
-export function suggestedWhatsAppResponse(intent) {
-  return INTENT_RESPONSES[intent] || INTENT_RESPONSES.desconhecido;
-}
-
 function normalizeMessageType(type = "") {
   const normalized = String(type || "").toLowerCase();
   if (["text", "audio", "image", "video", "document", "interactive", "button", "order"].includes(normalized)) return normalized;
   return "unknown";
-}
-
-function computeConfigStatus(incoming, runtimeConfig) {
-  const business = runtimeConfig.whatsappBusiness || {};
-  const ai = runtimeConfig.ai || {};
-  if (incoming.tipo === "audio" && !business.accessToken) return "pendente_configuracao";
-  if (incoming.tipo === "audio" && !ai.hasTranscriptionCredentials) return "pendente_configuracao";
-  return "";
-}
-
-async function updateCrmFromConversation(crmService, conversation, incoming, intent) {
-  const payload = {
-    nome: conversation.nome || "Cliente WhatsApp",
-    whatsapp: conversation.telefone,
-    origem: "whatsapp",
-    canal: "whatsapp",
-    message: incoming.text || incoming.transcricao || describeMessageType(incoming.tipo),
-    interesse: intent,
-    pipeline: OPPORTUNITY_INTENTS.has(intent) ? "atendimento_whatsapp" : "atendimento_humano",
-    status: conversation.status
-  };
-  try {
-    await crmService.registrarAtendimentoComercial(payload);
-  } catch {
-    // O webhook nao pode cair por falha secundaria de CRM.
-  }
 }
 
 function describeMessageType(type) {
@@ -567,12 +397,7 @@ function describeMessageType(type) {
 }
 
 function sanitizeDeletedMessage(message = {}) {
-  return {
-    id: message.id || "",
-    direction: message.direction || "",
-    type: message.type || "",
-    createdAt: message.createdAt || ""
-  };
+  return { id: message.id || "", direction: message.direction || "", type: message.type || "", createdAt: message.createdAt || "" };
 }
 
 function normalizeHistoryStatus(message = {}) {
@@ -587,28 +412,19 @@ async function sendOutgoingIfReady({ conversation = {}, runtimeConfig = {}, what
   const canSend = Boolean(enabled && hasCredentials && whatsappProvider && conversation.telefone);
   if (canSend) {
     const sendResult = await whatsappProvider.sendText({ to: conversation.telefone, text });
-    return {
-      sendResult,
-      status: sendResult?.status || "envio_real_indisponivel",
-      conversationStatus: sendResult?.sent ? "aguardando_cliente" : conversation.status
-    };
+    return { sendResult, status: sendResult?.status || "envio_real_indisponivel", conversationStatus: sendResult?.sent ? "aguardando_cliente" : conversation.status };
   }
-  return {
-    sendResult: null,
-    status: enabled && hasCredentials ? "envio_real_indisponivel" : "registrada_sem_envio",
-    conversationStatus: enabled && !hasCredentials ? "erro_configuracao" : conversation.status
-  };
+  return { sendResult: null, status: enabled && hasCredentials ? "envio_real_indisponivel" : "registrada_sem_envio", conversationStatus: enabled && !hasCredentials ? "erro_configuracao" : conversation.status };
 }
 
 function conversationDeletionEligibility(conversation = {}) {
   const messages = Array.isArray(conversation.mensagens) ? conversation.mensagens : [];
   const status = normalizeText(conversation.status || "");
   const origem = normalizeText(conversation.origem || conversation.source || "");
-  const hasOperationalLink = Boolean(conversation.currentModule || conversation.nextAction || conversation.route?.module || conversation.intentEngine?.intent !== "unknown" && conversation.intentEngine?.intent);
   if (messages.length === 0) return { canDelete: true, reason: "sem_mensagens" };
   if (conversation.teste === true || conversation.test === true || status === "teste" || origem === "teste") return { canDelete: true, reason: "marcada_como_teste" };
   if (["arquivada", "arquivado", "inativa", "inativo"].includes(status)) return { canDelete: true, reason: "inativa_ou_arquivada" };
-  if (!hasOperationalLink && ["resolvido", "desconhecido"].includes(status)) return { canDelete: true, reason: "sem_vinculo_operacional" };
+  if (["resolvido", "desconhecido"].includes(status)) return { canDelete: true, reason: "sem_vinculo_operacional" };
   return { canDelete: false, reason: "conversa_ativa" };
 }
 
@@ -617,10 +433,6 @@ function normalizePhone(value = "") {
   if (!digits) return "";
   if (digits.startsWith("55")) return digits;
   return digits.length >= 10 ? `55${digits}` : digits;
-}
-
-function hasAny(text, terms) {
-  return terms.some((term) => text.includes(normalizeText(term)));
 }
 
 function matchesProviderMessageId(message = {}, providerMessageId = "") {
@@ -643,25 +455,12 @@ function sanitizeMetaStatus(status = {}) {
     status: status.status || "",
     timestamp: status.timestamp || "",
     recipient_id: status.recipient_id || "",
-    errors: Array.isArray(status.errors)
-      ? status.errors.map((error) => ({
-          code: error.code,
-          title: error.title,
-          message: error.message,
-          error_data: error.error_data
-        }))
-      : []
+    errors: Array.isArray(status.errors) ? status.errors.map((error) => ({ code: error.code, title: error.title, message: error.message, error_data: error.error_data })) : []
   };
 }
 
 function normalizeText(value = "") {
-  return String(value)
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s-]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  return String(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, " ").replace(/\s+/g, " ").trim();
 }
 
 function stripBom(value = "") {
