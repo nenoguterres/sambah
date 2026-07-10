@@ -230,3 +230,124 @@ test("reset forte limpa activeFlow, campos legados e drafts", async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("fluxo vencido grava decisao pendente ao receber oi", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-flow-expired-ask-"));
+  const filePath = join(dir, "conversas.json");
+  await writeExpiredEventConversation(filePath);
+  const service = new WhatsAppConversationService({
+    filePath,
+    now: () => new Date("2026-07-09T12:31:00.000Z")
+  });
+
+  try {
+    const result = await service.recordIncoming({ from: "5551999999999", text: "oi", messageId: "expired-ask-1" });
+
+    assert.match(result.respostaSugerida, /Continuar/);
+    assert.equal(result.conversa.activeStep, "confirmExpiredFlow");
+    assert.equal(result.conversa.flowData.pendingExpiredFlowDecision, true);
+    assert.equal(result.conversa.flowData.expiredFlowSnapshot.slots.people, null);
+    assert.doesNotMatch(result.respostaSugerida, /Pessoas: 2026/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("opcao 2 em decisao pendente limpa fluxo e nao repete menu de TTL", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-flow-expired-new-"));
+  const filePath = join(dir, "conversas.json");
+  await writeExpiredEventConversation(filePath, { pending: true });
+  const service = new WhatsAppConversationService({
+    filePath,
+    now: () => new Date("2026-07-09T12:32:00.000Z")
+  });
+
+  try {
+    const result = await service.recordIncoming({ from: "5551999999999", text: "2", messageId: "expired-new-1" });
+
+    assert.equal(result.conversa.activeFlow, null);
+    assert.equal(result.conversa.activeStep, "");
+    assert.equal(result.conversa.flowData, null);
+    assert.equal(result.conversa.flowUpdatedAt, "");
+    assert.equal(result.conversa.eventQuote, null);
+    assert.equal(result.conversa.draftId, "");
+    assert.doesNotMatch(result.respostaSugerida, /Continuar orcamento anterior/);
+    assert.match(result.respostaSugerida, /Atendimento reiniciado/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("opcao 1 em decisao pendente retoma fluxo e atualiza horario", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-flow-expired-continue-"));
+  const filePath = join(dir, "conversas.json");
+  await writeExpiredEventConversation(filePath, { pending: true });
+  const service = new WhatsAppConversationService({
+    filePath,
+    now: () => new Date("2026-07-09T12:33:00.000Z")
+  });
+
+  try {
+    const result = await service.recordIncoming({ from: "5551999999999", text: "1", messageId: "expired-continue-1" });
+
+    assert.equal(result.conversa.activeStep, "");
+    assert.equal(result.conversa.flowData, null);
+    assert.equal(result.conversa.activeFlow.updatedAt, "2026-07-09T12:33:00.000Z");
+    assert.equal(result.conversa.flowUpdatedAt, "2026-07-09T12:33:00.000Z");
+    assert.doesNotMatch(result.respostaSugerida, /Continuar orcamento anterior/);
+    assert.match(result.respostaSugerida, /quantidade de pessoas/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("opcao 3 em decisao pendente encaminha humano sem repetir TTL", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-flow-expired-human-"));
+  const filePath = join(dir, "conversas.json");
+  await writeExpiredEventConversation(filePath, { pending: true });
+  const service = new WhatsAppConversationService({
+    filePath,
+    now: () => new Date("2026-07-09T12:34:00.000Z")
+  });
+
+  try {
+    const result = await service.recordIncoming({ from: "5551999999999", text: "3", messageId: "expired-human-1" });
+
+    assert.equal(result.conversa.activeFlow, null);
+    assert.equal(result.conversa.activeStep, "");
+    assert.equal(result.conversa.flowData, null);
+    assert.equal(result.conversa.mode, "AGUARDANDO_HUMANO");
+    assert.equal(result.conversa.atendimentoEstado, "HUMANO");
+    assert.doesNotMatch(result.respostaSugerida, /Continuar orcamento anterior/);
+    assert.match(result.respostaSugerida, /atendimento humano/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+async function writeExpiredEventConversation(filePath, { pending = false } = {}) {
+  const activeFlow = {
+    type: "evento",
+    status: "collecting",
+    slots: { date: "20 de agosto", city: "Porto Alegre", time: "20h", people: "2026", eventType: null },
+    updatedAt: "2026-07-09T12:00:00.000Z"
+  };
+  await writeFile(filePath, JSON.stringify({
+    conversas: [{
+      id: "wa_5551999999999",
+      nome: "Cliente",
+      telefone: "5551999999999",
+      activeFlow,
+      activeStep: pending ? "confirmExpiredFlow" : "",
+      flowData: pending ? { pendingExpiredFlowDecision: true, expiredFlowSnapshot: activeFlow } : null,
+      flowUpdatedAt: "2026-07-09T12:00:00.000Z",
+      eventQuote: { status: "collecting", slots: activeFlow.slots },
+      draftId: "draft-antigo",
+      draft: { id: "draft-antigo" },
+      orcamentoDraft: { id: "orc-antigo" },
+      mensagens: [],
+      createdAt: "2026-07-09T11:00:00.000Z",
+      updatedAt: "2026-07-09T12:00:00.000Z"
+    }]
+  }), "utf8");
+}

@@ -34,6 +34,8 @@ import { buildMesaComandaUrl, buildSambahAutoReply } from "./sambahPersonality.j
 
 const require = createRequire(import.meta.url);
 const packageJson = require("../package.json");
+const WEBHOOK_MESSAGE_TTL_MS = 10 * 60 * 1000;
+const processedWebhookMessages = new Map();
 const publicDir = fileURLToPath(new URL("../public/", import.meta.url));
 const runtimeConfig = getRuntimeConfig();
 const dataFile = (name) => join(runtimeConfig.dataDir, name);
@@ -1463,6 +1465,23 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
           reason: "meta_webhook_without_messages"
         });
       }
+      const dedupe = claimWebhookMessage(metaSummary);
+      if (dedupe.duplicate) {
+        console.info("whatsapp.webhook.message.deduped", {
+          messageId: metaSummary.messageId,
+          from: metaSummary.from,
+          timestamp: dedupe.firstProcessedAt,
+          type: metaSummary.type || "",
+          text: metaSummary.textBody || "",
+          count: dedupe.count
+        });
+        return sendJson(res, 200, {
+          ok: true,
+          duplicate: true,
+          messageId: metaSummary.messageId,
+          reason: "message_already_processed"
+        });
+      }
       const conversationResult = await whatsappConversationService.recordIncoming(body, {
         runtimeConfig: getRuntimeConfig(),
         crmService
@@ -1778,10 +1797,41 @@ function summarizeWhatsAppPostPayload(payload = {}) {
     statusId: firstStatus.id || "",
     status: firstStatus.status || "",
     statusRecipientId: firstStatus.recipient_id || "",
+    timestamp: firstMessage.timestamp || firstStatus.timestamp || "",
+    type: firstMessage.type || payload.messageType || payload.type || "",
     textBody: firstMessage.text?.body || "",
     from: firstMessage.from || value.contacts?.[0]?.wa_id || payload.from || "",
     messageId: firstMessage.id || payload.eventId || payload.messageId || ""
   };
+}
+
+function claimWebhookMessage(summary = {}, now = Date.now()) {
+  pruneProcessedWebhookMessages(now);
+  const messageId = String(summary.messageId || "").trim();
+  if (!messageId) return { duplicate: false, count: 1, firstProcessedAt: new Date(now).toISOString() };
+  const current = processedWebhookMessages.get(messageId);
+  if (current && current.expiresAt > now) {
+    const next = { ...current, count: current.count + 1 };
+    processedWebhookMessages.set(messageId, next);
+    return {
+      duplicate: true,
+      count: next.count,
+      firstProcessedAt: next.firstProcessedAt
+    };
+  }
+  const item = {
+    count: 1,
+    firstProcessedAt: new Date(now).toISOString(),
+    expiresAt: now + WEBHOOK_MESSAGE_TTL_MS
+  };
+  processedWebhookMessages.set(messageId, item);
+  return { duplicate: false, count: 1, firstProcessedAt: item.firstProcessedAt };
+}
+
+function pruneProcessedWebhookMessages(now = Date.now()) {
+  for (const [messageId, item] of processedWebhookMessages.entries()) {
+    if (!item || item.expiresAt <= now) processedWebhookMessages.delete(messageId);
+  }
 }
 
 function isMetaWhatsAppEnvelope(payload = {}) {
@@ -2016,6 +2066,8 @@ async function resolveControlledWhatsAppReply(text = "", { conversation = null, 
   const conversationIntent = String(conversation?.intencao || "");
   if (suggestedReply && (["human_requested", "human_waiting", "human_waiting_greeting", "human_cancelled"].includes(modeReason)
     || conversationIntent === "reset"
+    || conversationIntent === "humano"
+    || conversation?.atendimentoEstado === "HUMANO"
     || eventQuoteStatus === "details_received"
     || activeFlowType === "evento")) {
     return suggestedReply;

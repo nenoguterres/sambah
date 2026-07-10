@@ -1,5 +1,6 @@
 const EVENT_REQUIRED_SLOTS = ["date", "city", "time", "people"];
 const FLOW_TTL_MS = 30 * 60 * 1000;
+const EXPIRED_FLOW_REPLY = "Tu quer continuar o orcamento anterior ou comecar de novo?\n\n1. Continuar orcamento anterior\n2. Comecar novo atendimento\n3. Falar com humano";
 
 const EVENT_SLOT_LABELS = {
   date: "data",
@@ -22,6 +23,13 @@ export function resolveConversationFlow({ conversation = {}, text = "", intent =
       return {
         handled: true,
         activeFlow: currentFlow,
+        activeStep: "confirmExpiredFlow",
+        flowData: {
+          ...(conversation.flowData && typeof conversation.flowData === "object" ? conversation.flowData : {}),
+          pendingExpiredFlowDecision: true,
+          expiredFlowSnapshot: currentFlow
+        },
+        flowUpdatedAt: currentFlow.updatedAt || conversation.flowUpdatedAt || "",
         nextAction: conversation.nextAction || "",
         reply: "Tu quer continuar o orçamento anterior ou começar de novo?\n\n1. Continuar orçamento anterior\n2. Começar novo atendimento\n3. Falar com humano"
       };

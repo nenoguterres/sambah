@@ -53,6 +53,8 @@ const ORDER_STATES = new Set([
 const ORDER_CONTEXT_TTL_MS = 2 * 60 * 60 * 1000;
 const EXPIRABLE_ORDER_STATES = new Set(["AGUARDANDO_NOME", "COMANDA_EM_ANDAMENTO", "COMANDA_PRONTA", "ENVIADO_PARA_MESA_COMANDA", "AGUARDANDO_PEDIDO_MESA"]);
 const HARD_RESET_REPLY = "Atendimento reiniciado. Me manda um oi para começarmos de novo.";
+const EXPIRED_FLOW_REPLY = "Tu quer continuar o orcamento anterior ou comecar de novo?\n\n1. Continuar orcamento anterior\n2. Comecar novo atendimento\n3. Falar com humano";
+const EXPIRED_FLOW_INVALID_REPLY = "Me responde com 1 para continuar o orcamento anterior, 2 para comecar novo atendimento ou 3 para falar com humano.";
 
 export class WhatsAppConversationService {
   constructor({ filePath, now = () => new Date(), orderService = null } = {}) {
@@ -135,6 +137,65 @@ export class WhatsAppConversationService {
         intent: "reset",
         aiDecision: null,
         respostaSugerida: HARD_RESET_REPLY,
+        sendEnabled: runtimeConfig.whatsappBusiness?.sendEnabled === true,
+        voiceReplyEnabled: runtimeConfig.ai?.voiceReplyEnabled === true
+      };
+    }
+    if (globalCommand === "human") {
+      const updated = buildHumanHandoffConversation(contextBase, incoming, message, now);
+      if (existing) {
+        data.conversas = data.conversas.map((item) => (item.id === existing.id ? updated : item));
+      } else {
+        data.conversas.push(updated);
+      }
+      await this.#write(data);
+      console.info("whatsapp.production_flow_safety", {
+        messageId: message.id,
+        from: incoming.telefone,
+        normalizedText: normalizeText(textForIntent),
+        globalCommand,
+        before: beforeFlowLog,
+        after: summarizeFlowState(updated),
+        reply: HUMAN_WAIT_MESSAGE
+      });
+      return {
+        ok: true,
+        conversa: this.#withPriority(updated),
+        message,
+        intent: "humano",
+        aiDecision: buildHumanHandoffAiDecision(),
+        respostaSugerida: HUMAN_WAIT_MESSAGE,
+        sendEnabled: runtimeConfig.whatsappBusiness?.sendEnabled === true,
+        voiceReplyEnabled: runtimeConfig.ai?.voiceReplyEnabled === true
+      };
+    }
+    const expiredFlowChoice = await resolvePendingExpiredFlowDecision({
+      conversation: contextBase,
+      incoming,
+      message,
+      text: textForIntent,
+      now,
+      data,
+      existing
+    });
+    if (expiredFlowChoice) {
+      await this.#write(expiredFlowChoice.data);
+      console.info("whatsapp.production_flow_safety", {
+        messageId: message.id,
+        from: incoming.telefone,
+        normalizedText: normalizeText(textForIntent),
+        globalCommand: expiredFlowChoice.globalCommand || globalCommand,
+        before: beforeFlowLog,
+        after: summarizeFlowState(expiredFlowChoice.conversa),
+        reply: expiredFlowChoice.respostaSugerida
+      });
+      return {
+        ok: true,
+        conversa: this.#withPriority(expiredFlowChoice.conversa),
+        message,
+        intent: expiredFlowChoice.intent,
+        aiDecision: expiredFlowChoice.aiDecision || null,
+        respostaSugerida: expiredFlowChoice.respostaSugerida,
         sendEnabled: runtimeConfig.whatsappBusiness?.sendEnabled === true,
         voiceReplyEnabled: runtimeConfig.ai?.voiceReplyEnabled === true
       };
@@ -228,6 +289,9 @@ export class WhatsAppConversationService {
       atendimentoEstado: humanMetadataState(modeDecision.mode) || orderState || "",
       eventQuote: eventQuote.eventQuote,
       activeFlow: flowDecision.handled ? flowDecision.activeFlow : contextForIntent.activeFlow || null,
+      activeStep: flowDecision.handled ? flowDecision.activeStep || contextForIntent.activeStep || "" : contextForIntent.activeStep || "",
+      flowData: flowDecision.handled ? flowDecision.flowData || contextForIntent.flowData || null : contextForIntent.flowData || null,
+      flowUpdatedAt: flowDecision.handled ? flowDecision.flowUpdatedAt || flowDecision.activeFlow?.updatedAt || contextForIntent.flowUpdatedAt || "" : contextForIntent.flowUpdatedAt || "",
       nextAction: flowDecision.handled ? flowDecision.nextAction || "" : contextForIntent.nextAction || "",
       whatsappOrder,
       mesaPedido: contextBase.mesaPedido || null,
@@ -851,7 +915,98 @@ function isStaleOrderContext(conversation = {}, nowIso = "") {
 function detectProductionGlobalCommand(text = "") {
   const normalized = normalizeText(text);
   if (["reset", "reiniciar", "zerar atendimento", "limpar conversa"].includes(normalized)) return "reset";
+  if (["humano", "atendente"].includes(normalized)) return "human";
   return "";
+}
+
+async function resolvePendingExpiredFlowDecision({ conversation = {}, incoming = {}, message = {}, text = "", now = new Date().toISOString(), data = { conversas: [] }, existing = null } = {}) {
+  if (!hasPendingExpiredFlowDecision(conversation)) return null;
+  const choice = normalizeExpiredFlowChoice(text);
+  if (!choice) {
+    const updated = {
+      ...conversation,
+      ultimaMensagem: incoming.text || incoming.transcricao || describeMessageType(incoming.tipo),
+      ultimaInteracao: now,
+      updatedAt: now,
+      respostaSugerida: EXPIRED_FLOW_INVALID_REPLY,
+      mensagens: [...(conversation.mensagens || []), message].slice(-60)
+    };
+    return buildPersistedExpiredChoiceResult({ data, existing, updated, intent: "expired_flow_invalid", respostaSugerida: EXPIRED_FLOW_INVALID_REPLY });
+  }
+
+  if (choice === "restart") {
+    const updated = buildHardResetConversation(conversation, incoming, message, now);
+    return buildPersistedExpiredChoiceResult({ data, existing, updated, intent: "reset", respostaSugerida: updated.respostaSugerida });
+  }
+
+  if (choice === "human") {
+    const updated = buildHumanHandoffConversation(conversation, incoming, message, now);
+    return buildPersistedExpiredChoiceResult({ data, existing, updated, intent: "humano", respostaSugerida: HUMAN_WAIT_MESSAGE, globalCommand: "human" });
+  }
+
+  const previousFlow = sanitizeActiveFlow(conversation.flowData?.expiredFlowSnapshot || conversation.activeFlow);
+  const resumedFlow = previousFlow ? { ...previousFlow, updatedAt: now } : null;
+  const cleanFlowData = clearExpiredFlowDecisionData(conversation.flowData);
+  const resumedConversation = {
+    ...conversation,
+    activeFlow: resumedFlow,
+    activeStep: "",
+    flowData: cleanFlowData,
+    flowUpdatedAt: now
+  };
+  const flowDecision = resolveConversationFlow({
+    conversation: resumedConversation,
+    text: "",
+    intent: "",
+    mode: CONVERSATION_MODES.AUTO,
+    now
+  });
+  const updated = {
+    ...resumedConversation,
+    ultimaMensagem: incoming.text || incoming.transcricao || describeMessageType(incoming.tipo),
+    ultimaInteracao: now,
+    updatedAt: now,
+    intencao: "evento",
+    activeFlow: flowDecision.handled ? flowDecision.activeFlow : resumedFlow,
+    activeStep: flowDecision.activeStep || "",
+    flowData: flowDecision.flowData || cleanFlowData,
+    flowUpdatedAt: flowDecision.flowUpdatedAt || now,
+    nextAction: flowDecision.nextAction || resumedConversation.nextAction || "",
+    respostaSugerida: flowDecision.reply || "Seguimos com o orcamento anterior. Me manda o proximo dado do evento.",
+    mensagens: [...(conversation.mensagens || []), message].slice(-60)
+  };
+  return buildPersistedExpiredChoiceResult({ data, existing, updated, intent: "evento", respostaSugerida: updated.respostaSugerida });
+}
+
+function buildPersistedExpiredChoiceResult({ data = { conversas: [] }, existing = null, updated = {}, intent = "", respostaSugerida = "", globalCommand = "" } = {}) {
+  const nextData = {
+    ...data,
+    conversas: existing
+      ? data.conversas.map((item) => (item.id === existing.id ? updated : item))
+      : [...(data.conversas || []), updated]
+  };
+  return { data: nextData, conversa: updated, intent, respostaSugerida, globalCommand, aiDecision: updated.aiDecision || null };
+}
+
+function hasPendingExpiredFlowDecision(conversation = {}) {
+  return conversation.activeStep === "confirmExpiredFlow"
+    || conversation.flowData?.pendingExpiredFlowDecision === true;
+}
+
+function normalizeExpiredFlowChoice(text = "") {
+  const normalized = normalizeText(text);
+  if (normalized === "1" || normalized.includes("continuar")) return "continue";
+  if (normalized === "2" || normalized.includes("comecar") || normalized.includes("começar") || normalized.includes("novo")) return "restart";
+  if (normalized === "3" || normalized.includes("humano") || normalized.includes("atendente")) return "human";
+  return "";
+}
+
+function clearExpiredFlowDecisionData(flowData = null) {
+  if (!flowData || typeof flowData !== "object") return null;
+  const next = { ...flowData };
+  delete next.pendingExpiredFlowDecision;
+  delete next.expiredFlowSnapshot;
+  return Object.keys(next).length ? next : null;
 }
 
 function buildHardResetConversation(conversation = {}, incoming = {}, message = {}, now = new Date().toISOString()) {
@@ -885,6 +1040,36 @@ function buildHardResetConversation(conversation = {}, incoming = {}, message = 
     aiDecision: null,
     aiAuditTrail: Array.isArray(conversation.aiAuditTrail) ? conversation.aiAuditTrail : [],
     mensagens: [...(conversation.mensagens || []), message].slice(-60)
+  };
+}
+
+function buildHumanHandoffConversation(conversation = {}, incoming = {}, message = {}, now = new Date().toISOString()) {
+  return {
+    ...buildHardResetConversation(conversation, incoming, message, now),
+    intencao: "humano",
+    mode: CONVERSATION_MODES.AGUARDANDO_HUMANO,
+    atendimentoEstado: "HUMANO",
+    status: "aguardando_humano",
+    respostaSugerida: HUMAN_WAIT_MESSAGE,
+    aiDecision: buildHumanHandoffAiDecision(),
+    humanHandoff: {
+      status: "pendente",
+      requestedAt: now,
+      lastCustomerMessageAt: now,
+      lastMessageId: message.id,
+      pendingNoticeDue: false
+    }
+  };
+}
+
+function buildHumanHandoffAiDecision() {
+  return {
+    intent: "humano",
+    allowedAction: "HANDOFF_HUMAN",
+    requiresHuman: true,
+    safeReply: HUMAN_WAIT_MESSAGE,
+    conversationState: "HUMANO",
+    state: "HUMANO"
   };
 }
 
