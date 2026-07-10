@@ -1,6 +1,8 @@
 import { parseWhatsAppIncoming } from "../whatsappConversationService.js";
 import { getRuntimeConfig } from "../config.js";
 import { createWhatsAppV2LabEngine } from "./v2/whatsappV2LabEngine.js";
+import { FileWhatsAppV2ConversationRepository } from "./v2/inMemoryRepositories.js";
+import { join } from "node:path";
 
 export async function whatsappMaintenanceHandler(payload = {}, { conversationService, messageService, auditService, runtimeConfig = getRuntimeConfig() } = {}) {
   const incoming = parseWhatsAppIncoming(payload);
@@ -35,7 +37,7 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
   }
 
   if (runtimeConfig.whatsappV2?.enabled === true) {
-    const observed = await observeWhatsAppV2(incoming);
+    const observed = await observeWhatsAppV2(incoming, runtimeConfig);
     await safeAuditRecord(auditService, {
       type: "whatsapp_v2_observe_only",
       status: "info",
@@ -103,8 +105,13 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
   };
 }
 
-async function observeWhatsAppV2(incoming = {}) {
-  const engine = createWhatsAppV2LabEngine({ observeOnly: true });
+async function observeWhatsAppV2(incoming = {}, runtimeConfig = getRuntimeConfig()) {
+  const engine = createWhatsAppV2LabEngine({
+    observeOnly: true,
+    conversationRepository: new FileWhatsAppV2ConversationRepository({
+      filePath: join(runtimeConfig.dataDir || "data", "whatsapp-v2-state.json")
+    })
+  });
   return engine.processor.handleIncoming({
     messageId: incoming.messageId || "",
     conversationId: incoming.telefone || incoming.from || incoming.phone || "",

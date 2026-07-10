@@ -1,7 +1,8 @@
 import crypto from "node:crypto";
-import { response, assertWhatsAppV2ResponseContract } from "./responseContract.js";
+import { assertWhatsAppV2ResponseContract } from "./responseContract.js";
 import { InMemoryWhatsAppV2ConversationRepository, InMemoryWhatsAppV2OutboxRepository } from "./inMemoryRepositories.js";
 import { FakeWhatsAppV2MetaSender } from "./fakeMetaSender.js";
+import { routePortalInsanoMessage } from "./portalInsanoEngine.js";
 
 export function createWhatsAppV2LabEngine(options = {}) {
   const operationLog = [];
@@ -29,7 +30,7 @@ export class WhatsAppV2LabProcessor {
     try {
       const currentState = await this.conversationRepository.get(message.conversationId);
       const nextHistory = [...(currentState.history || []), { messageId: message.messageId, text: message.text, at: message.receivedAt }];
-      const routed = routeLabMessage({ state: { ...currentState, history: nextHistory }, message });
+      const routed = routePortalInsanoMessage({ state: { ...currentState, history: nextHistory }, message });
       const result = assertWhatsAppV2ResponseContract(routed);
       const nextState = {
         ...result.nextState,
@@ -85,29 +86,6 @@ export class WhatsAppV2LabProcessor {
   }
 }
 
-function routeLabMessage({ state, message }) {
-  const text = normalizeText(message.text);
-  if (state.mode === "human") {
-    return { handled: true, source: "humanMode", nextState: state, replies: [], actions: [{ type: "notify_operator" }] };
-  }
-  if (text === "humano" || text === "atendente" || text === "6") {
-    return response(
-      "humanHandoffFlow",
-      { ...state, mode: "human", activeFlow: null, activeStep: null },
-      "Certo. O atendimento humano foi solicitado. Tu nao precisa repetir tudo de novo.",
-      [{ type: "notify_operator" }]
-    );
-  }
-  if (text === "oi" || text === "ola" || text === "menu") {
-    return response(
-      "welcomeFlow",
-      { ...state, mode: "bot", activeFlow: null, activeStep: null },
-      "Buenas! O que tu precisa agora? 1. Fazer pedido 3. Orcamento para evento 6. Atendimento humano"
-    );
-  }
-  return response("fallbackFlow", state, "Nao consegui identificar com seguranca. Digita menu ou humano.");
-}
-
 function normalizeIncoming(payload = {}) {
   if (!payload.messageId || !payload.from) throw new Error("INVALID_WHATSAPP_V2_INCOMING_MESSAGE");
   return {
@@ -117,8 +95,4 @@ function normalizeIncoming(payload = {}) {
     text: String(payload.text || "").trim(),
     receivedAt: payload.receivedAt || new Date().toISOString()
   };
-}
-
-function normalizeText(value = "") {
-  return String(value || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 }

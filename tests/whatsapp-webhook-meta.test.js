@@ -111,7 +111,7 @@ test("POST /webhook/whatsapp registra entrada Meta sem auto-resposta ou provider
 
 test("POST /webhook/whatsapp preserva callback de status Meta sem envio", async () => {
   const graphCalls = [];
-  const { server, base, messagesFile, conversationsFile, auditFile, cleanup } = await createTestServer({
+  const { server, base, messagesFile, conversationsFile, auditFile, v2StateFile, cleanup } = await createTestServer({
     whatsappSendFetch: async (url, options) => {
       graphCalls.push({ url, options });
       return new Response("{}", { status: 200 });
@@ -257,7 +257,7 @@ test("POST /webhook/whatsapp integra V2 em observe_only sem sender, IA ou auto-r
   process.env.WHATSAPP_AUTO_REPLY_ENABLED = "false";
 
   const providerCalls = [];
-  const { server, base, messagesFile, conversationsFile, auditFile, cleanup } = await createTestServer({
+  const { server, base, messagesFile, conversationsFile, auditFile, v2StateFile, cleanup } = await createTestServer({
     provider: {
       name: "meta-test-provider",
       status: () => ({ provider: "meta-test-provider", configured: true }),
@@ -296,6 +296,9 @@ test("POST /webhook/whatsapp integra V2 em observe_only sem sender, IA ou auto-r
     const conversations = JSON.parse(await readFile(conversationsFile, "utf8"));
     assert.equal(conversations.conversas.length, 1);
     assert.equal(conversations.conversas[0].mensagens.length, 1);
+    const v2State = JSON.parse(await readFile(v2StateFile, "utf8"));
+    assert.equal(v2State.states["5551777777777"].activeMenu, "portal_main_menu");
+    assert.equal(v2State.states["5551777777777"].history.length, 1);
 
     const audit = JSON.parse(await readFile(auditFile, "utf8"));
     assert.equal(audit.filter((event) => event.type === "whatsapp_v2_observe_only").length, 1);
@@ -447,6 +450,8 @@ test("/health retorna versao e commit do build", async () => {
 
 async function createTestServer({ provider = new MockWhatsAppProvider({ logger: { info: () => {} } }), whatsappSendFetch = globalThis.fetch } = {}) {
   const dir = await mkdtemp(join(tmpdir(), "sambha-wa-maintenance-"));
+  const previousDataDir = process.env.DATA_DIR;
+  process.env.DATA_DIR = dir;
   await writeFile(join(dir, "menu.json"), JSON.stringify({ items: menuItems(), updatedAt: "2026-06-15T00:00:00.000Z" }), "utf8");
   await writeFile(join(dir, "rules.json"), JSON.stringify(menuRules()), "utf8");
   const auditService = new AuditService({ filePath: join(dir, "audit.json") });
@@ -488,8 +493,12 @@ async function createTestServer({ provider = new MockWhatsAppProvider({ logger: 
     base: `http://127.0.0.1:${server.address().port}`,
     auditFile: join(dir, "audit.json"),
     messagesFile: join(dir, "messages.json"),
+    v2StateFile: join(dir, "whatsapp-v2-state.json"),
     conversationsFile,
-    cleanup: () => rm(dir, { recursive: true, force: true })
+    cleanup: async () => {
+      restoreEnv("DATA_DIR", previousDataDir);
+      await rm(dir, { recursive: true, force: true });
+    }
   };
 }
 
