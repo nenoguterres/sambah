@@ -38,8 +38,22 @@ export class WhatsAppConversationService {
     const id = telefone ? `wa_${telefone}` : `wa_${crypto.randomUUID()}`;
     const existing = data.conversas.find((item) => item.id === id || item.telefone === telefone);
     const text = String(incoming.text || incoming.message || incoming.transcricao || "").trim();
+    const incomingMessageId = String(incoming.messageId || "").trim();
+    const existingMessage = incomingMessageId && Array.isArray(existing?.mensagens)
+      ? existing.mensagens.find((item) => item.id === incomingMessageId)
+      : null;
+    if (existingMessage) {
+      return {
+        ok: true,
+        duplicate: true,
+        conversa: this.#withPriority(existing),
+        message: existingMessage,
+        engine: "disabled",
+        automaticReplyCreated: false
+      };
+    }
     const message = {
-      id: incoming.messageId || `msg_${crypto.randomUUID()}`,
+      id: incomingMessageId || `msg_${crypto.randomUUID()}`,
       direction: "in",
       type: incoming.tipo || incoming.type || "text",
       text,
@@ -299,7 +313,7 @@ export class WhatsAppConversationService {
       const existing = index >= 0 ? next.conversas[index] : null;
       const messages = Array.isArray(existing?.mensagens) ? existing.mensagens : [];
       const messageId = historyMessage.id || historyMessage.messageId || `history_${historyMessage.createdAt}_${phone}`;
-      if (messages.some((message) => message.id === messageId)) continue;
+      if (messages.some((message) => sameInboundHistoryMessage(message, historyMessage, messageId))) continue;
       const text = String(historyMessage.text || "").trim();
       const message = {
         id: messageId,
@@ -404,6 +418,13 @@ function normalizeHistoryStatus(message = {}) {
   if (message.direction === "out" && message.status === "missing_meta_config") return "nao_enviada_configuracao_meta";
   if (message.direction === "out") return message.status || "registrada";
   return message.status || "recebida";
+}
+
+function sameInboundHistoryMessage(message = {}, historyMessage = {}, messageId = "") {
+  if (message.id === messageId) return true;
+  const historyProviderId = String(historyMessage.messageId || historyMessage.providerMessageId || "").trim();
+  if (!historyProviderId || message.direction === "out") return false;
+  return message.id === historyProviderId || message.messageId === historyProviderId || message.providerMessageId === historyProviderId;
 }
 
 async function sendOutgoingIfReady({ conversation = {}, runtimeConfig = {}, whatsappProvider = null, text = "" } = {}) {

@@ -174,6 +174,78 @@ test("POST /webhook/whatsapp preserva callback de status Meta sem envio", async 
   }
 });
 
+test("POST /webhook/whatsapp ignora duplicata por messageId sem auto-resposta", async () => {
+  const graphCalls = [];
+  const providerCalls = [];
+  const { server, base, messagesFile, conversationsFile, cleanup } = await createTestServer({
+    provider: {
+      name: "meta-test-provider",
+      status: () => ({ provider: "meta-test-provider", configured: true }),
+      sendText: async (input) => {
+        providerCalls.push(input);
+        return { ok: true, sent: true, status: "sent_by_provider" };
+      }
+    },
+    whatsappSendFetch: async (url, options) => {
+      graphCalls.push({ url, options });
+      return new Response("{}", { status: 200 });
+    }
+  });
+  try {
+    const payload = metaPayload({
+      from: "5551888888888",
+      id: "wamid-duplicate-neutral",
+      type: "text",
+      text: { body: "oi" }
+    });
+
+    const first = await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const second = await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const firstBody = await first.json();
+    const secondBody = await second.json();
+
+    assert.equal(first.status, 200);
+    assert.equal(second.status, 200);
+    assert.equal(firstBody.automaticReplyCreated, false);
+    assert.equal(secondBody.automaticReplyCreated, false);
+    assert.equal(secondBody.handled, false);
+    assert.equal(secondBody.engine, "disabled");
+    assert.equal(secondBody.conversa.mensagens.length, 1);
+    assert.equal(secondBody.message.id, "wamid-duplicate-neutral");
+    assert.equal(graphCalls.length, 0);
+    assert.equal(providerCalls.length, 0);
+
+    const messages = JSON.parse(await readFile(messagesFile, "utf8"));
+    assert.equal(messages.length, 1);
+    assert.equal(messages[0].messageId, "wamid-duplicate-neutral");
+
+    const conversations = JSON.parse(await readFile(conversationsFile, "utf8"));
+    assert.equal(conversations.conversas.length, 1);
+    assert.equal(conversations.conversas[0].mensagens.length, 1);
+    assert.equal(conversations.conversas[0].mensagens[0].id, "wamid-duplicate-neutral");
+    assert.equal(conversations.conversas[0].automaticReplyCreated, false);
+    assert.equal(conversations.conversas[0].whatsappEngine, "disabled");
+
+    const inbox = await fetch(`${base}/api/conversas`);
+    const inboxBody = await inbox.json();
+    assert.equal(inbox.status, 200);
+    assert.equal(inboxBody.count, 1);
+    assert.equal(inboxBody.items[0].mensagens.length, 1);
+    assert.equal(inboxBody.items[0].mensagens[0].id, "wamid-duplicate-neutral");
+  } finally {
+    await close(server);
+    await cleanup();
+  }
+});
+
 test("POST /webhook/site continua respondendo 202", async () => {
   const { server, base, cleanup } = await createTestServer();
   try {
