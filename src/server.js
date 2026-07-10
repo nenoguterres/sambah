@@ -28,9 +28,16 @@ import { PayPerolaBridgeController } from "./sambahPay/controllers/payPerolaBrid
 import { SambahAuthService } from "./auth/authService.js";
 import { createWhatsAppProvider } from "./whatsapp/whatsappProvider.js";
 import { WhatsAppMessageService } from "./whatsapp/whatsappMessageService.js";
-import { isMetaWhatsAppPayload, parseWhatsAppWebhookPayload } from "./whatsapp/whatsappWebhookParser.js";
+import { whatsappMaintenanceHandler } from "./whatsapp/whatsappMaintenanceHandler.js";
 import { InstagramPublisher } from "./services/instagramPublisher.js";
+<<<<<<< HEAD
 import { buildMesaComandaUrl, buildSambahAutoReply } from "./sambahPersonality.js";
+=======
+import { AiMetricsService } from "./ai/aiMetricsService.js";
+import { AiAuditService } from "./ai/aiAuditService.js";
+import { AiPerformanceService } from "./ai/aiPerformanceService.js";
+import { AiConversionService } from "./ai/aiConversionService.js";
+>>>>>>> f5fe16d (refactor: remove compromised whatsapp v1 engine)
 
 const require = createRequire(import.meta.url);
 const packageJson = require("../package.json");
@@ -1465,6 +1472,7 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
           reason: "meta_webhook_without_messages"
         });
       }
+<<<<<<< HEAD
       const dedupe = claimWebhookMessage(metaSummary);
       if (dedupe.duplicate) {
         console.info("whatsapp.webhook.message.deduped", {
@@ -1578,6 +1586,14 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
         whatsapp: autoResult.whatsapp,
         sent: autoResult.sent
       });
+=======
+      const maintenanceResult = await whatsappMaintenanceHandler(body, {
+        conversationService: whatsappConversationService,
+        messageService: whatsappMessageService,
+        auditService
+      });
+      return sendJson(res, 200, maintenanceResult);
+>>>>>>> f5fe16d (refactor: remove compromised whatsapp v1 engine)
     }
 
     const crmResult = await safeCrmRecord(crmService, {
@@ -1879,6 +1895,7 @@ async function recordWhatsAppMetaStatuses(payload = {}, { whatsappMessageService
   return { ok: true, statuses: statuses.length, updated, results };
 }
 
+<<<<<<< HEAD
 async function syncWhatsAppOrderPaymentState({ conversationResult, whatsappConversationService, mesaService, sambahPayModule, auditService } = {}) {
   const conversa = conversationResult?.conversa || null;
   const mesaPedido = conversa?.mesaPedido || null;
@@ -2162,6 +2179,8 @@ function sanitizeMetaText(value, accessToken = "") {
     .replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]+/g, "$1[masked]");
 }
 
+=======
+>>>>>>> f5fe16d (refactor: remove compromised whatsapp v1 engine)
 async function handlePreOrderWebhook(body, { auditService, mesaService, trackingService, crmService }) {
   const validation = validatePreOrderPayload(body);
   if (!validation.ok) {

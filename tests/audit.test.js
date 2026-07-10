@@ -178,8 +178,10 @@ test("webhook site nao derruba servidor com auditoria corrompida, body vazio ou 
         message: "quero falar com pessoa"
       })
     });
-    assert.equal(whatsappResponse.status, 202);
-    assert.equal((await whatsappResponse.json()).ok, true);
+    assert.equal(whatsappResponse.status, 200);
+    const whatsappBody = await whatsappResponse.json();
+    assert.equal(whatsappBody.ok, true);
+    assert.equal(whatsappBody.reason, "whatsapp_engine_disabled");
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await rm(dir, { recursive: true, force: true });
@@ -226,9 +228,10 @@ test("Central de Conversas recebe texto e audio do WhatsApp sem envio automatico
     const textBody = await textResponse.json();
     assert.equal(textResponse.status, 200);
     assert.equal(textBody.ok, true);
-    assert.equal(textBody.intent, "pedido");
-    assert.match(textBody.respostaSugerida, /delivery/);
-    assert.equal(textBody.enviado, false);
+    assert.equal(textBody.engine, "disabled");
+    assert.equal(textBody.reason, "whatsapp_engine_disabled");
+    assert.equal(textBody.automaticReplyCreated, false);
+    assert.equal(textBody.sent, false);
 
     const audioResponse = await fetch(`${base}/webhook/whatsapp`, {
       method: "POST",
@@ -243,17 +246,19 @@ test("Central de Conversas recebe texto e audio do WhatsApp sem envio automatico
     const audioBody = await audioResponse.json();
     assert.equal(audioResponse.status, 200);
     assert.equal(audioBody.ok, true);
-    assert.equal(audioBody.conversa.status, "pendente_configuracao");
+    assert.equal(audioBody.engine, "disabled");
+    assert.equal(audioBody.conversa.status, "aguardando_equipe");
 
     const conversations = await fetch(`${base}/api/conversas`).then((response) => response.json());
     assert.equal(conversations.ok, true);
     assert.equal(conversations.count, 1);
     assert.equal(conversations.items[0].telefone, "5551980413745");
-    assert.ok(conversations.items[0].respostaSugerida);
+    assert.equal(conversations.items[0].respostaSugerida, "");
+    assert.equal(conversations.items[0].whatsappEngine, "disabled");
 
     const detail = await fetch(`${base}/api/conversas/${encodeURIComponent(conversations.items[0].id)}`).then((response) => response.json());
     assert.equal(detail.ok, true);
-    assert.equal(detail.conversa.audio.mediaId, "media-audio-1");
+    assert.equal(detail.conversa.mensagens[1].mediaId, "media-audio-1");
 
     const reply = await fetch(`${base}/api/conversas/${encodeURIComponent(conversations.items[0].id)}/responder`, {
       method: "POST",
@@ -274,8 +279,13 @@ test("Central de Conversas recebe texto e audio do WhatsApp sem envio automatico
         text: { body: "quero falar com humano" }
       }))
     }).then((response) => response.json());
+<<<<<<< HEAD
     assert.equal(humanResponse.intent, "humano");
     assert.match(humanResponse.respostaSugerida, /atendimento humano/);
+=======
+    assert.equal(humanResponse.engine, "disabled");
+    assert.equal(humanResponse.sent, false);
+>>>>>>> f5fe16d (refactor: remove compromised whatsapp v1 engine)
 
     const eventResponse = await fetch(`${base}/webhook/whatsapp`, {
       method: "POST",
@@ -287,7 +297,20 @@ test("Central de Conversas recebe texto e audio do WhatsApp sem envio automatico
         text: { body: "tenho evento para 80 pessoas" }
       }))
     }).then((response) => response.json());
+<<<<<<< HEAD
     assert.equal(eventResponse.intent, "evento");
+=======
+    assert.equal(eventResponse.engine, "disabled");
+    assert.equal(eventResponse.automaticReplyCreated, false);
+    assert.equal(eventResponse.conversa.currentModule, undefined);
+    assert.equal(eventResponse.conversa.nextAction, undefined);
+
+    const auditEvents = JSON.parse(await readFile(auditFile, "utf8"));
+    assert.ok(auditEvents.some((event) => event.type === "whatsapp_engine_disabled"));
+    assert.equal(auditEvents.some((event) => event.type === "intent_detected"), false);
+    assert.equal(auditEvents.some((event) => event.type === "operation_router"), false);
+    assert.equal(auditEvents.some((event) => event.type === "whatsapp_cloud_auto_reply"), false);
+>>>>>>> f5fe16d (refactor: remove compromised whatsapp v1 engine)
 
     const page = await fetch(`${base}/conversas`);
     assert.equal(page.status, 200);
