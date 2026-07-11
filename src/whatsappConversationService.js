@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import crypto from "node:crypto";
 import { extractWhatsAppMessageText } from "./whatsapp/whatsappWebhookParser.js";
@@ -9,6 +9,7 @@ export class WhatsAppConversationService {
     this.filePath = filePath;
     this.messagesFile = messagesFile;
     this.now = now;
+    this.mutationQueue = Promise.resolve();
   }
 
   async list() {
@@ -47,6 +48,10 @@ export class WhatsAppConversationService {
   }
 
   async recordNeutralIncoming(incoming = {}) {
+    return this.#serializeMutation(() => this.#recordNeutralIncoming(incoming));
+  }
+
+  async #recordNeutralIncoming(incoming = {}) {
     const now = this.now().toISOString();
     const data = await this.#read();
     const telefone = normalizePhone(incoming.telefone || incoming.from || incoming.phone || "");
@@ -316,8 +321,7 @@ export class WhatsAppConversationService {
   async #read() {
     try {
       const raw = await readFile(this.filePath, "utf8");
-      const parsed = JSON.parse(stripBom(raw) || "{}");
-      return { conversas: Array.isArray(parsed.conversas) ? parsed.conversas.filter(isPlainRecord) : [] };
+      return normalizeConversationStore(parseConversationStore(raw));
     } catch (error) {
       if (error.code === "ENOENT") return { conversas: [] };
       throw error;
@@ -335,7 +339,15 @@ export class WhatsAppConversationService {
 
   async #write(data) {
     await mkdir(dirname(this.filePath), { recursive: true });
-    await writeFile(this.filePath, `${JSON.stringify(data, null, 2)}\n`, "utf8");
+    const tmp = `${this.filePath}.${process.pid}.${Date.now()}.${crypto.randomUUID()}.tmp`;
+    await writeFile(tmp, `${JSON.stringify(data, null, 2)}\n`, "utf8");
+    await rename(tmp, this.filePath);
+  }
+
+  async #serializeMutation(operation) {
+    const run = this.mutationQueue.then(operation, operation);
+    this.mutationQueue = run.catch(() => {});
+    return run;
   }
 
   async #syncFromMessageHistory(data) {
@@ -602,6 +614,31 @@ function sanitizeMetaStatus(status = {}) {
 
 function normalizeText(value = "") {
   return String(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, " ").replace(/\s+/g, " ").trim();
+}
+
+function parseConversationStore(raw = "") {
+  const text = stripBom(raw) || "{}";
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    const position = extractJsonErrorPosition(error);
+    if (!Number.isInteger(position) || position <= 0) throw error;
+    const recovered = JSON.parse(text.slice(0, position));
+    console.info("whatsapp.conversations.recovered_trailing_json", {
+      status: "recovered_trailing_json",
+      position
+    });
+    return recovered;
+  }
+}
+
+function normalizeConversationStore(parsed = {}) {
+  return { conversas: Array.isArray(parsed.conversas) ? parsed.conversas.filter(isPlainRecord) : [] };
+}
+
+function extractJsonErrorPosition(error = {}) {
+  const match = String(error.message || "").match(/position\s+(\d+)/i);
+  return match ? Number(match[1]) : null;
 }
 
 function stripBom(value = "") {

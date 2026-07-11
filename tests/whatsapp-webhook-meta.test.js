@@ -15,6 +15,7 @@ import { createApp } from "../src/server.js";
 import { getRuntimeConfig } from "../src/config.js";
 import { WhatsAppConversationService } from "../src/whatsappConversationService.js";
 import { MockWhatsAppProvider } from "../src/whatsapp/providers/mockProvider.js";
+import { whatsappMaintenanceHandler } from "../src/whatsapp/whatsappMaintenanceHandler.js";
 import { WhatsAppMessageService } from "../src/whatsapp/whatsappMessageService.js";
 
 test("GET /webhook/whatsapp valida challenge da Meta", async () => {
@@ -386,6 +387,50 @@ test("POST /webhook/whatsapp ignora duplicata por messageId sem auto-resposta", 
   } finally {
     await close(server);
     await cleanup();
+  }
+});
+
+test("WhatsApp V2 nao reserva messageId se a gravacao neutra falhar", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-v2-no-orphan-reservation-"));
+  const messageId = "wamid-no-orphan-reservation";
+  try {
+    await assert.rejects(
+      () => whatsappMaintenanceHandler(metaPayload({
+        from: "5551999999910",
+        id: messageId,
+        type: "text",
+        text: { body: "oi" }
+      }), {
+        conversationService: {
+          recordNeutralIncoming: async () => {
+            throw new SyntaxError("Unexpected non-whitespace character after JSON at position 321106");
+          }
+        },
+        messageService: {
+          handleIncoming: async () => {
+            throw new Error("message service should not run after neutral storage failure");
+          }
+        },
+        auditService: { record: async () => ({ duplicated: false }) },
+        whatsappProvider: { sendMessage: async () => ({ sent: true }) },
+        runtimeConfig: {
+          dataDir: dir,
+          whatsappV2: {
+            enabled: true,
+            autoReplyEnabled: true,
+            sendEnabled: true
+          },
+          whatsappBusiness: {
+            accessToken: "token-test",
+            phoneNumberId: "phone-number-test"
+          }
+        }
+      }),
+      /Unexpected non-whitespace/
+    );
+    await assert.rejects(() => readFile(join(dir, "whatsapp-v2-state.json"), "utf8"), /ENOENT/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
   }
 });
 

@@ -156,6 +156,39 @@ test("Central de Conversas reconcilia mensagens Meta do historico bruto", async 
   }
 });
 
+test("Central de Conversas recupera JSON com lixo no final antes de gravar inbound", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-conversation-recover-json-"));
+  const filePath = join(dir, "conversas.json");
+  const valid = JSON.stringify({
+    conversas: [{
+      id: "wa_5551980413745",
+      nome: "Cliente Teste",
+      telefone: "5551980413745",
+      status: "aguardando_equipe",
+      mensagens: [],
+      createdAt: "2026-06-30T10:00:00.000Z",
+      updatedAt: "2026-06-30T10:00:00.000Z"
+    }]
+  });
+  await writeFile(filePath, `${valid}\n${valid}`, "utf8");
+  const service = new WhatsAppConversationService({ filePath, now: () => new Date("2026-07-11T20:39:14.000Z") });
+  try {
+    const result = await service.recordNeutralIncoming({
+      telefone: "5551980413745",
+      messageId: "wamid-recovered-inbound",
+      text: "oi"
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.duplicate, undefined);
+    assert.equal(result.message.id, "wamid-recovered-inbound");
+    const saved = JSON.parse(await readFile(filePath, "utf8"));
+    assert.equal(saved.conversas.length, 1);
+    assert.equal(saved.conversas[0].mensagens.at(-1).id, "wamid-recovered-inbound");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("Central de Conversas page keeps the message list scrollable", async () => {
   const css = await readFile(new URL("../public/conversas.css", import.meta.url), "utf8");
   const js = await readFile(new URL("../public/conversas.js", import.meta.url), "utf8");

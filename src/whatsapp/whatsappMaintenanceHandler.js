@@ -6,37 +6,6 @@ import { join } from "node:path";
 
 export async function whatsappMaintenanceHandler(payload = {}, { conversationService, messageService, auditService, whatsappProvider = null, runtimeConfig = getRuntimeConfig() } = {}) {
   const incoming = parseWhatsAppIncoming(payload);
-  const v2Repository = runtimeConfig.whatsappV2?.enabled === true ? createWhatsAppV2Repository(runtimeConfig) : null;
-  const reservation = v2Repository ? await reserveIncomingMessage(v2Repository, incoming) : { reserved: false, duplicate: false };
-  if (reservation.duplicate) {
-    const existingConversation = await conversationService.get?.(incoming.telefone || incoming.from || incoming.phone || "");
-    const existingMessage = existingConversation?.conversa?.mensagens?.find?.((message) => message.id === incoming.messageId) || null;
-    await safeAuditRecord(auditService, {
-      type: "whatsapp_duplicate_message_ignored",
-      status: "info",
-      source: "meta_whatsapp",
-      message: "Mensagem WhatsApp duplicada ignorada antes de gravacao e automacao",
-      context: {
-        messageId: incoming.messageId || "",
-        phone: maskPhone(incoming.telefone || ""),
-        automaticReplyCreated: false,
-        sent: false
-      },
-      dedupeKey: incoming.messageId ? `whatsapp-duplicate:${incoming.messageId}` : undefined
-    });
-    return {
-      ok: true,
-      handled: false,
-      duplicate: true,
-      engine: runtimeConfig.whatsappV2?.enabled ? "v2" : "disabled",
-      reason: "duplicate_message",
-      automaticReplyCreated: false,
-      sent: false,
-      conversa: existingConversation?.conversa || null,
-      message: existingMessage,
-      normalized: null
-    };
-  }
   const conversationResult = await conversationService.recordNeutralIncoming(incoming);
   const messageResult = messageService ? await messageService.handleIncoming(payload) : null;
   if (conversationResult.duplicate) {
@@ -68,6 +37,35 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
   }
 
   if (runtimeConfig.whatsappV2?.enabled === true) {
+    const v2Repository = createWhatsAppV2Repository(runtimeConfig);
+    const reservation = await reserveIncomingMessage(v2Repository, incoming);
+    if (reservation.duplicate) {
+      await safeAuditRecord(auditService, {
+        type: "whatsapp_duplicate_message_ignored",
+        status: "info",
+        source: "meta_whatsapp",
+        message: "Mensagem WhatsApp duplicada ignorada antes da automacao V2",
+        context: {
+          messageId: incoming.messageId || "",
+          phone: maskPhone(incoming.telefone || ""),
+          automaticReplyCreated: false,
+          sent: false
+        },
+        dedupeKey: incoming.messageId ? `whatsapp-duplicate:${incoming.messageId}` : undefined
+      });
+      return {
+        ok: true,
+        handled: false,
+        duplicate: true,
+        engine: "v2",
+        reason: "duplicate_message",
+        automaticReplyCreated: false,
+        sent: false,
+        conversa: conversationResult.conversa,
+        message: conversationResult.message,
+        normalized: messageResult?.normalized || null
+      };
+    }
     const processed = await processWhatsAppV2(incoming, runtimeConfig, {
       conversationRepository: v2Repository,
       reserved: reservation.reserved
