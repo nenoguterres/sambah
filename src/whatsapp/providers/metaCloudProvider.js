@@ -23,8 +23,9 @@ export class MetaCloudWhatsAppProvider {
     return this.sendMessage({ to, message: { type: "text", text } });
   }
 
-  async sendMessage({ to, message } = {}) {
-    if (!this.config.phoneNumberId || !this.config.accessToken) {
+  async sendMessage({ to, message, phoneNumberId = "" } = {}) {
+    const sendPhoneNumberId = String(phoneNumberId || this.config.phoneNumberId || "").trim();
+    if (!sendPhoneNumberId || !this.config.accessToken) {
       return {
         ok: false,
         provider: this.name,
@@ -35,7 +36,7 @@ export class MetaCloudWhatsAppProvider {
     }
 
     const version = this.config.apiVersion || "v25.0";
-    const endpoint = `https://graph.facebook.com/${version}/${encodeURIComponent(this.config.phoneNumberId)}/messages`;
+    const endpoint = `https://graph.facebook.com/${version}/${encodeURIComponent(sendPhoneNumberId)}/messages`;
     try {
       const normalizedTo = preferredMetaRecipient(to);
       const outbound = buildMetaMessagePayload({ to: normalizedTo, message });

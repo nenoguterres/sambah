@@ -153,7 +153,8 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
       } else {
         sendResult = await whatsappProvider?.sendMessage?.({
           to: outboundCommand.recipient,
-          message: { type: "text", text: outboundCommand.text }
+          message: { type: "text", text: outboundCommand.text },
+          phoneNumberId: outboundCommand.phoneNumberId
         });
         reason = sendResult?.sent ? "sent" : "meta_send_failed";
       }
@@ -219,7 +220,8 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
         recipient: outboundCommand.recipient,
         text: outboundCommand.text,
         interactive: outboundCommand.interactive,
-        correlationId: outboundCommand.correlationId
+        correlationId: outboundCommand.correlationId,
+        phoneNumberIdReceived: outboundCommand.phoneNumberId ? true : false
       },
       conversa: outboundResult.conversa || conversationResult.conversa,
       message: conversationResult.message,
@@ -273,7 +275,8 @@ function buildV2OutboundCommand({ incoming = {}, reply = {}, correlationId = "" 
     recipient,
     text: renderV2ReplyAsText(reply),
     interactive: null,
-    correlationId
+    correlationId,
+    phoneNumberId: String(incoming.phoneNumberIdReceived || "").trim()
   };
 }
 
@@ -305,6 +308,7 @@ async function processWhatsAppV2(incoming = {}, runtimeConfig = getRuntimeConfig
     conversationId: incoming.telefone || incoming.from || incoming.phone || "",
     from: incoming.telefone || incoming.from || incoming.phone || "",
     text: incoming.text || incoming.message || incoming.transcricao || "",
+    phoneNumberIdReceived: incoming.phoneNumberIdReceived || "",
     receivedAt: new Date().toISOString(),
     reserved
   });

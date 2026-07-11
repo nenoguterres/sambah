@@ -596,7 +596,7 @@ test("POST /webhook/whatsapp V2 operacional com sender habilitado chama provider
         id: "wamid-v2-send-operational",
         type: "text",
         text: { body: "oi" }
-      }))
+      }, { phoneNumberId: "phone-id-from-webhook" }))
     });
     const body = await response.json();
     assert.equal(response.status, 200);
@@ -611,6 +611,7 @@ test("POST /webhook/whatsapp V2 operacional com sender habilitado chama provider
     assert.equal(providerCalls.length, 1);
     assert.equal(providerCalls[0].to, "5551555555555");
     assert.equal(providerCalls[0].message.type, "text");
+    assert.equal(providerCalls[0].phoneNumberId, "phone-id-from-webhook");
     assert.match(providerCalls[0].message.text, /^Portal Insano\nEscolha uma area para continuar:/);
     const messages = JSON.parse(await readFile(messagesFile, "utf8"));
     assert.equal(messages.find((message) => message.direction === "out").providerMessageId, "wamid-provider-v2");

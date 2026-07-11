@@ -493,8 +493,9 @@ export class WhatsAppConversationService {
 }
 
 export function parseWhatsAppIncoming(payload = {}) {
-  const metaMessage = payload.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
-  const contact = payload.entry?.[0]?.changes?.[0]?.value?.contacts?.[0];
+  const metaValue = payload.entry?.[0]?.changes?.[0]?.value || {};
+  const metaMessage = metaValue.messages?.[0];
+  const contact = metaValue.contacts?.[0];
   const source = metaMessage || payload;
   const rawType = source.type || payload.messageType || "text";
   const tipo = normalizeMessageType(rawType);
@@ -508,6 +509,7 @@ export function parseWhatsAppIncoming(payload = {}) {
     rawFrom,
     waId,
     sendTo: waId || rawFrom,
+    phoneNumberIdReceived: String(metaValue.metadata?.phone_number_id || payload.phoneNumberIdReceived || "").trim(),
     nome: payload.name || payload.nome || contact?.profile?.name || "",
     profileName: contact?.profile?.name || "",
     tipo,

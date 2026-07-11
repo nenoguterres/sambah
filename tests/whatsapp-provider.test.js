@@ -44,6 +44,31 @@ test("provider meta envia para endpoint oficial sem vazar token no retorno", asy
   assert.doesNotMatch(JSON.stringify(result), /token-secreto/);
 });
 
+test("provider meta permite responder pelo phone number id recebido no webhook", async () => {
+  let request = null;
+  const provider = createWhatsAppProvider({
+    config: {
+      provider: "meta",
+      phoneNumberId: "config-phone-id",
+      accessToken: "token-secreto",
+      apiVersion: "v25.0"
+    },
+    fetchImpl: async (url, options) => {
+      request = { url, options };
+      return new Response(JSON.stringify({ messages: [{ id: "wamid-received-phone" }] }), { status: 200 });
+    }
+  });
+  const result = await provider.sendMessage({
+    to: "555181675115",
+    phoneNumberId: "received-phone-id",
+    message: { type: "text", text: "Portal Insano" }
+  });
+  assert.equal(result.sent, true);
+  assert.equal(result.providerMessageId, "wamid-received-phone");
+  assert.equal(request.url, "https://graph.facebook.com/v25.0/received-phone-id/messages");
+  assert.doesNotMatch(JSON.stringify(result), /token-secreto/);
+});
+
 test("provider meta incompleto retorna configured false", () => {
   const provider = createWhatsAppProvider({
     config: {
