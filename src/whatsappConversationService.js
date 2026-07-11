@@ -303,7 +303,7 @@ export class WhatsAppConversationService {
     try {
       const raw = await readFile(this.filePath, "utf8");
       const parsed = JSON.parse(stripBom(raw) || "{}");
-      return { conversas: Array.isArray(parsed.conversas) ? parsed.conversas : [] };
+      return { conversas: Array.isArray(parsed.conversas) ? parsed.conversas.filter(isPlainRecord) : [] };
     } catch (error) {
       if (error.code === "ENOENT") return { conversas: [] };
       throw error;
@@ -531,4 +531,8 @@ function normalizeText(value = "") {
 
 function stripBom(value = "") {
   return value.charCodeAt(0) === 0xfeff ? value.slice(1) : value;
+}
+
+function isPlainRecord(value) {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
