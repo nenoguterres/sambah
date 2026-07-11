@@ -150,7 +150,7 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
         sendResult = { ok: false, sent: false, status: "meta_provider_unavailable", error: "meta_provider_unavailable" };
         reason = "meta_send_failed";
       } else {
-        sendResult = await whatsappProvider?.sendMessage?.({ to: incoming.telefone, message: reply });
+        sendResult = await whatsappProvider?.sendMessage?.({ to: incoming.sendTo || incoming.telefone, message: reply });
         reason = sendResult?.sent ? "sent" : "meta_send_failed";
       }
     }

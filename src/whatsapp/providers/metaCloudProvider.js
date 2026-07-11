@@ -37,7 +37,7 @@ export class MetaCloudWhatsAppProvider {
     const version = this.config.apiVersion || "v25.0";
     const endpoint = `https://graph.facebook.com/${version}/${encodeURIComponent(this.config.phoneNumberId)}/messages`;
     try {
-      const normalizedTo = normalizeWhatsAppPhone(to);
+      const normalizedTo = preferredMetaRecipient(to);
       const outbound = buildMetaMessagePayload({ to: normalizedTo, message });
       const firstAttempt = await sendMetaPayload(this.fetch, endpoint, this.config.accessToken, outbound.body, { timeoutMs: this.timeoutMs });
       let attempt = firstAttempt;
@@ -210,6 +210,11 @@ function metaBrazilianAllowedListRetryNumber(phone = "", responseBody = {}) {
   if (responseBody?.error?.code !== 131030) return "";
   const aliases = whatsappPhoneAliases(phone);
   return aliases.find((alias) => alias !== String(phone || "").replace(/\D/g, "")) || "";
+}
+
+function preferredMetaRecipient(value = "") {
+  const digits = String(value || "").replace(/\D/g, "");
+  return digits || normalizeWhatsAppPhone(value);
 }
 
 async function readBody(response) {

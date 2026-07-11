@@ -606,11 +606,70 @@ test("POST /webhook/whatsapp V2 operacional com sender habilitado chama provider
     assert.equal(body.senderCalled, true);
     assert.equal(body.providerMessageId, "wamid-provider-v2");
     assert.equal(providerCalls.length, 1);
+    assert.equal(providerCalls[0].to, "5551555555555");
     assert.equal(providerCalls[0].message.type, "menu");
     const messages = JSON.parse(await readFile(messagesFile, "utf8"));
     assert.equal(messages.find((message) => message.direction === "out").providerMessageId, "wamid-provider-v2");
     const conversations = JSON.parse(await readFile(conversationsFile, "utf8"));
     assert.equal(conversations.conversas[0].mensagens.find((message) => message.direction === "out").providerMessageId, "wamid-provider-v2");
+  } finally {
+    await close(server);
+    await cleanup();
+    restoreEnv("WHATSAPP_V2_ENABLED", previousV2);
+    restoreEnv("WHATSAPP_SEND_ENABLED", previousSend);
+    restoreEnv("WHATSAPP_AI_ENABLED", previousAi);
+    restoreEnv("WHATSAPP_AUTO_REPLY_ENABLED", previousAutoReply);
+    restoreEnv("META_ACCESS_TOKEN", previousAccessToken);
+    restoreEnv("META_PHONE_NUMBER_ID", previousPhoneNumberId);
+    restoreEnv("WHATSAPP_PHONE_NUMBER_ID", previousWhatsappPhoneNumberId);
+  }
+});
+
+test("POST /webhook/whatsapp V2 envia para o from bruto da Meta antes de aliases com nono digito", async () => {
+  const previousV2 = process.env.WHATSAPP_V2_ENABLED;
+  const previousSend = process.env.WHATSAPP_SEND_ENABLED;
+  const previousAi = process.env.WHATSAPP_AI_ENABLED;
+  const previousAutoReply = process.env.WHATSAPP_AUTO_REPLY_ENABLED;
+  const previousAccessToken = process.env.META_ACCESS_TOKEN;
+  const previousPhoneNumberId = process.env.META_PHONE_NUMBER_ID;
+  const previousWhatsappPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  process.env.WHATSAPP_V2_ENABLED = "true";
+  process.env.WHATSAPP_SEND_ENABLED = "true";
+  process.env.WHATSAPP_AI_ENABLED = "false";
+  process.env.WHATSAPP_AUTO_REPLY_ENABLED = "true";
+  process.env.META_ACCESS_TOKEN = "token-teste";
+  process.env.META_PHONE_NUMBER_ID = "1234567890";
+  process.env.WHATSAPP_PHONE_NUMBER_ID = "1234567890";
+
+  const providerCalls = [];
+  const { server, base, conversationsFile, cleanup } = await createTestServer({
+    provider: {
+      name: "meta",
+      status: () => ({ provider: "meta", configured: true }),
+      sendMessage: async (input) => {
+        providerCalls.push(input);
+        return { ok: true, sent: true, status: "sent", providerMessageId: "wamid-provider-raw-from", response: { messages: [{ id: "wamid-provider-raw-from" }] }, metaMessageType: "interactive_list" };
+      }
+    }
+  });
+  try {
+    const response = await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(metaPayload({
+        from: "555181675115",
+        id: "wamid-v2-raw-from-send",
+        type: "text",
+        text: { body: "oi" }
+      }))
+    });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.sent, true);
+    assert.equal(providerCalls.length, 1);
+    assert.equal(providerCalls[0].to, "555181675115");
+    const conversations = JSON.parse(await readFile(conversationsFile, "utf8"));
+    assert.equal(conversations.conversas[0].telefone, "5551981675115");
   } finally {
     await close(server);
     await cleanup();
@@ -809,7 +868,7 @@ test("WhatsApp V2 operacional final: idempotencia, HUMANO, manual, status e auto
     assert.equal(duplicate.status, 200);
     assert.equal([firstBody.duplicate, duplicateBody.duplicate].filter(Boolean).length, 1);
     assert.equal(providerCalls.length, 1);
-    assert.equal(providerCalls[0].input.to, "5551980413745");
+    assert.equal(providerCalls[0].input.to, "555180413745");
 
     let conversations = JSON.parse(await readFile(conversationsFile, "utf8"));
     assert.equal(conversations.conversas.length, 1);

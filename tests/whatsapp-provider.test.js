@@ -238,7 +238,7 @@ test("provider meta usa texto numerado quando lista interativa falha", async () 
   assert.match(requests[1].text.body, /1\. Um/);
 });
 
-test("provider meta tenta nono digito brasileiro quando Meta recusa destinatario", async () => {
+test("provider meta preserva destinatario Meta recebido e tenta alias brasileiro se a Meta recusar", async () => {
   const requests = [];
   const provider = createWhatsAppProvider({
     config: {
@@ -264,12 +264,12 @@ test("provider meta tenta nono digito brasileiro quando Meta recusa destinatario
   assert.equal(result.ok, true);
   assert.equal(result.sent, true);
   assert.equal(result.retried, true);
-  assert.equal(result.originalTo, "5551980413745");
-  assert.equal(result.retryTo, "555180413745");
+  assert.equal(result.originalTo, "555180413745");
+  assert.equal(result.retryTo, "5551980413745");
   assert.equal(requests.length, 2);
   assert.equal(requests[0].url, "https://graph.facebook.com/v25.0/12345/messages");
-  assert.equal(requests[0].body.to, "5551980413745");
-  assert.equal(requests[1].body.to, "555180413745");
+  assert.equal(requests[0].body.to, "555180413745");
+  assert.equal(requests[1].body.to, "5551980413745");
 });
 
 test("parser normaliza payload da Meta Cloud API", () => {

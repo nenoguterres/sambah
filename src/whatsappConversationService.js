@@ -500,9 +500,14 @@ export function parseWhatsAppIncoming(payload = {}) {
   const tipo = normalizeMessageType(rawType);
   const text = String(metaMessage ? extractWhatsAppMessageText(metaMessage, payload) : source.message || source.text || source.body || payload.message || payload.text || "").trim();
   const audio = source.audio || payload.audio || {};
+  const rawFrom = String(source.from || payload.from || payload.phone || payload.telefone || "").replace(/\D/g, "");
+  const waId = String(contact?.wa_id || "").replace(/\D/g, "");
   return {
     messageId: source.id || payload.eventId || payload.messageId || "",
-    telefone: normalizePhone(source.from || payload.from || payload.phone || payload.telefone || ""),
+    telefone: normalizePhone(rawFrom),
+    rawFrom,
+    waId,
+    sendTo: waId || rawFrom,
     nome: payload.name || payload.nome || contact?.profile?.name || "",
     profileName: contact?.profile?.name || "",
     tipo,
