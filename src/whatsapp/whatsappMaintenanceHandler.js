@@ -138,6 +138,7 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
     }
 
     const correlationId = incoming.messageId ? `wa-v2-reply:${incoming.messageId}` : "";
+    const outboundCommand = buildV2OutboundCommand({ incoming, reply, correlationId });
     let sendResult = null;
     let sendAttempted = false;
     let reason = "whatsapp_sender_disabled";
@@ -150,13 +151,16 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
         sendResult = { ok: false, sent: false, status: "meta_provider_unavailable", error: "meta_provider_unavailable" };
         reason = "meta_send_failed";
       } else {
-        sendResult = await whatsappProvider?.sendMessage?.({ to: incoming.sendTo || incoming.telefone, message: reply });
+        sendResult = await whatsappProvider?.sendMessage?.({
+          to: outboundCommand.recipient,
+          message: { type: "text", text: outboundCommand.text }
+        });
         reason = sendResult?.sent ? "sent" : "meta_send_failed";
       }
     }
     const outboundResult = await conversationService.recordOutgoing(conversationResult.conversa.id, {
-      text: reply.text || "",
-      correlationId,
+      text: outboundCommand.text,
+      correlationId: outboundCommand.correlationId,
       sendResult,
       status: sendResult?.sent ? "sent" : sendResult?.status || reason,
       metaMessageType: sendResult?.metaMessageType || reply.type || "text"
@@ -168,11 +172,11 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
           provider: "meta",
           from: incoming.telefone || "",
           customer: { name: incoming.nome || incoming.profileName || "", phone: incoming.telefone || "" },
-          messageId: correlationId,
-          correlationId,
-          message: reply.text || ""
+          messageId: outboundCommand.correlationId,
+          correlationId: outboundCommand.correlationId,
+          message: outboundCommand.text
         },
-        text: reply.text || "",
+        text: outboundCommand.text,
         sendResult
       });
     }
@@ -210,6 +214,13 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
       outboxCreated: true,
       messageId: outboundResult.message?.id || "",
       providerMessageId: sendResult?.providerMessageId || "",
+      outboundCommand: {
+        conversationId: outboundCommand.conversationId,
+        recipient: outboundCommand.recipient,
+        text: outboundCommand.text,
+        interactive: outboundCommand.interactive,
+        correlationId: outboundCommand.correlationId
+      },
       conversa: outboundResult.conversa || conversationResult.conversa,
       message: conversationResult.message,
       outboundMessage: outboundResult.message || null,
@@ -253,6 +264,29 @@ function createWhatsAppV2Repository(runtimeConfig = getRuntimeConfig()) {
   return new FileWhatsAppV2ConversationRepository({
     filePath: join(runtimeConfig.dataDir || "data", "whatsapp-v2-state.json")
   });
+}
+
+function buildV2OutboundCommand({ incoming = {}, reply = {}, correlationId = "" } = {}) {
+  const recipient = String(incoming.sendTo || incoming.telefone || incoming.from || incoming.phone || "").trim();
+  return {
+    conversationId: String(incoming.telefone || incoming.from || incoming.phone || "").trim(),
+    recipient,
+    text: renderV2ReplyAsText(reply),
+    interactive: null,
+    correlationId
+  };
+}
+
+function renderV2ReplyAsText(reply = {}) {
+  if (reply.type === "menu" && reply.menu) {
+    const optionText = reply.menu.options?.map((item) => item.fallbackText || `${item.order}. ${item.title}`).join("\n") || "";
+    return [
+      reply.menu.title || "",
+      reply.menu.body || "",
+      optionText
+    ].filter(Boolean).join("\n");
+  }
+  return String(reply.text || "");
 }
 
 async function reserveIncomingMessage(repository, incoming = {}) {

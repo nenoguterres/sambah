@@ -583,7 +583,7 @@ test("POST /webhook/whatsapp V2 operacional com sender habilitado chama provider
       status: () => ({ provider: "meta", configured: true }),
       sendMessage: async (input) => {
         providerCalls.push(input);
-        return { ok: true, sent: true, status: "sent", providerMessageId: "wamid-provider-v2", response: { messages: [{ id: "wamid-provider-v2" }] }, metaMessageType: "interactive_list" };
+        return { ok: true, sent: true, status: "sent", providerMessageId: "wamid-provider-v2", response: { messages: [{ id: "wamid-provider-v2" }] }, metaMessageType: input.message?.type || "text" };
       }
     }
   });
@@ -605,9 +605,13 @@ test("POST /webhook/whatsapp V2 operacional com sender habilitado chama provider
     assert.equal(body.sent, true);
     assert.equal(body.senderCalled, true);
     assert.equal(body.providerMessageId, "wamid-provider-v2");
+    assert.equal(body.outboundCommand.conversationId, "5551555555555");
+    assert.equal(body.outboundCommand.recipient, "5551555555555");
+    assert.equal(body.outboundCommand.interactive, null);
     assert.equal(providerCalls.length, 1);
     assert.equal(providerCalls[0].to, "5551555555555");
-    assert.equal(providerCalls[0].message.type, "menu");
+    assert.equal(providerCalls[0].message.type, "text");
+    assert.match(providerCalls[0].message.text, /^Portal Insano\nEscolha uma area para continuar:/);
     const messages = JSON.parse(await readFile(messagesFile, "utf8"));
     assert.equal(messages.find((message) => message.direction === "out").providerMessageId, "wamid-provider-v2");
     const conversations = JSON.parse(await readFile(conversationsFile, "utf8"));
@@ -864,11 +868,20 @@ test("WhatsApp V2 operacional final: idempotencia, HUMANO, manual, status e auto
     ]);
     const firstBody = await first.json();
     const duplicateBody = await duplicate.json();
+    const sentBody = firstBody.outboundCommand ? firstBody : duplicateBody;
     assert.equal(first.status, 200);
     assert.equal(duplicate.status, 200);
     assert.equal([firstBody.duplicate, duplicateBody.duplicate].filter(Boolean).length, 1);
     assert.equal(providerCalls.length, 1);
+    assert.equal(providerCalls[0].method, "sendMessage");
     assert.equal(providerCalls[0].input.to, "555180413745");
+    assert.deepEqual(providerCalls[0].input.message, {
+      type: "text",
+      text: "Portal Insano\nEscolha uma area para continuar:\n1. Insano Food Truck\n2. Xeriffe Obirici\n3. Granja Aguas da Lagoa\n4. Desenvolvimento de Tecnologias\n5. Atendimento Humano"
+    });
+    assert.equal(sentBody.outboundCommand.recipient, "555180413745");
+    assert.equal(sentBody.outboundCommand.interactive, null);
+    assert.equal(sentBody.outboundCommand.correlationId, "wa-v2-reply:wamid-final-dup");
 
     let conversations = JSON.parse(await readFile(conversationsFile, "utf8"));
     assert.equal(conversations.conversas.length, 1);
@@ -929,6 +942,8 @@ test("WhatsApp V2 operacional final: idempotencia, HUMANO, manual, status e auto
       body: JSON.stringify(metaPayload({ from: "555180413745", id: "wamid-final-after-auto", type: "text", text: { body: "oi" } }))
     });
     assert.equal(providerCalls.filter((call) => call.method === "sendMessage").length, 3);
+    assert.equal(providerCalls.filter((call) => call.method === "sendText").length, 1);
+    assert.ok(providerCalls.filter((call) => call.method === "sendMessage").every((call) => call.input.message.type === "text"));
 
     const status = await (await fetch(`${base}/admin/whatsapp/status`)).json();
     assert.equal(status.engine, "v2");
