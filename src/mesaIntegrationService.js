@@ -217,30 +217,6 @@ export class MesaIntegrationService {
     return { ok: true, item: formatReviewEntry(entry) };
   }
 
-  async updateFinancialStatus(mesaOrderId, input = {}) {
-    const queue = await this.readQueue();
-    const index = queue.findIndex((entry) => matchesOrderId(entry.order, mesaOrderId) || matchesOrderId(entry.order?.order, mesaOrderId) || entry.id === mesaOrderId);
-    if (index === -1) return { ok: false, error: "mesa_order_not_found", mesaOrderId };
-    const statusFinanceiro = normalizeFinancialStatus(input.statusFinanceiro || input.financialStatus || input.status || "A_COBRAR");
-    const now = new Date().toISOString();
-    const entry = {
-      ...queue[index],
-      updatedAt: now,
-      financialStatus: statusFinanceiro,
-      statusFinanceiro,
-      sambahCorrelationId: input.correlationId || queue[index].sambahCorrelationId || null,
-      order: {
-        ...queue[index].order,
-        financialStatus: statusFinanceiro,
-        statusFinanceiro
-      },
-      history: addHistory(queue[index].history, statusFinanceiro, `Status financeiro atualizado: ${statusFinanceiro}`)
-    };
-    queue[index] = entry;
-    await this.writeQueue(queue);
-    return { ok: true, item: sanitizeEntry(entry), statusFinanceiro };
-  }
-
   async queueSnapshot({ limit = 100 } = {}) {
     const queue = await this.readQueue();
     const pending = queue.filter((entry) => entry.status === "pending");
@@ -344,12 +320,6 @@ function findOrderInResponse(body, mesaOrderId) {
 
 function matchesOrderId(item = {}, mesaOrderId) {
   return [item.id, item.orderId, item.mesaOrderId, item.externalId].filter(Boolean).includes(mesaOrderId);
-}
-
-function normalizeFinancialStatus(value = "") {
-  const normalized = String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-  if (normalized.includes("pagamento_efetuado") || normalized.includes("pagamento efetuado") || normalized.includes("paid") || normalized.includes("pago")) return "PAGAMENTO_EFETUADO";
-  return "A_COBRAR";
 }
 
 async function readResponseBody(response) {

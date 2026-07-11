@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SamBah IA Controlada</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #081111;
+      --panel: #102020;
+      --panel-soft: #142b2b;
+      --line: #234141;
+      --text: #edf7f4;
+      --muted: #9bb7b1;
+      --accent: #1fd39a;
+      --warn: #ffbf5f;
+      --danger: #ff7b7b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    main {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 40px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: flex-end;
+      margin-bottom: 22px;
+    }
+    h1, h2, p { margin: 0; }
+    h1 { font-size: 28px; }
+    header p { color: var(--muted); margin-top: 8px; }
+    .status {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: var(--muted);
+      min-width: 180px;
+      text-align: right;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    .card, .panel {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .card span {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 10px;
+    }
+    .card strong {
+      font-size: 26px;
+      line-height: 1;
+    }
+    .panels {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    .panel h2 {
+      font-size: 18px;
+      margin-bottom: 14px;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 11px 0;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+    }
+    .row:first-of-type { border-top: 0; }
+    .row strong { color: var(--text); }
+    .bar {
+      height: 8px;
+      border-radius: 999px;
+      background: var(--panel-soft);
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .bar i {
+      display: block;
+      height: 100%;
+      background: var(--accent);
+      width: var(--w, 0%);
+    }
+    .danger i { background: var(--danger); }
+    .empty {
+      color: var(--muted);
+      padding: 12px 0;
+    }
+    @media (max-width: 900px) {
+      header { align-items: flex-start; flex-direction: column; }
+      .status { text-align: left; }
+      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .panels { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>SamBah IA Controlada</h1>
+        <p>Observabilidade local da camada de IA, sem alterar operacao, regras ou router.</p>
+      </div>
+      <div class="status" id="status">Carregando...</div>
+    </header>
+
+    <section class="grid" aria-label="Indicadores principais">
+      <div class="card"><span>Mensagens analisadas</span><strong id="messagesAnalyzed">0</strong></div>
+      <div class="card"><span>Respostas aprovadas</span><strong id="approvedResponses">0</strong></div>
+      <div class="card"><span>Respostas bloqueadas</span><strong id="blockedResponses">0</strong></div>
+      <div class="card"><span>Handoffs humanos</span><strong id="humanHandoffs">0</strong></div>
+      <div class="card"><span>Confianca media</span><strong id="averageConfidence">0%</strong></div>
+      <div class="card"><span>Baixa confianca</span><strong id="lowConfidenceEvents">0</strong></div>
+    </section>
+
+    <section class="panels">
+      <article class="panel">
+        <h2>Ranking de Intencoes</h2>
+        <div id="intentRanking" class="empty">Nenhuma intencao registrada ainda.</div>
+      </article>
+      <article class="panel">
+        <h2>Motivos de Bloqueio</h2>
+        <div id="blockReasons" class="empty">Nenhum bloqueio registrado ainda.</div>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const ids = ["messagesAnalyzed", "approvedResponses", "blockedResponses", "humanHandoffs", "lowConfidenceEvents"];
+
+    async function loadMetrics() {
+      const response = await fetch("/api/sambah-ai/metrics");
+      const data = await response.json();
+      for (const id of ids) document.getElementById(id).textContent = data[id] || 0;
+      document.getElementById("averageConfidence").textContent = `${Math.round((data.averageConfidence || 0) * 100)}%`;
+      document.getElementById("status").textContent = data.storage === "json" ? "Storage JSON local" : "Storage indisponivel";
+      renderRanking("intentRanking", data.intentRanking || [], "intent");
+      renderRanking("blockReasons", data.blockReasons || [], "label", true);
+    }
+
+    function renderRanking(targetId, items, labelKey, danger = false) {
+      const target = document.getElementById(targetId);
+      if (!items.length) return;
+      const max = Math.max(...items.map((item) => item.count || 0), 1);
+      target.className = "";
+      target.innerHTML = items.map((item) => {
+        const width = Math.round(((item.count || 0) / max) * 100);
+        const label = item[labelKey] || "Outras";
+        return `<div class="row"><div><strong>${escapeHtml(label)}</strong><div class="bar ${danger ? "danger" : ""}" style="--w:${width}%"><i></i></div></div><span>${item.count || 0}</span></div>`;
+      }).join("");
+    }
+
+    function escapeHtml(value) {
+      return String(value || "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;"
+      })[char]);
+    }
+
+    loadMetrics().catch(() => {
+      document.getElementById("status").textContent = "Falha ao carregar metricas";
+    });
+  </script>
+</body>
+</html>

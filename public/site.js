@@ -165,20 +165,8 @@ const submitButton = document.querySelector("#submitButton");
 const capbahStage = document.querySelector("#capbahStage");
 const capbahOfficial = document.querySelector(".capbah-official");
 const topWhatsAppButton = document.querySelector(".whatsapp-button");
-const headerBrand = document.querySelector(".header-brand");
-const returnConversationLink = document.querySelector(".return-conversation-link");
 const commercialForm = document.querySelector("#commercialForm");
 const commercialResult = document.querySelector("#commercialResult");
-const pageParams = new URLSearchParams(window.location.search);
-const returnTo = sanitizeReturnPath(pageParams.get("returnTo"));
-
-if (returnTo) {
-  if (headerBrand) headerBrand.href = returnTo;
-  if (returnConversationLink) {
-    returnConversationLink.href = returnTo;
-    returnConversationLink.hidden = false;
-  }
-}
 let activePath = null;
 let activeService = null;
 let activeMode = null;
@@ -1151,13 +1139,6 @@ function normalizeText(value = "") {
     .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-function sanitizeReturnPath(value = "") {
-  const path = String(value || "").trim();
-  if (!path.startsWith("/") || path.startsWith("//")) return "";
-  if (path.includes("\\") || path.includes("\n") || path.includes("\r")) return "";
-  return path;
 }
 
 function prepareOfficialCapbah() {

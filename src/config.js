@@ -26,7 +26,6 @@ export function getRuntimeConfig(env = globalThis.process?.env || {}) {
     port: Number(env.PORT || 3000),
     baseUrl: env.BASE_URL || API_BASES.local,
     publicBaseUrl: env.PUBLIC_BASE_URL || "https://insanofoodtruck.com.br",
-    mesaComandaUrl: env.MESA_COMANDA_URL || `${env.SAMBAH_APP_BASE_URL || "https://api.insanofoodtruck.com.br"}/cardapio/insano?origem=whatsapp_sambah`,
     corsOrigins: parseList(env.CORS_ORIGINS, DEFAULT_CORS_ORIGINS),
     whatsappNumber: env.WHATSAPP_NUMBER || "5551980413745",
     insanoWhatsappNumber: env.INSANO_WHATSAPP_NUMBER || "",
@@ -34,7 +33,7 @@ export function getRuntimeConfig(env = globalThis.process?.env || {}) {
     siteOrdersEnabled: env.SITE_ORDERS_ENABLED !== "false",
     dataDir: env.DATA_DIR || "data",
     whatsappBusiness: {
-      provider: firstEnv(env, localEnv, ["WHATSAPP_PROVIDER"]) || "meta",
+      provider: firstEnv(env, localEnv, ["WHATSAPP_PROVIDER"]) || "mock",
       sendEnabled: firstEnv(env, localEnv, ["WHATSAPP_SEND_ENABLED"]) === "true",
       verifyToken: firstEnv(env, localEnv, ["META_VERIFY_TOKEN", "WHATSAPP_META_VERIFY_TOKEN", "SAMBAH_META_VERIFY_TOKEN", "WHATSAPP_VERIFY_TOKEN"]),
       accessToken: firstEnv(env, localEnv, ["META_ACCESS_TOKEN", "WHATSAPP_META_ACCESS_TOKEN", "SAMBAH_META_ACCESS_TOKEN", "WHATSAPP_ACCESS_TOKEN", "WHATSAPP_TOKEN"]),

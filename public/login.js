@@ -1,5 +1,16 @@
 const form = document.querySelector("#loginForm");
 const message = document.querySelector("#loginMessage");
+const passwordInput = document.querySelector("#passwordInput");
+const togglePassword = document.querySelector("#togglePassword");
+
+togglePassword?.addEventListener("click", () => {
+  const showing = passwordInput.type === "text";
+  passwordInput.type = showing ? "password" : "text";
+  togglePassword.textContent = showing ? "Mostrar" : "Ocultar";
+  togglePassword.setAttribute("aria-label", showing ? "Mostrar senha" : "Ocultar senha");
+  togglePassword.setAttribute("aria-pressed", String(!showing));
+  passwordInput.focus();
+});
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();

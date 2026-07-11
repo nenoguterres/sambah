@@ -27,18 +27,16 @@ function renderHome() {
 }
 
 function renderOrder() {
-  const params = new URLSearchParams(location.search);
-  const mode = params.get("tipo") || "";
-  const table = params.get("mesa") || "";
-  const sambahContext = readSambahContext(params);
+  const mode = new URLSearchParams(location.search).get("tipo") || "";
+  const table = new URLSearchParams(location.search).get("mesa") || "";
   if (!mode) {
     app.innerHTML = `
       ${hero("Quero Pedir", "Como deseja ser atendido?")}
       <div class="choice-grid">
-        ${link(withSambahContext("/pedir?tipo=delivery", sambahContext), "Delivery")}
-        ${link(withSambahContext("/pedir?tipo=retirar", sambahContext), "Retirar")}
-        ${link(withSambahContext(`/pedir?tipo=mesa${table ? `&mesa=${encodeURIComponent(table)}` : ""}`, sambahContext), "Estou no local")}
-        ${link(withSambahContext("/pedir?tipo=evento", sambahContext), "Evento / Grande Pedido")}
+        ${link("/pedir?tipo=delivery", "Delivery")}
+        ${link("/pedir?tipo=retirar", "Retirar")}
+        ${link(`/pedir?tipo=mesa${table ? `&mesa=${encodeURIComponent(table)}` : ""}`, "Estou no local")}
+        ${link("/pedir?tipo=evento", "Evento / Grande Pedido")}
       </div>
     `;
     return;
@@ -55,7 +53,6 @@ function renderOrder() {
   `;
   bindForm("orderForm", async (data, formElement) => {
     const isTable = mode === "mesa";
-    const whatsappSambahOrigin = sambahContext.conversationId || sambahContext.phone || sambahContext.origin ? "WHATSAPP_SAMBAH" : "";
     const body = await postWithFallback("/api/site/precomanda", portalPayload({
       operation: "Insano",
       type: isTable ? "mesa" : mode,
@@ -72,14 +69,8 @@ function renderOrder() {
       formaPagamento: data.pagamento || "a combinar",
       items: parseItems(data.produtos),
       customer: { name: data.nome, phone: data.telefone, serviceType: isTable ? "mesa" : mode, paymentMethod: data.pagamento || "a combinar" },
-      conversationId: sambahContext.conversationId,
-      sambahConversationId: sambahContext.conversationId,
-      source: whatsappSambahOrigin || "portal_insano",
-      origem: whatsappSambahOrigin,
-      origin: whatsappSambahOrigin,
       status: "novo"
     }));
-    await notifySambahMesaOrder(body, data, { mode: isTable ? "local" : mode, sambahContext });
     showResult(body, "Pedido recebido pelo SamBah.", { data, mode, isTable, formElement });
   });
 }
@@ -211,7 +202,7 @@ function renderWhatsApp() {
 function portalPayload(payload) {
   return {
     ...payload,
-    source: payload.source || "portal_insano",
+    source: "portal_insano",
     channel: "site",
     page: location.pathname,
     createdAt: new Date().toISOString()
@@ -298,54 +289,6 @@ async function post(path, payload) {
     return body;
   }
   return postWithXhr(path, payload);
-}
-
-async function notifySambahMesaOrder(orderResult = {}, data = {}, { mode = "", sambahContext = {} } = {}) {
-  const conversationId = sambahContext.conversationId || "";
-  const phone = sambahContext.phone || data.telefone || "";
-  if (!conversationId && !phone) return null;
-  const mesaOrderId = orderResult.mesaOrderId || orderResult.orderId || orderResult.pedidoId || orderResult.id || orderResult.precomanda?.id || "";
-  if (!mesaOrderId) return null;
-  const payload = {
-    conversationId,
-    phone,
-    mesaOrderId,
-    customerName: data.nome || orderResult.customerName || orderResult.precomanda?.nome || "",
-    mode,
-    total: orderResult.total || orderResult.totalEstimado || orderResult.precomanda?.total || null,
-    origin: "WHATSAPP_SAMBAH"
-  };
-  const path = conversationId
-    ? `/api/conversas/${encodeURIComponent(conversationId)}/mesa-pedido`
-    : "/api/conversas/mesa-pedido";
-  try {
-    return await post(path, payload);
-  } catch (error) {
-    console.warn("[portal] falha ao vincular pedido Mesa ao SamBah", error);
-    return null;
-  }
-}
-
-function readSambahContext(params = new URLSearchParams(location.search)) {
-  const conversationId = params.get("conversationId") || params.get("sambahConversationId") || "";
-  const phone = params.get("phone") || params.get("telefone") || params.get("whatsapp") || "";
-  const origin = params.get("origin") || (params.get("origem") === "whatsapp_sambah" ? "WHATSAPP_SAMBAH" : "");
-  return { conversationId, phone, origin };
-}
-
-function withSambahContext(path, context = {}) {
-  if (!context.conversationId && !context.phone && !context.origin) return path;
-  const url = new URL(path, location.origin);
-  if (context.conversationId) {
-    url.searchParams.set("conversationId", context.conversationId);
-    url.searchParams.set("sambahConversationId", context.conversationId);
-  }
-  if (context.phone) url.searchParams.set("phone", context.phone);
-  if (context.origin) {
-    url.searchParams.set("origin", context.origin);
-    url.searchParams.set("origem", "whatsapp_sambah");
-  }
-  return `${url.pathname}${url.search}`;
 }
 
 function postWithXhr(path, payload) {

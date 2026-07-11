@@ -951,6 +951,26 @@ test("Auth interna ADMIN gerencia ciclo de vida de usuario local", async () => {
   }, { authMode: "session" });
 });
 
+test("Auth interna permite PIN local de 4 digitos para administrador", async () => {
+  await withServer(async ({ baseUrl }) => {
+    const admin = await loginCookie(baseUrl, "admin", "admin123");
+    const created = await requestJson(baseUrl, "/api/auth/users", {
+      method: "POST",
+      headers: { cookie: admin.cookie },
+      body: { username: "neno.gutterres", displayName: "Neno Gutterres", role: "ADMIN", password: "6318" }
+    });
+    assert.equal(created.response.status, 201);
+    assert.equal(created.json.user.role, "ADMIN");
+
+    for (const username of ["neno.gutterres", "neno,gutterres", "Neno Gutterres"]) {
+      const login = await loginCookie(baseUrl, username, "6318");
+      assert.equal(login.response.status, 200);
+      assert.equal(login.json.user.displayName, "Neno Gutterres");
+      assert.equal(login.json.user.role, "ADMIN");
+    }
+  }, { authMode: "session" });
+});
+
 test("Auth interna restringe gestao de usuarios ao ADMIN", async () => {
   await withServer(async ({ baseUrl }) => {
     const atendente = await loginCookie(baseUrl, "atendente", "atendente123");
@@ -962,6 +982,21 @@ test("Auth interna restringe gestao de usuarios ao ADMIN", async () => {
     assert.equal(result.response.status, 403);
     assert.equal(result.json.error, "admin_required");
   }, { authMode: "session" });
+});
+
+test("Login SamBah permite mostrar e ocultar senha digitada", async () => {
+  await withServer(async ({ baseUrl }) => {
+    const html = await fetch(`${baseUrl}/login`).then((response) => response.text());
+    const js = await fetch(`${baseUrl}/login.js`).then((response) => response.text());
+    const css = await fetch(`${baseUrl}/login.css`).then((response) => response.text());
+    assert.match(html, /id="passwordInput"/);
+    assert.match(html, /id="togglePassword"/);
+    assert.match(html, /aria-label="Mostrar senha"/);
+    assert.match(js, /passwordInput\.type = showing \? "password" : "text"/);
+    assert.match(js, /togglePassword\.textContent = showing \? "Mostrar" : "Ocultar"/);
+    assert.match(css, /\.password-field/);
+    assert.match(css, /\.password-toggle/);
+  });
 });
 
 test("Tela administrativa de usuarios abre HTML e assets", async () => {
