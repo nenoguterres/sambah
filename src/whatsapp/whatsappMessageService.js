@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { parseWhatsAppWebhookPayload } from "./whatsappWebhookParser.js";
+import { maskWhatsAppPhone, normalizeWhatsAppPhone, sameWhatsAppPhone } from "./phoneNumber.js";
 
 const DEFAULT_SESSIONS_FILE = "data/whatsapp-sessions.json";
 const DEFAULT_MESSAGES_FILE = "data/whatsapp-messages.json";
@@ -26,7 +27,7 @@ export class WhatsAppMessageService {
     const normalized = normalizePhone(phone);
     const sessions = await this.readSessions();
     const next = sessions.filter((item) => {
-      if (normalized && item.phone === normalized) return false;
+      if (normalized && sameWhatsAppPhone(item.phone, normalized)) return false;
       if (draftId && item.draftId === draftId) return false;
       return true;
     });
@@ -87,7 +88,7 @@ export class WhatsAppMessageService {
   async findSession(phone) {
     const normalized = normalizePhone(phone);
     const sessions = await this.readSessions();
-    return sessions.find((item) => item.phone === normalized) || null;
+    return sessions.find((item) => sameWhatsAppPhone(item.phone, normalized)) || null;
   }
 
   async saveSession(input) {
@@ -95,7 +96,7 @@ export class WhatsAppMessageService {
     if (!phone) return null;
     const now = this.now().toISOString();
     const sessions = await this.readSessions();
-    const existing = sessions.find((item) => item.phone === phone);
+    const existing = sessions.find((item) => sameWhatsAppPhone(item.phone, phone));
     const session = {
       phone,
       lastIntent: input.lastIntent || existing?.lastIntent || "",
@@ -104,7 +105,7 @@ export class WhatsAppMessageService {
       createdAt: existing?.createdAt || input.createdAt || now,
       updatedAt: input.updatedAt || now
     };
-    const next = existing ? sessions.map((item) => (item.phone === phone ? session : item)) : [session, ...sessions];
+    const next = existing ? sessions.map((item) => (sameWhatsAppPhone(item.phone, phone) ? session : item)) : [session, ...sessions];
     await this.writeSessions(next);
     return session;
   }
@@ -130,6 +131,8 @@ export class WhatsAppMessageService {
       status: sendResult?.status || (direction === "out" ? "registrada_sem_envio" : "received"),
       httpStatus: sendResult?.httpStatus || null,
       response: sendResult?.response || null,
+      errorCode: sendResult?.response?.error?.code || sendResult?.error || "",
+      errorMessage: sendResult?.response?.error?.message || sendResult?.error || "",
       createdAt: this.now().toISOString()
     };
     messages.unshift(message);
@@ -201,20 +204,16 @@ function sanitizeMetaStatus(status = {}) {
     status: status.status || "",
     timestamp: status.timestamp || "",
     recipient_id: status.recipient_id || "",
-    errors: Array.isArray(status.errors) ? status.errors.map((error) => ({ code: error.code, title: error.title, message: error.message, error_data: error.error_data })) : []
+    errors: Array.isArray(status.errors) ? status.errors.map((error) => ({ code: error.code, title: error.title, message: error.message })) : []
   };
 }
 
 function normalizePhone(value = "") {
-  const digits = String(value || "").replace(/\D/g, "");
-  if (!digits) return "";
-  if (digits.startsWith("55")) return digits;
-  return digits.length >= 10 ? `55${digits}` : digits;
+  return normalizeWhatsAppPhone(value);
 }
 
 function maskPhone(value = "") {
-  const digits = String(value || "").replace(/\D/g, "");
-  return digits ? `***${digits.slice(-4)}` : "";
+  return maskWhatsAppPhone(value);
 }
 
 function stripBom(value = "") {

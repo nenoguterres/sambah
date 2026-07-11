@@ -13,8 +13,8 @@ export class SambahMetaSendService {
   debug() {
     return {
       ok: true,
-      phoneNumberId: this.phoneNumberId,
-      wabaId: this.wabaId,
+      phoneNumberIdConfigured: Boolean(this.phoneNumberId),
+      wabaIdConfigured: Boolean(this.wabaId),
       apiVersion: this.apiVersion
     };
   }
@@ -27,8 +27,6 @@ export class SambahMetaSendService {
     if (!this.phoneNumberId || !this.accessToken) return { ok: false, statusCode: 400, error: "meta_credentials_missing" };
 
     const endpoint = `https://graph.facebook.com/${this.apiVersion}/${this.phoneNumberId}/messages`;
-    console.log("[sambah-meta-send] phoneNumberId", this.phoneNumberId);
-    console.log("[sambah-meta-send] endpoint", endpoint);
     const response = await this.fetch(endpoint, {
       method: "POST",
       headers: {
@@ -45,14 +43,14 @@ export class SambahMetaSendService {
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
-      console.log("[sambah-meta-send] error status", response.status);
-      console.log("[sambah-meta-send] error code", body?.error?.code);
-      console.log("[sambah-meta-send] error message", body?.error?.message);
-      console.log("[sambah-meta-send] error data", JSON.stringify(body?.error?.error_data || null));
-      console.log("[sambah-meta-send] response body", JSON.stringify(body));
-      return { ok: false, statusCode: response.status, error: "meta_send_failed", meta: body };
+      console.info("[sambah-meta-send] failed", {
+        statusCode: response.status,
+        code: body?.error?.code || "",
+        message: sanitizeMetaText(body?.error?.message || "", this.accessToken)
+      });
+      return { ok: false, statusCode: response.status, error: "meta_send_failed", meta: sanitizeMetaPayload(body, this.accessToken) };
     }
-    return { ok: true, provider: "meta_whatsapp_cloud_api", statusCode: response.status, meta: body };
+    return { ok: true, provider: "meta_whatsapp_cloud_api", statusCode: response.status, meta: sanitizeMetaPayload(body, this.accessToken) };
   }
 }
 
@@ -84,4 +82,28 @@ function loadLocalEnv() {
   } catch {
     return {};
   }
+}
+
+function sanitizeMetaPayload(value, accessToken = "") {
+  if (Array.isArray(value)) return value.map((item) => sanitizeMetaPayload(item, accessToken));
+  if (!value || typeof value !== "object") return sanitizeMetaText(value, accessToken);
+  const sanitized = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (/token|authorization|secret|password|credential/i.test(key)) {
+      sanitized[key] = "[masked]";
+      continue;
+    }
+    sanitized[key] = sanitizeMetaPayload(item, accessToken);
+  }
+  return sanitized;
+}
+
+function sanitizeMetaText(value, accessToken = "") {
+  if (typeof value !== "string") return value;
+  let text = value;
+  if (accessToken) text = text.split(accessToken).join("[masked]");
+  return text
+    .replace(/(access_token=)[^&\s]+/gi, "$1[masked]")
+    .replace(/(access_token["']?\s*[:=]\s*["']?)[^"',\s}]+/gi, "$1[masked]")
+    .replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]+/g, "$1[masked]");
 }

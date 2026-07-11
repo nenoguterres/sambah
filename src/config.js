@@ -41,6 +41,7 @@ export function getRuntimeConfig(env = globalThis.process?.env || {}) {
       phoneNumberId: firstEnv(env, localEnv, ["META_PHONE_NUMBER_ID", "WHATSAPP_META_PHONE_NUMBER_ID", "SAMBAH_META_PHONE_NUMBER_ID", "WHATSAPP_PHONE_NUMBER_ID"]),
       businessAccountId: firstEnv(env, localEnv, ["META_WABA_ID", "WHATSAPP_BUSINESS_ACCOUNT_ID", "SAMBAH_META_WABA_ID"]),
       webhookSecret: env.SAMBAH_WEBHOOK_SECRET || env.WHATSAPP_WEBHOOK_SECRET || "",
+      signatureRequired: env.WHATSAPP_WEBHOOK_SIGNATURE_REQUIRED === "true",
       apiVersion: firstEnv(env, localEnv, ["META_API_VERSION", "WHATSAPP_META_API_VERSION", "SAMBAH_META_API_VERSION"]) || "v25.0",
       apiBaseUrl: env.WHATSAPP_API_BASE_URL || "https://graph.facebook.com",
       publicWebhookUrl: firstEnv(env, localEnv, ["WEBHOOK_PUBLIC_URL", "SAMBAH_PUBLIC_WEBHOOK_URL"])

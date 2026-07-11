@@ -78,6 +78,14 @@ function openMenu(state, contract, menuId, source, stack = state.menuStack || []
 function startFlow(state, contract, flowId, source) {
   const flow = contract.flows[flowId];
   if (!flow) return integrationDisabled(state, source);
+  if (flow.id === "human_handoff") {
+    return response(
+      source,
+      { ...state, mode: "human", serviceState: "HUMANO", activeFlow: null, activeStep: null, awaitingInput: false },
+      "Conversa encaminhada para atendimento humano. O historico e o contexto foram preservados.",
+      [{ type: "notify_operator" }]
+    );
+  }
   const nextState = { ...state, activeFlow: flowId, activeStep: flow.steps[0].id, awaitingInput: true };
   return response(source, nextState, flow.initialMessage);
 }

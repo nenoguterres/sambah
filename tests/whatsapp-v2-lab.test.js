@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { adaptMetaWebhookV2 } from "../src/whatsapp/v2/metaWebhookAdapter.js";
 import { createWhatsAppV2LabEngine } from "../src/whatsapp/v2/whatsappV2LabEngine.js";
 import { FileWhatsAppV2ConversationRepository } from "../src/whatsapp/v2/inMemoryRepositories.js";
+import { createWhatsAppV2State } from "../src/whatsapp/v2/conversationState.js";
 
 test("WhatsApp V2 lab adapta payload Meta fake sem usar token ou webhook real", () => {
   const adapted = adaptMetaWebhookV2(metaPayload({ id: "wamid-v2-1", from: "5551000000001", text: { body: "oi" } }));
@@ -43,12 +44,14 @@ test("WhatsApp V2 lab modo humano preserva contexto e bloqueia automacao apos mo
   const reason = await engine.processor.handleIncoming({ messageId: "wamid-v2-human-2", from: "5551000000003", text: "quero falar sobre evento" });
   const afterHuman = await engine.processor.handleIncoming({ messageId: "wamid-v2-human-3", from: "5551000000003", text: "oi" });
 
-  assert.equal(handoff.state.activeFlow, "human_handoff");
+  assert.equal(handoff.state.activeFlow, null);
+  assert.equal(handoff.state.mode, "human");
+  assert.equal(handoff.state.serviceState, "HUMANO");
   assert.equal(reason.state.mode, "human");
   assert.equal(reason.state.serviceState, "HUMANO");
   assert.equal(afterHuman.state.mode, "human");
   assert.equal(afterHuman.repliesSent, 0);
-  assert.equal(engine.sender.sent.length, 2);
+  assert.equal(engine.sender.sent.length, 1);
 });
 
 test("WhatsApp V2 lab sender fake falha sem chamar servico real e deixa outbox failed", async () => {
@@ -93,7 +96,8 @@ test("Portal Insano menu principal roteia cada botao sem chamar IA", async () =>
     const result = await engine.processor.handleIncoming({ messageId: `wamid-main-${text}-select`, from, text });
     assert.equal(result.state.activeMenu, menu || "portal_main_menu");
     assert.equal(result.state.areaId, area);
-    assert.equal(result.state.activeFlow, text === "5" ? "human_handoff" : null);
+    assert.equal(result.state.activeFlow, null);
+    if (text === "5") assert.equal(result.state.serviceState, "HUMANO");
   }
   assert.equal(engine.operationLog.includes("ai"), false);
 });
@@ -187,6 +191,174 @@ test("Portal Insano estado de fluxo persiste entre reinicios do repositorio", as
     assert.equal(answer.state.areaId, "insano_food_truck");
     assert.equal(answer.state.flowData.quote.people, "120 pessoas");
     assert.equal(answer.state.activeFlow, null);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Repositorio V2 cria diretorio ausente e arquivo ausente inicia estrutura valida", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambah-v2-atomic-"));
+  const nested = join(dir, "missing", "state.json");
+  try {
+    const repo = new FileWhatsAppV2ConversationRepository({ filePath: nested });
+    const state = createWhatsAppV2State("5551000000800");
+    state.mode = "human";
+    state.serviceState = "HUMANO";
+    await repo.save(state);
+
+    const stored = JSON.parse(await readFile(nested, "utf8"));
+    assert.deepEqual(Object.keys(stored).sort(), ["messageStatuses", "states"]);
+    assert.equal(stored.states["5551000000800"].serviceState, "HUMANO");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Repositorio V2 recarrega HUMANO, history, lastProcessedMessageId e messageStatuses", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambah-v2-atomic-"));
+  const filePath = join(dir, "state.json");
+  try {
+    const state = createWhatsAppV2State("5551000000801");
+    state.mode = "human";
+    state.serviceState = "HUMANO";
+    state.history = [{ messageId: "wamid-human-persist", text: "humano", at: "2026-07-11T10:00:00.000Z" }];
+    state.lastProcessedMessageId = "wamid-human-persist";
+    await writeFile(filePath, JSON.stringify({
+      states: { "5551000000801": state },
+      messageStatuses: { "wamid-human-persist": { status: "processed", updatedAt: "2026-07-11T10:00:00.000Z" } }
+    }, null, 2), "utf8");
+
+    const repo = new FileWhatsAppV2ConversationRepository({ filePath });
+    const loaded = await repo.get("5551000000801");
+    assert.equal(loaded.mode, "human");
+    assert.equal(loaded.serviceState, "HUMANO");
+    assert.equal(loaded.history[0].messageId, "wamid-human-persist");
+    assert.equal(loaded.lastProcessedMessageId, "wamid-human-persist");
+    assert.equal(await repo.reserveMessage("wamid-human-persist"), false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Repositorio V2 serializa mutacoes concorrentes sem apagar states ou messageStatuses", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambah-v2-atomic-"));
+  const filePath = join(dir, "state.json");
+  try {
+    const repo = new FileWhatsAppV2ConversationRepository({ filePath });
+    const human = createWhatsAppV2State("5551000000802");
+    human.mode = "human";
+    human.serviceState = "HUMANO";
+    await Promise.all([
+      repo.save(human),
+      repo.reserveMessage("wamid-concurrent-1"),
+      repo.markMessageProcessed("wamid-concurrent-2")
+    ]);
+
+    const stored = JSON.parse(await readFile(filePath, "utf8"));
+    assert.equal(stored.states["5551000000802"].serviceState, "HUMANO");
+    assert.equal(stored.messageStatuses["wamid-concurrent-1"].status, "reserved");
+    assert.equal(stored.messageStatuses["wamid-concurrent-2"].status, "processed");
+
+    const update = { ...stored.states["5551000000802"], activeMenu: "foodtruck_main_menu" };
+    await repo.save(update);
+    await repo.markMessageFailed("wamid-concurrent-3", new Error("falha fake"));
+    const after = JSON.parse(await readFile(filePath, "utf8"));
+    assert.equal(after.states["5551000000802"].activeMenu, "foodtruck_main_menu");
+    assert.equal(after.messageStatuses["wamid-concurrent-1"].status, "reserved");
+    assert.equal(after.messageStatuses["wamid-concurrent-3"].status, "failed");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Repositorio V2 falha de escrita preserva arquivo e estado em memoria, fila continua", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambah-v2-atomic-"));
+  const filePath = join(dir, "state.json");
+  let writes = 0;
+  const atomicWrite = async (target, payload) => {
+    writes += 1;
+    if (writes === 2) {
+      const error = new Error("rename failed");
+      error.code = "EPERM";
+      throw error;
+    }
+    await writeFile(target, payload, "utf8");
+  };
+  try {
+    const repo = new FileWhatsAppV2ConversationRepository({ filePath, atomicWrite });
+    const human = createWhatsAppV2State("5551000000803");
+    human.mode = "human";
+    human.serviceState = "HUMANO";
+    await repo.save(human);
+    const before = await readFile(filePath, "utf8");
+
+    const bot = { ...human, mode: "bot", serviceState: "AUTOMATICO" };
+    await assert.rejects(repo.save(bot), /whatsapp_v2_state_write_failed/);
+    assert.equal(await readFile(filePath, "utf8"), before);
+    assert.equal((await repo.get("5551000000803")).serviceState, "HUMANO");
+
+    await repo.markMessageProcessed("wamid-after-failure");
+    const after = JSON.parse(await readFile(filePath, "utf8"));
+    assert.equal(after.states["5551000000803"].serviceState, "HUMANO");
+    assert.equal(after.messageStatuses["wamid-after-failure"].status, "processed");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Repositorio V2 escrita atomica nao deixa temporario apos sucesso", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambah-v2-atomic-"));
+  const filePath = join(dir, "state.json");
+  try {
+    const repo = new FileWhatsAppV2ConversationRepository({ filePath });
+    await repo.markMessageProcessed("wamid-temp-success");
+    const files = await readdir(dir);
+    assert.equal(files.some((file) => file.includes(".v2-write-") && file.endsWith(".tmp")), false);
+    const stored = JSON.parse(await readFile(filePath, "utf8"));
+    assert.deepEqual(Object.keys(stored).sort(), ["messageStatuses", "states"]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Repositorio V2 remove somente temporarios proprios antigos durante load", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambah-v2-atomic-"));
+  const filePath = join(dir, "state.json");
+  try {
+    await writeFile(filePath, JSON.stringify({ states: {}, messageStatuses: {} }), "utf8");
+    const oldTemp = join(dir, "state.json.v2-write-123-100-00000000-0000-4000-8000-000000000000.tmp");
+    const unrelated = join(dir, "outro.tmp");
+    await writeFile(oldTemp, "x", "utf8");
+    await writeFile(unrelated, "x", "utf8");
+    const old = new Date(Date.now() - 120000);
+    await import("node:fs/promises").then(({ utimes }) => utimes(oldTemp, old, old));
+
+    const repo = new FileWhatsAppV2ConversationRepository({ filePath });
+    await repo.get("5551000000804");
+    const files = await readdir(dir);
+    assert.equal(files.includes("state.json.v2-write-123-100-00000000-0000-4000-8000-000000000000.tmp"), false);
+    assert.equal(files.includes("outro.tmp"), true);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Repositorio V2 JSON invalido ou estrutura invalida gera erro controlado e nao sobrescreve", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambah-v2-atomic-"));
+  try {
+    const invalidJson = join(dir, "invalid-json.json");
+    await writeFile(invalidJson, "{json interrompido", "utf8");
+    const invalidRepo = new FileWhatsAppV2ConversationRepository({ filePath: invalidJson });
+    await assert.rejects(invalidRepo.get("5551000000805"), (error) => error.code === "whatsapp_v2_state_corrupt");
+    assert.equal(await readFile(invalidJson, "utf8"), "{json interrompido");
+
+    const missingStates = join(dir, "missing-states.json");
+    await writeFile(missingStates, JSON.stringify({ messageStatuses: {} }), "utf8");
+    await assert.rejects(new FileWhatsAppV2ConversationRepository({ filePath: missingStates }).get("x"), (error) => error.code === "whatsapp_v2_state_corrupt");
+
+    const missingStatuses = join(dir, "missing-statuses.json");
+    await writeFile(missingStatuses, JSON.stringify({ states: {} }), "utf8");
+    await assert.rejects(new FileWhatsAppV2ConversationRepository({ filePath: missingStatuses }).get("x"), (error) => error.code === "whatsapp_v2_state_corrupt");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

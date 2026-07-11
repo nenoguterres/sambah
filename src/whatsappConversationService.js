@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import crypto from "node:crypto";
 import { extractWhatsAppMessageText } from "./whatsapp/whatsappWebhookParser.js";
+import { normalizeWhatsAppPhone, sameWhatsAppPhone, whatsappPhoneAliases } from "./whatsapp/phoneNumber.js";
 
 export class WhatsAppConversationService {
   constructor({ filePath, messagesFile = "", now = () => new Date() } = {}) {
@@ -22,7 +23,7 @@ export class WhatsAppConversationService {
 
   async get(id) {
     const data = await this.#read();
-    const conversation = data.conversas.find((item) => item.id === id || item.telefone === normalizePhone(id));
+    const conversation = findConversation(data.conversas, id);
     return conversation ? { ok: true, conversa: this.#withPriority(conversation) } : { ok: false, error: "Conversa nao encontrada" };
   }
 
@@ -36,7 +37,7 @@ export class WhatsAppConversationService {
     const data = await this.#read();
     const telefone = normalizePhone(incoming.telefone || incoming.from || incoming.phone || "");
     const id = telefone ? `wa_${telefone}` : `wa_${crypto.randomUUID()}`;
-    const existing = data.conversas.find((item) => item.id === id || item.telefone === telefone);
+    const existing = findConversation(data.conversas, telefone || id);
     const text = String(incoming.text || incoming.message || incoming.transcricao || "").trim();
     const incomingMessageId = String(incoming.messageId || "").trim();
     const existingMessage = incomingMessageId && Array.isArray(existing?.mensagens)
@@ -75,7 +76,8 @@ export class WhatsAppConversationService {
     const updated = {
       ...base,
       nome: base.nome || incoming.nome || incoming.profileName || "Cliente WhatsApp",
-      telefone: base.telefone || telefone,
+      telefone: telefone || base.telefone || "",
+      id: telefone ? `wa_${telefone}` : base.id,
       ultimaMensagem: text || describeMessageType(message.type),
       ultimaInteracao: now,
       updatedAt: now,
@@ -99,7 +101,7 @@ export class WhatsAppConversationService {
 
   async addOutgoing(id, body = {}, { runtimeConfig = {}, whatsappProvider = null } = {}) {
     const data = await this.#read();
-    const index = data.conversas.findIndex((item) => item.id === id || item.telefone === normalizePhone(id));
+    const index = findConversationIndex(data.conversas, id);
     if (index === -1) return { ok: false, error: "Conversa nao encontrada" };
     const now = this.now().toISOString();
     const text = String(body.text || body.message || "").trim();
@@ -113,7 +115,10 @@ export class WhatsAppConversationService {
       createdAt: now,
       status: outgoing.status,
       httpStatus: outgoing.sendResult?.httpStatus || null,
-      response: outgoing.sendResult?.response || null
+      response: outgoing.sendResult?.response || null,
+      providerMessageId: outgoing.sendResult?.providerMessageId || outgoing.sendResult?.response?.messages?.[0]?.id || "",
+      errorCode: outgoing.sendResult?.response?.error?.code || outgoing.sendResult?.error || "",
+      errorMessage: outgoing.sendResult?.response?.error?.message || outgoing.sendResult?.error || ""
     };
     const updated = {
       ...data.conversas[index],
@@ -129,7 +134,7 @@ export class WhatsAppConversationService {
 
   async recordOutgoing(id, body = {}) {
     const data = await this.#read();
-    const index = data.conversas.findIndex((item) => item.id === id || item.telefone === normalizePhone(id));
+    const index = findConversationIndex(data.conversas, id);
     if (index === -1) return { ok: false, error: "Conversa nao encontrada" };
     const now = this.now().toISOString();
     const text = String(body.text || body.message || "").trim();
@@ -153,12 +158,14 @@ export class WhatsAppConversationService {
       providerMessageId,
       httpStatus: sendResult?.httpStatus || null,
       response: sendResult?.response || null,
+      errorCode: sendResult?.response?.error?.code || sendResult?.error || "",
+      errorMessage: sendResult?.response?.error?.message || sendResult?.error || "",
       metaMessageType: sendResult?.metaMessageType || body.metaMessageType || "",
       fallbackUsed: Boolean(sendResult?.fallbackUsed)
     };
     const updated = {
       ...data.conversas[index],
-      status: sendResult?.sent ? "aguardando_cliente" : data.conversas[index].status,
+      status: sendResult?.sent && data.conversas[index].status !== "humano" ? "aguardando_cliente" : data.conversas[index].status,
       ultimaInteracao: now,
       updatedAt: now,
       mensagens: [...(data.conversas[index].mensagens || []), message].slice(-60)
@@ -177,7 +184,7 @@ export class WhatsAppConversationService {
     const now = this.now().toISOString();
     data.conversas = data.conversas.map((conversation) => {
       const messages = Array.isArray(conversation.mensagens) ? conversation.mensagens : [];
-      const hasPhoneMatch = recipientPhone && normalizePhone(conversation.telefone) === recipientPhone;
+      const hasPhoneMatch = recipientPhone && sameWhatsAppPhone(conversation.telefone, recipientPhone);
       let conversationTouched = false;
       const nextMessages = messages.map((message) => {
         if (!matchesProviderMessageId(message, providerMessageId)) return message;
@@ -206,13 +213,17 @@ export class WhatsAppConversationService {
     return this.#updateStatus(id, "humano");
   }
 
+  async markAutomatic(id) {
+    return this.#updateStatus(id, "aguardando_equipe");
+  }
+
   async markResolved(id) {
     return this.#updateStatus(id, "resolvido");
   }
 
   async patchConversation(id, patch = {}) {
     const data = await this.#read();
-    const index = data.conversas.findIndex((item) => item.id === id || item.telefone === normalizePhone(id));
+    const index = findConversationIndex(data.conversas, id);
     if (index === -1) return { ok: false, error: "Conversa nao encontrada" };
     const now = this.now().toISOString();
     const allowedPatch = {
@@ -228,7 +239,7 @@ export class WhatsAppConversationService {
 
   async deleteMessage(id, messageId) {
     const data = await this.#read();
-    const index = data.conversas.findIndex((item) => item.id === id || item.telefone === normalizePhone(id));
+    const index = findConversationIndex(data.conversas, id);
     if (index === -1) return { ok: false, error: "Conversa nao encontrada" };
     const targetMessageId = String(messageId || "").trim();
     if (!targetMessageId) return { ok: false, error: "Mensagem nao informada" };
@@ -254,7 +265,7 @@ export class WhatsAppConversationService {
 
   async deleteConversation(id) {
     const data = await this.#read();
-    const index = data.conversas.findIndex((item) => item.id === id || item.telefone === normalizePhone(id));
+    const index = findConversationIndex(data.conversas, id);
     if (index === -1) return { ok: false, statusCode: 404, error: "conversation_not_found", message: "Conversa nao encontrada" };
     const conversation = data.conversas[index];
     const eligibility = conversationDeletionEligibility(conversation);
@@ -268,7 +279,7 @@ export class WhatsAppConversationService {
 
   async #updateStatus(id, status) {
     const data = await this.#read();
-    const index = data.conversas.findIndex((item) => item.id === id || item.telefone === normalizePhone(id));
+    const index = findConversationIndex(data.conversas, id);
     if (index === -1) return { ok: false, error: "Conversa nao encontrada" };
     const now = this.now().toISOString();
     data.conversas[index] = { ...data.conversas[index], status, updatedAt: now };
@@ -317,7 +328,7 @@ export class WhatsAppConversationService {
       const phone = normalizePhone(historyMessage.phone);
       if (!phone) continue;
       const id = `wa_${phone}`;
-      const index = next.conversas.findIndex((item) => item.id === id || item.telefone === phone);
+      const index = findConversationIndex(next.conversas, phone);
       const existing = index >= 0 ? next.conversas[index] : null;
       const messages = Array.isArray(existing?.mensagens) ? existing.mensagens : [];
       const messageId = historyMessage.id || historyMessage.messageId || `history_${historyMessage.createdAt}_${phone}`;
@@ -349,7 +360,8 @@ export class WhatsAppConversationService {
       const updated = {
         ...base,
         nome: base.nome || historyMessage.customerName || "Cliente WhatsApp",
-        telefone: base.telefone || phone,
+        telefone: phone || base.telefone || "",
+        id: phone ? `wa_${phone}` : base.id,
         ultimaMensagem: lastInbound?.text || lastMessage?.text || "Mensagem recebida",
         ultimaInteracao: lastInbound?.createdAt || lastMessage?.createdAt || historyMessage.createdAt,
         updatedAt: lastMessage?.createdAt || historyMessage.createdAt,
@@ -441,7 +453,7 @@ async function sendOutgoingIfReady({ conversation = {}, runtimeConfig = {}, what
   const canSend = Boolean(enabled && hasCredentials && whatsappProvider && conversation.telefone);
   if (canSend) {
     const sendResult = await whatsappProvider.sendText({ to: conversation.telefone, text });
-    return { sendResult, status: sendResult?.status || "envio_real_indisponivel", conversationStatus: sendResult?.sent ? "aguardando_cliente" : conversation.status };
+    return { sendResult, status: sendResult?.status || "envio_real_indisponivel", conversationStatus: sendResult?.sent && conversation.status !== "humano" ? "aguardando_cliente" : conversation.status };
   }
   return { sendResult: null, status: enabled && hasCredentials ? "envio_real_indisponivel" : "registrada_sem_envio", conversationStatus: enabled && !hasCredentials ? "erro_configuracao" : conversation.status };
 }
@@ -458,10 +470,23 @@ function conversationDeletionEligibility(conversation = {}) {
 }
 
 function normalizePhone(value = "") {
-  const digits = String(value || "").replace(/\D/g, "");
-  if (!digits) return "";
-  if (digits.startsWith("55")) return digits;
-  return digits.length >= 10 ? `55${digits}` : digits;
+  return normalizeWhatsAppPhone(value);
+}
+
+function findConversation(conversations = [], idOrPhone = "") {
+  const index = findConversationIndex(conversations, idOrPhone);
+  return index >= 0 ? conversations[index] : null;
+}
+
+function findConversationIndex(conversations = [], idOrPhone = "") {
+  const raw = String(idOrPhone || "");
+  const normalized = normalizePhone(raw.replace(/^wa_/, ""));
+  const ids = new Set([raw, normalized ? `wa_${normalized}` : ""]);
+  const aliases = whatsappPhoneAliases(normalized || raw);
+  return conversations.findIndex((item) => {
+    if (ids.has(item.id)) return true;
+    return aliases.some((alias) => sameWhatsAppPhone(item.telefone, alias) || item.id === `wa_${alias}`);
+  });
 }
 
 function matchesProviderMessageId(message = {}, providerMessageId = "") {
@@ -484,7 +509,7 @@ function sanitizeMetaStatus(status = {}) {
     status: status.status || "",
     timestamp: status.timestamp || "",
     recipient_id: status.recipient_id || "",
-    errors: Array.isArray(status.errors) ? status.errors.map((error) => ({ code: error.code, title: error.title, message: error.message, error_data: error.error_data })) : []
+    errors: Array.isArray(status.errors) ? status.errors.map((error) => ({ code: error.code, title: error.title, message: error.message })) : []
   };
 }
 

@@ -2,17 +2,18 @@ const state = {
   items: [],
   selectedId: "",
   filter: "all",
-  query: ""
+  query: "",
+  activeRole: "",
+  whatsappStatus: null
 };
 
 const listEl = document.querySelector("#conversationList");
 const chatEl = document.querySelector("#chatPane");
 const searchInput = document.querySelector("#searchInput");
 const refreshButton = document.querySelector("#refreshButton");
-const REFRESH_INTERVAL_MS = 5000;
-let catalogCache = null;
+const connectionStatusEl = document.querySelector("#connectionStatus");
 
-refreshButton?.addEventListener("click", () => loadConversas({ forceLoading: true }));
+refreshButton?.addEventListener("click", refreshInbox);
 searchInput?.addEventListener("input", (event) => {
   state.query = event.target.value;
   renderList();
@@ -26,15 +27,34 @@ document.querySelectorAll("[data-filter]").forEach((button) => {
   });
 });
 
-loadConversas({ forceLoading: true });
-setInterval(() => loadConversas({ silentRefresh: true }), REFRESH_INTERVAL_MS);
+init();
+setInterval(refreshInbox, 30000);
 
-async function loadConversas({ silentRefresh = false, forceLoading = false } = {}) {
-  if (forceLoading || (!silentRefresh && !state.items.length)) {
-    listEl.innerHTML = `<div class="loading">Carregando...</div>`;
-  }
+async function init() {
+  await loadActiveUser();
+  await refreshInbox();
+}
+
+async function refreshInbox() {
+  await loadWhatsappStatus();
+  await loadConversas();
+}
+
+async function loadActiveUser() {
   try {
-    const response = await fetch("/api/conversas", { cache: "no-store" });
+    const response = await fetch("/api/auth/me");
+    if (!response.ok) return;
+    const data = await response.json();
+    state.activeRole = data.user?.role || "";
+  } catch {
+    state.activeRole = "";
+  }
+}
+
+async function loadConversas() {
+  listEl.innerHTML = `<div class="loading">Carregando...</div>`;
+  try {
+    const response = await fetch("/api/conversas");
     const data = await response.json();
     if (!data.ok) throw new Error(data.error || "Erro ao carregar conversas");
     state.items = data.items || [];
@@ -42,10 +62,43 @@ async function loadConversas({ silentRefresh = false, forceLoading = false } = {
     renderList();
     if (state.selectedId) await openConversation(state.selectedId, { silent: true });
   } catch (error) {
-    if (!silentRefresh) {
-      listEl.innerHTML = `<div class="loading">${escapeHtml(error.message || "Nao foi possivel carregar.")}</div>`;
-    }
+    listEl.innerHTML = `<div class="loading">${escapeHtml(error.message || "Nao foi possivel carregar.")}</div>`;
   }
+}
+
+async function loadWhatsappStatus() {
+  try {
+    const response = await fetch("/admin/whatsapp/status");
+    if (!response.ok) throw new Error("status_unavailable");
+    state.whatsappStatus = await response.json();
+  } catch {
+    state.whatsappStatus = { provider: "desconhecido", configured: false, sendEnabled: false, error: "status_unavailable" };
+  }
+  renderConnectionStatus();
+}
+
+function renderConnectionStatus() {
+  if (!connectionStatusEl) return;
+  const status = state.whatsappStatus || {};
+  const provider = status.provider || "desconhecido";
+  const healthy = status.configured === true && status.sendEnabled === true;
+  const partial = status.configured === true && status.sendEnabled !== true;
+  const missing = [];
+  if (provider === "meta" && status.phoneNumberIdConfigured !== true) missing.push("ID do telefone");
+  if (provider === "meta" && status.accessTokenConfigured !== true) missing.push("token Meta");
+  if (provider === "meta" && status.verifyTokenConfigured !== true) missing.push("token de verificacao");
+  const label = healthy
+    ? "Meta pronto para envio real"
+    : partial
+      ? "Meta configurado, envio real desligado"
+      : provider === "meta"
+        ? `Meta incompleto${missing.length ? `: falta ${missing.join(", ")}` : ""}`
+        : "Modo local/mock";
+  connectionStatusEl.className = `connection-status ${healthy ? "ok" : partial ? "warn" : "error"}`;
+  connectionStatusEl.innerHTML = `
+    <strong>${escapeHtml(label)}</strong>
+    <span>${escapeHtml(`motor=${status.engine || "disabled"} | envio=${Boolean(status.sendEnabled)} | auto=${Boolean(status.autoReplyEnabled)} | IA=${Boolean(status.aiEnabled)} | inbox=${Boolean(status.receivingActive)}`)}</span>
+  `;
 }
 
 function renderList() {
@@ -67,7 +120,7 @@ function renderList() {
           </span>
           <span class="conversation-preview">${escapeHtml(item.ultimaMensagem || "Sem mensagem")}</span>
           <span class="conversation-tags">
-            <em class="${item.atendimentoEstado === "HUMANO" ? "tag-human" : ""}">${escapeHtml(labelStatus(item.status, item))}</em>
+            <em>${escapeHtml(labelStatus(item.status))}</em>
             <em>${escapeHtml(item.intencao || "desconhecido")}</em>
           </span>
         </span>
@@ -84,37 +137,35 @@ async function openConversation(id, { silent = false } = {}) {
   renderList();
   if (!silent) chatEl.innerHTML = `<div class="empty-state"><strong>Carregando conversa...</strong></div>`;
   try {
-    const draft = chatEl.querySelector("#replyText")?.value || "";
-    const hasDraftFocus = document.activeElement === chatEl.querySelector("#replyText");
-    const response = await fetch(`/api/conversas/${encodeURIComponent(id)}`, { cache: "no-store" });
+    const response = await fetch(`/api/conversas/${encodeURIComponent(id)}`);
     const data = await response.json();
     if (!data.ok) throw new Error(data.error || "Conversa nao encontrada");
-    renderChat(data.conversa, { draft: hasDraftFocus ? draft : "" });
+    renderChat(data.conversa);
   } catch (error) {
     chatEl.innerHTML = `<div class="empty-state"><strong>${escapeHtml(error.message || "Falha ao abrir conversa")}</strong></div>`;
   }
 }
 
-function renderChat(conversa, { draft = "" } = {}) {
+function renderChat(conversa) {
   const messages = conversa.mensagens || [];
   chatEl.innerHTML = `
     <header class="chat-header">
       <span class="avatar large">${escapeHtml(initialsFor(conversa.nome || conversa.telefone || "WA"))}</span>
       <div>
         <strong>${escapeHtml(conversa.nome || "Cliente WhatsApp")}</strong>
-        <small>${escapeHtml(conversa.telefone || "")} - ${escapeHtml(labelStatus(conversa.status, conversa))}</small>
+        <small>${escapeHtml(conversa.telefone || "")} · ${escapeHtml(labelStatus(conversa.status))}</small>
       </div>
       <div class="chat-actions">
         <button type="button" data-action="human">Humano</button>
+        <button type="button" data-action="automatico">Automático</button>
         <button type="button" data-action="resolved">Resolvido</button>
+        ${state.activeRole === "ADMIN" ? `<button class="danger-action" type="button" data-action="delete-conversation">Excluir conversa</button>` : ""}
       </div>
     </header>
 
     <section class="message-list" id="messageList">
       ${messages.map(renderMessage).join("") || `<div class="day-marker">Sem histórico ainda</div>`}
     </section>
-
-    ${renderOrderPanel(conversa)}
 
     <section class="reply-panel">
       <button class="suggestion-button" type="button" id="useSuggestion">Usar sugestão</button>
@@ -125,21 +176,22 @@ function renderChat(conversa, { draft = "" } = {}) {
   `;
 
   scrollMessagesToBottom();
-  loadCatalogIntoPanel();
+  chatEl.querySelectorAll("[data-delete-message]").forEach((button) => {
+    button.addEventListener("click", () => deleteMessage(conversa.id, button.dataset.deleteMessage));
+  });
   chatEl.querySelector("[data-action='human']")?.addEventListener("click", () => postAction(conversa.id, "humano"));
+  chatEl.querySelector("[data-action='automatico']")?.addEventListener("click", () => postAction(conversa.id, "automatico"));
   chatEl.querySelector("[data-action='resolved']")?.addEventListener("click", () => postAction(conversa.id, "resolvido"));
-  chatEl.querySelector("[data-order-action='add-item']")?.addEventListener("click", () => addCatalogItem(conversa.id));
-  chatEl.querySelector("[data-order-action='send-mesa']")?.addEventListener("click", () => sendOrderToMesa(conversa.id));
-  chatEl.querySelector("[data-order-action='cancel']")?.addEventListener("click", () => cancelOrder(conversa.id));
+  chatEl.querySelector("[data-action='delete-conversation']")?.addEventListener("click", () => deleteConversation(conversa.id));
   chatEl.querySelector("#useSuggestion")?.addEventListener("click", () => {
     chatEl.querySelector("#replyText").value = conversa.respostaSugerida || "";
     chatEl.querySelector("#replyText").focus();
   });
-  if (draft) {
-    const textarea = chatEl.querySelector("#replyText");
-    textarea.value = draft;
-    textarea.focus();
-  }
+  chatEl.querySelector("#replyText")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.shiftKey) return;
+    event.preventDefault();
+    sendReply(conversa.id);
+  });
   chatEl.querySelector("#sendReply")?.addEventListener("click", () => sendReply(conversa.id));
 }
 
@@ -158,64 +210,18 @@ function scrollMessagesToBottom() {
   setTimeout(scroll, 80);
 }
 
-function renderOrderPanel(conversa) {
-  const order = conversa.whatsappOrder || null;
-  const items = Array.isArray(order?.items) ? order.items : [];
-  return `
-    <section class="order-panel" aria-label="Comanda SamBah WhatsApp">
-      <header>
-        <div>
-          <strong>Comanda SamBah</strong>
-          <span>${escapeHtml(orderStatusLabel(order?.status || conversa.atendimentoEstado || ""))}</span>
-        </div>
-        <div class="order-actions">
-          <button type="button" data-order-action="add-item">Adicionar item</button>
-          <button type="button" data-order-action="send-mesa" ${items.length ? "" : "disabled"}>Enviar para Mesa</button>
-          <button type="button" data-order-action="cancel" ${order ? "" : "disabled"}>Cancelar pedido</button>
-        </div>
-      </header>
-      <div class="order-grid">
-        <article>
-          <span>Itens coletados</span>
-          ${items.length ? `<ul>${items.map((item) => `<li>${escapeHtml(formatOrderItem(item))}</li>`).join("")}</ul>` : `<p>Nenhum item anotado ainda.</p>`}
-        </article>
-        <article>
-          <span>Status Mesa</span>
-          <p>${escapeHtml(order?.mesaStatus || order?.mesaOrderId || "Ainda nao enviado")}</p>
-        </article>
-        <article class="catalog-box">
-          <span>Cardapio na tela</span>
-          <div class="catalog-status" id="catalogStatus">Fonte: conferindo Mesa...</div>
-          <div id="catalogPanel">Carregando cardapio...</div>
-          <button class="catalog-sync" type="button" id="syncMesaCatalogButton">Sincronizar Mesa</button>
-        </article>
-      </div>
-    </section>
-  `;
-}
-
 function renderMessage(message) {
   const outgoing = message.direction === "out";
   const text = message.text || message.transcricao || describeMessage(message);
-  const failure = renderMessageFailure(message);
+  const messageId = message.id || "";
+  const statusText = `${formatTime(message.createdAt)} · ${labelMessageStatus(message.status)}${message.errorMessage ? ` · ${message.errorMessage}` : ""}`;
   return `
     <article class="message ${outgoing ? "out" : "in"}">
       <p>${escapeHtml(text)}</p>
-      ${failure}
-      <span>${formatTime(message.createdAt)} - ${escapeHtml(message.status || "")}</span>
+      ${messageId ? `<button class="message-delete" type="button" data-delete-message="${escapeAttr(messageId)}" title="Excluir mensagem; somente ADMIN">Excluir</button>` : ""}
+      <span>${escapeHtml(statusText)}</span>
     </article>
   `;
-}
-
-function renderMessageFailure(message = {}) {
-  if (message.status !== "meta_error" && message.status !== "meta_request_failed") return "";
-  const error = message.response?.error || {};
-  const attempts = Array.isArray(message.attempts) && message.attempts.length
-    ? message.attempts.map((attempt) => `${attempt.to || "destino"}: HTTP ${attempt.httpStatus || "?"}`).join(" | ")
-    : "";
-  const code = [error.code, error.error_subcode].filter(Boolean).join("/");
-  const details = error.message || error.error_data?.details || message.response?.raw || "Falha Meta sem detalhe";
-  return `<small class="message-error">Meta ${escapeHtml(code || "erro")}: ${escapeHtml(details)}${attempts ? ` (${escapeHtml(attempts)})` : ""}</small>`;
 }
 
 async function sendReply(id) {
@@ -236,67 +242,15 @@ async function sendReply(id) {
     const data = await response.json();
     if (!data.ok) throw new Error(data.error || data.reason || "Falha ao enviar");
     textarea.value = "";
-    if (data.conversa) renderChat(data.conversa);
-    const currentStatus = chatEl.querySelector("#replyStatus") || status;
     if (data.enviado) {
-      currentStatus.textContent = "Resposta enviada pelo SamBah.";
+      status.textContent = "Resposta enviada pelo SamBah.";
     } else {
-      const metaError = data.sendResult?.response?.error?.message || data.sendResult?.error || data.reason || "sem envio real";
-      currentStatus.textContent = `Nao enviado pela Meta: ${metaError}`;
+      const metaError = data.message?.errorMessage || data.sendResult?.error || data.reason || "sem envio real";
+      status.textContent = `Nao enviado pela Meta: ${metaError}`;
     }
-    await loadConversas({ silentRefresh: true });
+    await loadConversas();
   } catch (error) {
     status.textContent = error.message || "Nao foi possivel enviar.";
-  }
-}
-
-async function addCatalogItem(id) {
-  const textarea = chatEl.querySelector("#replyText");
-  const status = chatEl.querySelector("#replyStatus");
-  const text = textarea?.value.trim();
-  if (!text) {
-    status.textContent = "Escreve o item no campo de resposta para adicionar na comanda.";
-    textarea?.focus();
-    return;
-  }
-  try {
-    const response = await fetch(`/api/conversas/${encodeURIComponent(id)}/pedido/item`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text })
-    });
-    const data = await response.json();
-    if (!data.ok) throw new Error(data.error || "Falha ao adicionar item");
-    textarea.value = "";
-    await openConversation(id, { silent: true });
-  } catch (error) {
-    status.textContent = error.message || "Nao foi possivel adicionar item.";
-  }
-}
-
-async function sendOrderToMesa(id) {
-  const status = chatEl.querySelector("#replyStatus");
-  status.textContent = "Enviando comanda para Mesa...";
-  try {
-    const response = await fetch(`/api/conversas/${encodeURIComponent(id)}/pedido/enviar-mesa`, { method: "POST" });
-    const data = await response.json();
-    if (!data.ok) throw new Error(data.error || data.mesa?.error || "Falha ao enviar para Mesa");
-    await openConversation(id, { silent: true });
-  } catch (error) {
-    status.textContent = error.message || "Nao foi possivel enviar para Mesa.";
-  }
-}
-
-async function cancelOrder(id) {
-  const status = chatEl.querySelector("#replyStatus");
-  status.textContent = "Cancelando pedido...";
-  try {
-    const response = await fetch(`/api/conversas/${encodeURIComponent(id)}/pedido/cancelar`, { method: "POST" });
-    const data = await response.json();
-    if (!data.ok) throw new Error(data.error || "Falha ao cancelar pedido");
-    await openConversation(id, { silent: true });
-  } catch (error) {
-    status.textContent = error.message || "Nao foi possivel cancelar pedido.";
   }
 }
 
@@ -305,64 +259,58 @@ async function postAction(id, action) {
   await loadConversas();
 }
 
-async function loadCatalogIntoPanel() {
-  const panel = chatEl.querySelector("#catalogPanel");
-  const status = chatEl.querySelector("#catalogStatus");
-  const syncButton = chatEl.querySelector("#syncMesaCatalogButton");
-  if (!panel) return;
-  syncButton?.addEventListener("click", syncMesaCatalog);
+async function deleteMessage(conversationId, messageId) {
+  const status = chatEl.querySelector("#replyStatus");
+  if (!messageId) return;
+  const confirmed = window.confirm("Excluir esta mensagem do histórico? Apenas ADMIN pode fazer isso.");
+  if (!confirmed) return;
+  if (status) status.textContent = "Excluindo mensagem...";
   try {
-    if (!catalogCache) {
-      const response = await fetch("/api/sambah/cardapio", { cache: "no-store" });
-      catalogCache = await response.json();
-    }
-    const products = catalogCache.products || [];
-    if (status) {
-      status.textContent = catalogCache.synced
-        ? `Fonte: Mesa sincronizado${catalogCache.lastSyncAt ? ` em ${formatTime(catalogCache.lastSyncAt)}` : ""}`
-        : "Fonte: Mesa pendente. Sincronize antes de orientar pedido.";
-      status.className = `catalog-status ${catalogCache.synced ? "ok" : "attention"}`;
-    }
-    panel.innerHTML = products.length
-      ? products.slice(0, 12).map((item) => `<button type="button" data-catalog-item="${escapeAttr(item.name)}">${escapeHtml(item.name)}</button>`).join("")
-      : "Sem itens cadastrados.";
-    panel.querySelectorAll("[data-catalog-item]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const textarea = chatEl.querySelector("#replyText");
-        textarea.value = button.dataset.catalogItem || "";
-        textarea.focus();
-      });
+    const response = await fetch(`/api/conversas/${encodeURIComponent(conversationId)}/mensagens/${encodeURIComponent(messageId)}`, {
+      method: "DELETE"
     });
-  } catch {
-    panel.textContent = "Nao foi possivel carregar o cardapio agora.";
+    const data = await response.json();
+    if (!data.ok) throw new Error(deleteErrorMessage(data.error));
+    if (status) status.textContent = "Mensagem excluída por ADMIN.";
+    await loadConversas();
+  } catch (error) {
+    if (status) status.textContent = error.message || "Nao foi possivel excluir a mensagem.";
   }
 }
 
-async function syncMesaCatalog() {
-  const panel = chatEl.querySelector("#catalogPanel");
-  const status = chatEl.querySelector("#catalogStatus");
-  const syncButton = chatEl.querySelector("#syncMesaCatalogButton");
-  syncButton.disabled = true;
-  if (status) status.textContent = "Sincronizando cardapio oficial do Mesa...";
+async function deleteConversation(conversationId) {
+  const status = chatEl.querySelector("#replyStatus");
+  const confirmed = window.confirm("Tem certeza que deseja excluir esta conversa sem uso?");
+  if (!confirmed) return;
+  if (status) status.textContent = "Excluindo conversa...";
   try {
-    const response = await fetch("/api/sambah/cardapio/sync-mesa", { method: "POST", cache: "no-store" });
+    const response = await fetch(`/api/conversas/${encodeURIComponent(conversationId)}`, { method: "DELETE" });
     const data = await response.json();
-    if (!data.ok) throw new Error(data.error || "Falha ao sincronizar Mesa");
-    catalogCache = data;
-    await loadCatalogIntoPanel();
+    if (!data.ok) throw new Error(conversationDeleteErrorMessage(data.error, data.reason));
+    state.selectedId = "";
+    if (status) status.textContent = "Conversa excluida.";
+    await loadConversas();
   } catch (error) {
-    if (panel) panel.textContent = error.message || "Nao foi possivel sincronizar o Mesa agora.";
-    if (status) {
-      status.textContent = "Fonte: Mesa nao sincronizado.";
-      status.className = "catalog-status attention";
-    }
-  } finally {
-    syncButton.disabled = false;
+    if (status) status.textContent = error.message || "Nao foi possivel excluir a conversa.";
   }
+}
+
+function deleteErrorMessage(error = "") {
+  if (error === "auth_required") return "Entra como ADMIN para excluir mensagens.";
+  if (error === "admin_required") return "Somente ADMIN pode excluir mensagens.";
+  return error || "Nao foi possivel excluir a mensagem.";
+}
+
+function conversationDeleteErrorMessage(error = "", reason = "") {
+  if (error === "auth_required") return "Entra como ADMIN para excluir conversas.";
+  if (error === "admin_required") return "Somente ADMIN pode excluir conversas.";
+  if (error === "conversation_not_deletable") return "Esta conversa ainda esta ativa e nao pode ser excluida.";
+  if (error === "conversation_not_found") return "Conversa nao encontrada.";
+  return reason || error || "Nao foi possivel excluir a conversa.";
 }
 
 function matchesFilter(item) {
-  if (state.filter === "human") return item.status === "humano" || item.status === "aguardando_humano" || item.atendimentoEstado === "HUMANO";
+  if (state.filter === "human") return item.status === "humano";
   if (state.filter === "needs_reply") return !["resolvido", "aguardando_cliente"].includes(item.status);
   return true;
 }
@@ -379,12 +327,10 @@ function describeMessage(message = {}) {
   return "";
 }
 
-function labelStatus(status = "", conversation = {}) {
-  if (conversation.atendimentoEstado === "HUMANO" && status === "aguardando_humano") return "Aguardando humano";
+function labelStatus(status = "") {
   const labels = {
     aguardando_equipe: "Aguardando equipe",
     aguardando_cliente: "Aguardando cliente",
-    aguardando_humano: "Aguardando humano",
     humano: "Humano",
     resolvido: "Resolvido",
     pendente_configuracao: "Configuração",
@@ -393,22 +339,23 @@ function labelStatus(status = "", conversation = {}) {
   return labels[status] || status || "Novo";
 }
 
-function orderStatusLabel(status = "") {
+function labelMessageStatus(status = "") {
   const labels = {
-    COMANDA_EM_ANDAMENTO: "Comanda em andamento",
-    COMANDA_PRONTA: "Pronta para Mesa",
-    collecting_items: "Coletando itens",
-    ready_to_send: "Pronta para Mesa",
-    mesa_pending: "Mesa pendente",
-    sent_to_mesa: "Enviada para Mesa",
-    cancelled: "Cancelada",
-    PEDIDO_MESA_RECEBIDO: "Pedido Mesa recebido"
+    received: "Recebida",
+    recebida: "Recebida",
+    registrada: "Registrada",
+    registrada_sem_envio: "Registrada sem envio",
+    sent: "Enviada",
+    delivered: "Entregue",
+    read: "Lida",
+    failed: "Falhou",
+    meta_error: "Falhou na Meta",
+    meta_timeout: "Meta sem resposta",
+    meta_request_failed: "Erro de envio",
+    meta_configuration_incomplete: "Meta incompleta",
+    whatsapp_sender_disabled: "Envio desligado"
   };
-  return labels[status] || status || "Sem comanda ativa";
-}
-
-function formatOrderItem(item = {}) {
-  return `${item.quantity || 1}x ${item.name || item.rawText || "Item"}`;
+  return labels[status] || status || "Registrada";
 }
 
 function initialsFor(value = "") {

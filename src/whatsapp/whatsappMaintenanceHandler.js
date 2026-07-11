@@ -6,6 +6,37 @@ import { join } from "node:path";
 
 export async function whatsappMaintenanceHandler(payload = {}, { conversationService, messageService, auditService, whatsappProvider = null, runtimeConfig = getRuntimeConfig() } = {}) {
   const incoming = parseWhatsAppIncoming(payload);
+  const v2Repository = runtimeConfig.whatsappV2?.enabled === true ? createWhatsAppV2Repository(runtimeConfig) : null;
+  const reservation = v2Repository ? await reserveIncomingMessage(v2Repository, incoming) : { reserved: false, duplicate: false };
+  if (reservation.duplicate) {
+    const existingConversation = await conversationService.get?.(incoming.telefone || incoming.from || incoming.phone || "");
+    const existingMessage = existingConversation?.conversa?.mensagens?.find?.((message) => message.id === incoming.messageId) || null;
+    await safeAuditRecord(auditService, {
+      type: "whatsapp_duplicate_message_ignored",
+      status: "info",
+      source: "meta_whatsapp",
+      message: "Mensagem WhatsApp duplicada ignorada antes de gravacao e automacao",
+      context: {
+        messageId: incoming.messageId || "",
+        phone: maskPhone(incoming.telefone || ""),
+        automaticReplyCreated: false,
+        sent: false
+      },
+      dedupeKey: incoming.messageId ? `whatsapp-duplicate:${incoming.messageId}` : undefined
+    });
+    return {
+      ok: true,
+      handled: false,
+      duplicate: true,
+      engine: runtimeConfig.whatsappV2?.enabled ? "v2" : "disabled",
+      reason: "duplicate_message",
+      automaticReplyCreated: false,
+      sent: false,
+      conversa: existingConversation?.conversa || null,
+      message: existingMessage,
+      normalized: null
+    };
+  }
   const conversationResult = await conversationService.recordNeutralIncoming(incoming);
   const messageResult = messageService ? await messageService.handleIncoming(payload) : null;
   if (conversationResult.duplicate) {
@@ -37,7 +68,14 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
   }
 
   if (runtimeConfig.whatsappV2?.enabled === true) {
-    const processed = await processWhatsAppV2(incoming, runtimeConfig);
+    const processed = await processWhatsAppV2(incoming, runtimeConfig, {
+      conversationRepository: v2Repository,
+      reserved: reservation.reserved
+    });
+    if (processed.state?.mode === "human" || processed.state?.serviceState === "HUMANO") {
+      const humanResult = await conversationService.markHuman?.(conversationResult.conversa.id);
+      if (humanResult?.ok) conversationResult.conversa = humanResult.conversa;
+    }
     const reply = processed.replies?.[0] || null;
     if (!reply) {
       await safeAuditRecord(auditService, {
@@ -213,18 +251,30 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
   };
 }
 
-async function processWhatsAppV2(incoming = {}, runtimeConfig = getRuntimeConfig()) {
+function createWhatsAppV2Repository(runtimeConfig = getRuntimeConfig()) {
+  return new FileWhatsAppV2ConversationRepository({
+    filePath: join(runtimeConfig.dataDir || "data", "whatsapp-v2-state.json")
+  });
+}
+
+async function reserveIncomingMessage(repository, incoming = {}) {
+  const messageId = String(incoming.messageId || "").trim();
+  if (!messageId) return { reserved: false, duplicate: false };
+  const reserved = await repository.reserveMessage(messageId);
+  return { reserved, duplicate: !reserved };
+}
+
+async function processWhatsAppV2(incoming = {}, runtimeConfig = getRuntimeConfig(), { conversationRepository = createWhatsAppV2Repository(runtimeConfig), reserved = false } = {}) {
   const engine = createWhatsAppV2OperationalEngine({
-    conversationRepository: new FileWhatsAppV2ConversationRepository({
-      filePath: join(runtimeConfig.dataDir || "data", "whatsapp-v2-state.json")
-    })
+    conversationRepository
   });
   return engine.processor.handleIncoming({
     messageId: incoming.messageId || "",
     conversationId: incoming.telefone || incoming.from || incoming.phone || "",
     from: incoming.telefone || incoming.from || incoming.phone || "",
     text: incoming.text || incoming.message || incoming.transcricao || "",
-    receivedAt: new Date().toISOString()
+    receivedAt: new Date().toISOString(),
+    reserved
   });
 }
 

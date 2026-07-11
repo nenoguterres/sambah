@@ -1,8 +1,11 @@
+import { normalizeWhatsAppPhone, whatsappPhoneAliases } from "../phoneNumber.js";
+
 export class MetaCloudWhatsAppProvider {
   constructor({ config = {}, fetchImpl = globalThis.fetch } = {}) {
     this.name = "meta";
     this.config = config;
     this.fetch = fetchImpl;
+    this.timeoutMs = Math.max(1000, Number(config.timeoutMs || config.requestTimeoutMs || 10000));
   }
 
   status() {
@@ -34,36 +37,39 @@ export class MetaCloudWhatsAppProvider {
     const version = this.config.apiVersion || "v25.0";
     const endpoint = `https://graph.facebook.com/${version}/${encodeURIComponent(this.config.phoneNumberId)}/messages`;
     try {
-      const outbound = buildMetaMessagePayload({ to, message });
-      const firstAttempt = await sendMetaPayload(this.fetch, endpoint, this.config.accessToken, outbound.body);
+      const normalizedTo = normalizeWhatsAppPhone(to);
+      const outbound = buildMetaMessagePayload({ to: normalizedTo, message });
+      const firstAttempt = await sendMetaPayload(this.fetch, endpoint, this.config.accessToken, outbound.body, { timeoutMs: this.timeoutMs });
       let attempt = firstAttempt;
-      const retryTo = metaBrazilianAllowedListRetryNumber(to, firstAttempt.body);
+      const retryTo = metaBrazilianAllowedListRetryNumber(normalizedTo, firstAttempt.body);
       if (!firstAttempt.response.ok && retryTo) {
         const retryOutbound = buildMetaMessagePayload({ to: retryTo, message });
-        const retryAttempt = await sendMetaPayload(this.fetch, endpoint, this.config.accessToken, retryOutbound.body);
+        const retryAttempt = await sendMetaPayload(this.fetch, endpoint, this.config.accessToken, retryOutbound.body, { timeoutMs: this.timeoutMs });
         attempt = {
           ...retryAttempt,
           retried: true,
-          originalTo: to,
+          originalTo: normalizedTo,
           retryTo,
           firstResponse: sanitizeMetaPayload(firstAttempt.body, this.config.accessToken)
         };
       }
       let fallback = null;
       if (!attempt.response.ok && outbound.interactive && !attempt.retried) {
-        fallback = await sendMetaPayload(this.fetch, endpoint, this.config.accessToken, buildTextPayload({ to, text: outbound.fallbackText }));
+        fallback = await sendMetaPayload(this.fetch, endpoint, this.config.accessToken, buildTextPayload({ to: normalizedTo, text: outbound.fallbackText }), { timeoutMs: this.timeoutMs });
         attempt = fallback;
       }
+      const providerMessageId = extractProviderMessageId(attempt.body);
+      const accepted = Boolean(attempt.response.ok && providerMessageId);
       return {
-        ok: attempt.response.ok,
+        ok: accepted,
         provider: this.name,
-        sent: attempt.response.ok,
-        status: attempt.response.ok ? "sent" : "meta_error",
+        sent: accepted,
+        status: attempt.response.ok ? (providerMessageId ? "sent" : "meta_missing_message_id") : "meta_error",
         httpStatus: attempt.response.status,
         response: sanitizeMetaPayload(attempt.body, this.config.accessToken),
-        providerMessageId: extractProviderMessageId(attempt.body),
+        providerMessageId,
         metaMessageType: fallback?.response?.ok ? "text_fallback" : outbound.type,
-        fallbackUsed: Boolean(fallback?.response?.ok),
+        fallbackUsed: Boolean(fallback?.response?.ok && providerMessageId),
         ...(attempt.retried ? {
           retried: true,
           originalTo: attempt.originalTo,
@@ -72,6 +78,15 @@ export class MetaCloudWhatsAppProvider {
         } : {})
       };
     } catch (error) {
+      if (error?.name === "AbortError") {
+        return {
+          ok: false,
+          provider: this.name,
+          sent: false,
+          status: "meta_timeout",
+          error: "meta_timeout"
+        };
+      }
       return {
         ok: false,
         provider: this.name,
@@ -83,17 +98,24 @@ export class MetaCloudWhatsAppProvider {
   }
 }
 
-async function sendMetaPayload(fetchImpl, endpoint, accessToken, body) {
-  const response = await fetchImpl(endpoint, {
-    method: "POST",
-    headers: {
-      "authorization": `Bearer ${accessToken}`,
-      "content-type": "application/json"
-    },
-    body: JSON.stringify(body)
-  });
-  const responseBody = await readBody(response);
-  return { response, body: responseBody };
+async function sendMetaPayload(fetchImpl, endpoint, accessToken, body, { timeoutMs = 10000 } = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetchImpl(endpoint, {
+      method: "POST",
+      headers: {
+        "authorization": `Bearer ${accessToken}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal
+    });
+    const responseBody = await readBody(response);
+    return { response, body: responseBody };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function buildMetaMessagePayload({ to, message = {} } = {}) {
@@ -185,10 +207,9 @@ function extractProviderMessageId(body = {}) {
 }
 
 function metaBrazilianAllowedListRetryNumber(phone = "", responseBody = {}) {
-  const digits = String(phone || "").replace(/\D/g, "");
-  if (!digits.startsWith("55") || digits.length !== 12) return "";
   if (responseBody?.error?.code !== 131030) return "";
-  return `${digits.slice(0, 4)}9${digits.slice(4)}`;
+  const aliases = whatsappPhoneAliases(phone);
+  return aliases.find((alias) => alias !== String(phone || "").replace(/\D/g, "")) || "";
 }
 
 async function readBody(response) {

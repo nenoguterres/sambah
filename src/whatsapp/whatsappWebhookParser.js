@@ -1,3 +1,5 @@
+import { normalizeWhatsAppPhone } from "./phoneNumber.js";
+
 export function parseWhatsAppWebhookPayload(payload = {}) {
   if (isMetaWhatsAppPayload(payload)) return parseMetaPayload(payload);
   return parseMockPayload(payload);
@@ -74,10 +76,7 @@ function parseMockPayload(payload) {
 }
 
 function normalizePhone(value = "") {
-  const digits = String(value || "").replace(/\D/g, "");
-  if (!digits) return "";
-  if (digits.startsWith("55")) return digits;
-  return digits.length >= 10 ? `55${digits}` : digits;
+  return normalizeWhatsAppPhone(value);
 }
 
 function firstText(values = []) {
