@@ -97,7 +97,7 @@ function renderConnectionStatus() {
   connectionStatusEl.className = `connection-status ${healthy ? "ok" : partial ? "warn" : "error"}`;
   connectionStatusEl.innerHTML = `
     <strong>${escapeHtml(label)}</strong>
-    <span>${escapeHtml(`provider=${provider} | sendEnabled=${Boolean(status.sendEnabled)} | configured=${Boolean(status.configured)}`)}</span>
+    <span>${escapeHtml(`motor=${status.engine || "disabled"} | envio=${Boolean(status.sendEnabled)} | auto=${Boolean(status.autoReplyEnabled)} | IA=${Boolean(status.aiEnabled)} | inbox=${Boolean(status.receivingActive)}`)}</span>
   `;
 }
 
@@ -157,6 +157,7 @@ function renderChat(conversa) {
       </div>
       <div class="chat-actions">
         <button type="button" data-action="human">Humano</button>
+        <button type="button" data-action="automatico">Automático</button>
         <button type="button" data-action="resolved">Resolvido</button>
         ${state.activeRole === "ADMIN" ? `<button class="danger-action" type="button" data-action="delete-conversation">Excluir conversa</button>` : ""}
       </div>
@@ -179,6 +180,7 @@ function renderChat(conversa) {
     button.addEventListener("click", () => deleteMessage(conversa.id, button.dataset.deleteMessage));
   });
   chatEl.querySelector("[data-action='human']")?.addEventListener("click", () => postAction(conversa.id, "humano"));
+  chatEl.querySelector("[data-action='automatico']")?.addEventListener("click", () => postAction(conversa.id, "automatico"));
   chatEl.querySelector("[data-action='resolved']")?.addEventListener("click", () => postAction(conversa.id, "resolvido"));
   chatEl.querySelector("[data-action='delete-conversation']")?.addEventListener("click", () => deleteConversation(conversa.id));
   chatEl.querySelector("#useSuggestion")?.addEventListener("click", () => {
@@ -212,11 +214,12 @@ function renderMessage(message) {
   const outgoing = message.direction === "out";
   const text = message.text || message.transcricao || describeMessage(message);
   const messageId = message.id || "";
+  const statusText = `${formatTime(message.createdAt)} · ${labelMessageStatus(message.status)}${message.errorMessage ? ` · ${message.errorMessage}` : ""}`;
   return `
     <article class="message ${outgoing ? "out" : "in"}">
       <p>${escapeHtml(text)}</p>
       ${messageId ? `<button class="message-delete" type="button" data-delete-message="${escapeAttr(messageId)}" title="Excluir mensagem; somente ADMIN">Excluir</button>` : ""}
-      <span>${formatTime(message.createdAt)} · ${escapeHtml(message.status || "")}</span>
+      <span>${escapeHtml(statusText)}</span>
     </article>
   `;
 }
@@ -242,7 +245,7 @@ async function sendReply(id) {
     if (data.enviado) {
       status.textContent = "Resposta enviada pelo SamBah.";
     } else {
-      const metaError = data.sendResult?.response?.error?.message || data.sendResult?.error || data.reason || "sem envio real";
+      const metaError = data.message?.errorMessage || data.sendResult?.error || data.reason || "sem envio real";
       status.textContent = `Nao enviado pela Meta: ${metaError}`;
     }
     await loadConversas();
@@ -334,6 +337,25 @@ function labelStatus(status = "") {
     erro_configuracao: "Erro de configuração"
   };
   return labels[status] || status || "Novo";
+}
+
+function labelMessageStatus(status = "") {
+  const labels = {
+    received: "Recebida",
+    recebida: "Recebida",
+    registrada: "Registrada",
+    registrada_sem_envio: "Registrada sem envio",
+    sent: "Enviada",
+    delivered: "Entregue",
+    read: "Lida",
+    failed: "Falhou",
+    meta_error: "Falhou na Meta",
+    meta_timeout: "Meta sem resposta",
+    meta_request_failed: "Erro de envio",
+    meta_configuration_incomplete: "Meta incompleta",
+    whatsapp_sender_disabled: "Envio desligado"
+  };
+  return labels[status] || status || "Registrada";
 }
 
 function initialsFor(value = "") {

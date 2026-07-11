@@ -27,6 +27,7 @@ import { SambahAuthService } from "./auth/authService.js";
 import { createWhatsAppProvider } from "./whatsapp/whatsappProvider.js";
 import { WhatsAppMessageService } from "./whatsapp/whatsappMessageService.js";
 import { whatsappMaintenanceHandler } from "./whatsapp/whatsappMaintenanceHandler.js";
+import { FileWhatsAppV2ConversationRepository } from "./whatsapp/v2/inMemoryRepositories.js";
 import { InstagramPublisher } from "./services/instagramPublisher.js";
 import { AiMetricsService } from "./ai/aiMetricsService.js";
 import { AiAuditService } from "./ai/aiAuditService.js";
@@ -37,6 +38,7 @@ const require = createRequire(import.meta.url);
 const packageJson = require("../package.json");
 const publicDir = fileURLToPath(new URL("../public/", import.meta.url));
 const runtimeConfig = getRuntimeConfig();
+const WEBHOOK_BODY_LIMIT_BYTES = 1024 * 1024;
 const dataFile = (name) => join(runtimeConfig.dataDir, name);
 const audit = new AuditService({ filePath: dataFile("audit-logs.json") });
 const mesa = new MesaIntegrationService({ queueFile: dataFile("mesa-queue.json") });
@@ -656,7 +658,7 @@ export function createApp({
       }
 
       if (req.method === "GET" && url.pathname === "/admin/whatsapp/status") {
-        return sendJson(res, 200, whatsappMessageService.status());
+        return sendJson(res, 200, await buildWhatsAppOperationalStatus(whatsappMessageService, whatsappConversationService, appRuntimeConfig || getRuntimeConfig()));
       }
 
       if (req.method === "GET" && url.pathname === "/api/call-center/operators") {
@@ -760,6 +762,21 @@ export function createApp({
           runtimeConfig: appRuntimeConfig || getRuntimeConfig(),
           whatsappProvider: appWhatsappProvider
         });
+        if (result.ok && result.message && whatsappMessageService?.appendMessage) {
+          await whatsappMessageService.appendMessage({
+            direction: "out",
+            normalized: {
+              provider: "meta",
+              from: result.conversa?.telefone || "",
+              customer: { name: result.conversa?.nome || "", phone: result.conversa?.telefone || "" },
+              messageId: result.message.id || "",
+              correlationId: result.message.id || "",
+              message: result.message.text || ""
+            },
+            text: result.message.text || "",
+            sendResult: result.sendResult
+          });
+        }
         return sendJson(res, result.ok ? 200 : 404, result);
       }
 
@@ -772,6 +789,15 @@ export function createApp({
       const conversaResolvidoMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/resolvido$/);
       if (req.method === "POST" && conversaResolvidoMatch) {
         const result = await whatsappConversationService.markResolved(decodeURIComponent(conversaResolvidoMatch[1]));
+        return sendJson(res, result.ok ? 200 : 404, result);
+      }
+
+      const conversaAutomaticoMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/automatico$/);
+      if (req.method === "POST" && conversaAutomaticoMatch) {
+        const result = await whatsappConversationService.markAutomatic(decodeURIComponent(conversaAutomaticoMatch[1]));
+        if (result.ok) {
+          await setWhatsAppV2Automatic(result.conversa.telefone || decodeURIComponent(conversaAutomaticoMatch[1]), appRuntimeConfig || getRuntimeConfig());
+        }
         return sendJson(res, result.ok ? 200 : 404, result);
       }
 
@@ -1344,11 +1370,71 @@ function verifyWhatsAppWebhook(req, res, url) {
   return sendJson(res, 403, { ok: false, error: "Token de verificacao invalido" });
 }
 
+async function buildWhatsAppOperationalStatus(messageService, conversationService, config = getRuntimeConfig()) {
+  const providerStatus = messageService.status();
+  let messages = [];
+  let conversations = null;
+  try {
+    messages = await messageService.readMessages();
+  } catch {
+    messages = [];
+  }
+  try {
+    conversations = await conversationService.list();
+  } catch {
+    conversations = null;
+  }
+  const lastReceived = messages.find((message) => message.direction === "in") || null;
+  const lastSent = messages.find((message) => message.direction === "out" && (message.sent === true || message.status === "sent" || message.providerMessageId)) || null;
+  const lastError = messages.find((message) => message.direction === "out" && ["failed", "meta_error", "meta_timeout", "meta_request_failed", "meta_missing_message_id", "meta_configuration_incomplete"].includes(message.status)) || null;
+  return {
+    ...providerStatus,
+    engine: config.whatsappV2?.enabled === true ? "v2" : "disabled",
+    v2Enabled: config.whatsappV2?.enabled === true,
+    autoReplyEnabled: config.whatsappV2?.autoReplyEnabled === true,
+    aiEnabled: config.whatsappV2?.aiEnabled === true,
+    sendEnabled: providerStatus.sendEnabled === true,
+    receivingActive: Boolean(lastReceived),
+    storageOk: conversations?.ok === true,
+    conversations: conversations?.count ?? null,
+    lastReceivedAt: lastReceived?.createdAt || "",
+    lastSendConfirmedAt: lastSent?.statusUpdatedAt || lastSent?.createdAt || "",
+    lastError: lastError ? {
+      status: lastError.status || "",
+      code: lastError.errorCode || lastError.response?.error?.code || "",
+      message: lastError.errorMessage || lastError.response?.error?.message || ""
+    } : null
+  };
+}
+
+async function setWhatsAppV2Automatic(conversationId, config = getRuntimeConfig()) {
+  const repository = new FileWhatsAppV2ConversationRepository({
+    filePath: join(config.dataDir || "data", "whatsapp-v2-state.json")
+  });
+  return repository.setAutomatic(conversationId);
+}
+
 async function handleMetaWebhook(req, res, auditService) {
   let body = {};
   try {
-    body = await readJson(req);
+    const parsed = await readJson(req, { includeRaw: true, maxBytes: WEBHOOK_BODY_LIMIT_BYTES });
+    body = parsed.body;
+    const signatureResult = verifyMetaWebhookSignature(req, parsed.rawBody, getRuntimeConfig());
+    if (!signatureResult.ok) {
+      await recordSignatureFailure(auditService, signatureResult, "/webhooks/meta");
+      return sendJson(res, 401, { ok: false, error: signatureResult.error });
+    }
   } catch (error) {
+    if (error.statusCode === 413) {
+      await safeAuditRecord(auditService, {
+        type: "meta_webhook_payload_too_large",
+        status: "warning",
+        source: "meta_whatsapp",
+        message: "Webhook Meta excedeu limite de tamanho",
+        context: { path: "/webhooks/meta", limitBytes: WEBHOOK_BODY_LIMIT_BYTES }
+      });
+      return sendJson(res, 413, { ok: false, error: "payload_too_large" });
+    }
     await safeAuditRecord(auditService, {
       type: "meta_webhook_invalid_payload",
       status: "warning",
@@ -1368,8 +1454,7 @@ async function handleMetaWebhook(req, res, auditService) {
     context: {
       path: "/webhooks/meta",
       method: req.method,
-      ...summary,
-      payload: body
+      ...summary
     }
   });
   return sendJson(res, 200, { ok: true, received: true });
@@ -1401,8 +1486,16 @@ function summarizeMetaWebhookPayload(payload = {}) {
 async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuService, conversationService, whatsappConversationService, draftService, eventService, trackingService, crmService, whatsappMessageService, callCenterService = null, whatsappSendFetch = globalThis.fetch, appWhatsappProvider = whatsappProvider, appRuntimeConfig = null) {
   let body = {};
   try {
-    body = await readJson(req, { requireBody: true });
     const isWhatsappWebhook = req.url?.includes("/webhook/whatsapp");
+    const parsed = await readJson(req, { requireBody: true, includeRaw: true, maxBytes: isWhatsappWebhook ? WEBHOOK_BODY_LIMIT_BYTES : undefined });
+    body = parsed.body;
+    if (isWhatsappWebhook) {
+      const signatureResult = verifyMetaWebhookSignature(req, parsed.rawBody, appRuntimeConfig || getRuntimeConfig());
+      if (!signatureResult.ok) {
+        await recordSignatureFailure(auditService, signatureResult, "/webhook/whatsapp");
+        return sendJson(res, 401, { ok: false, error: signatureResult.error });
+      }
+    }
     const metaSummary = summarizeWhatsAppPostPayload(body);
     if (isWhatsappWebhook) {
       console.info("whatsapp.webhook.post.received", metaSummary);
@@ -1438,31 +1531,66 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
     }
 
     if (req.url?.includes("/webhook/whatsapp")) {
-      if (isMetaWhatsAppEnvelope(body) && metaSummary.messagesLength === 0) {
+      if (isMetaWhatsAppEnvelope(body)) {
         const statusResult = await recordWhatsAppMetaStatuses(body, {
           whatsappMessageService,
           whatsappConversationService,
           auditService
         });
-        if (statusResult.statuses > 0) {
+        const messagePayloads = extractMetaWhatsAppMessagePayloads(body);
+        if (messagePayloads.length === 0) {
+          if (statusResult.statuses > 0) {
+            return sendJson(res, 200, {
+              ok: true,
+              statuses: statusResult.statuses,
+              updated: statusResult.updated,
+              reason: "meta_status_callback"
+            });
+          }
+          await safeAuditRecord(auditService, {
+            type: "whatsapp_webhook_ignored",
+            status: "info",
+            source: "meta_whatsapp",
+            message: "Webhook WhatsApp sem mensagem real ignorado",
+            context: metaSummary
+          });
           return sendJson(res, 200, {
             ok: true,
-            statuses: statusResult.statuses,
-            updated: statusResult.updated,
-            reason: "meta_status_callback"
+            ignored: true,
+            reason: "meta_webhook_without_messages"
           });
         }
-        await safeAuditRecord(auditService, {
-          type: "whatsapp_webhook_ignored",
-          status: "info",
-          source: "meta_whatsapp",
-          message: "Webhook WhatsApp sem mensagem real ignorado",
-          context: metaSummary
-        });
+
+        const results = [];
+        for (const messagePayload of messagePayloads) {
+          try {
+            results.push(await whatsappMaintenanceHandler(messagePayload, {
+              conversationService: whatsappConversationService,
+              messageService: whatsappMessageService,
+              auditService,
+              whatsappProvider: appWhatsappProvider,
+              runtimeConfig: appRuntimeConfig || getRuntimeConfig()
+            }));
+          } catch (error) {
+            results.push({ ok: false, handled: false, error: "message_processing_failed" });
+            await safeAuditRecord(auditService, {
+              type: "whatsapp_message_processing_failed",
+              status: "error",
+              source: "meta_whatsapp",
+              message: "Falha ao processar item individual do envelope Meta",
+              context: { error: String(error?.message || error) }
+            });
+          }
+        }
+        if (results.length === 1 && statusResult.statuses === 0) return sendJson(res, 200, results[0]);
         return sendJson(res, 200, {
-          ok: true,
-          ignored: true,
-          reason: "meta_webhook_without_messages"
+          ok: results.every((item) => item.ok !== false),
+          handled: results.some((item) => item.handled === true),
+          engine: results.some((item) => item.engine === "v2") ? "v2" : results[0]?.engine || "disabled",
+          messages: results.length,
+          statuses: statusResult.statuses,
+          updated: statusResult.updated,
+          results
         });
       }
       const maintenanceResult = await whatsappMaintenanceHandler(body, {
@@ -1650,6 +1778,17 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
       crm: summarizeCrmResult(crmResult)
     });
   } catch (error) {
+    if (error.statusCode === 413) {
+      await safeAuditRecord(auditService, {
+        type: "webhook_payload_too_large",
+        status: "warning",
+        source: req.url?.includes("/site") ? "site" : "whatsapp",
+        message: "Webhook excedeu limite de tamanho",
+        context: { code: error.code, limitBytes: WEBHOOK_BODY_LIMIT_BYTES },
+        dedupeKey: `${req.url}:${error.code}`
+      });
+      return sendJson(res, 413, { ok: false, error: error.code });
+    }
     if (error.statusCode === 400) {
       await safeAuditRecord(auditService, {
         type: "webhook_invalid_payload",
@@ -1678,23 +1817,19 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
 
 function summarizeWhatsAppPostPayload(payload = {}) {
   const entries = Array.isArray(payload.entry) ? payload.entry : [];
-  const firstChange = entries.flatMap((entry) => Array.isArray(entry?.changes) ? entry.changes : [])[0] || {};
-  const value = firstChange.value || {};
-  const firstMessage = Array.isArray(value.messages) ? value.messages[0] || {} : {};
-  const firstStatus = Array.isArray(value.statuses) ? value.statuses[0] || {} : {};
+  const changes = entries.flatMap((entry) => Array.isArray(entry?.changes) ? entry.changes : []);
+  let messagesLength = 0;
+  let statusesLength = 0;
+  for (const change of changes) {
+    const value = change?.value || {};
+    messagesLength += Array.isArray(value.messages) ? value.messages.length : 0;
+    statusesLength += Array.isArray(value.statuses) ? value.statuses.length : 0;
+  }
   return {
     bodyEntryLength: entries.length,
-    changesLength: entries.reduce((total, entry) => total + (Array.isArray(entry?.changes) ? entry.changes.length : 0), 0),
-    field: firstChange.field || "",
-    phoneNumberIdReceived: value.metadata?.phone_number_id || "",
-    messagesLength: Array.isArray(value.messages) ? value.messages.length : 0,
-    statusesLength: Array.isArray(value.statuses) ? value.statuses.length : 0,
-    statusId: firstStatus.id || "",
-    status: firstStatus.status || "",
-    statusRecipientId: firstStatus.recipient_id || "",
-    textBody: firstMessage.text?.body || "",
-    from: firstMessage.from || value.contacts?.[0]?.wa_id || payload.from || "",
-    messageId: firstMessage.id || payload.eventId || payload.messageId || ""
+    changesLength: changes.length,
+    messagesLength,
+    statusesLength
   };
 }
 
@@ -1714,6 +1849,36 @@ function extractMetaWhatsAppStatuses(payload = {}) {
       }));
     });
   });
+}
+
+function extractMetaWhatsAppMessagePayloads(payload = {}) {
+  const entries = Array.isArray(payload.entry) ? payload.entry : [];
+  const items = [];
+  for (const entry of entries) {
+    const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+    for (const change of changes) {
+      const value = change?.value || {};
+      const messages = Array.isArray(value.messages) ? value.messages : [];
+      for (const message of messages) {
+        if (!message || typeof message !== "object") continue;
+        items.push({
+          object: payload.object || "",
+          entry: [{
+            ...entry,
+            changes: [{
+              ...change,
+              value: {
+                ...value,
+                messages: [message],
+                statuses: undefined
+              }
+            }]
+          }]
+        });
+      }
+    }
+  }
+  return items;
 }
 
 async function recordWhatsAppMetaStatuses(payload = {}, { whatsappMessageService, whatsappConversationService, auditService } = {}) {
@@ -2721,16 +2886,53 @@ function extractMesaOrderId(mesaResult = {}) {
     || null;
 }
 
-async function readJson(req, { requireBody = false } = {}) {
+function verifyMetaWebhookSignature(req, rawBody = Buffer.alloc(0), config = getRuntimeConfig()) {
+  if (config.whatsappBusiness?.signatureRequired !== true) return { ok: true, skipped: true };
+  const secret = config.whatsappBusiness?.webhookSecret || "";
+  if (!secret) return { ok: false, error: "meta_signature_configuration_incomplete" };
+  const received = String(req.headers["x-hub-signature-256"] || "");
+  if (!received) return { ok: false, error: "meta_signature_missing" };
+  const expected = `sha256=${crypto.createHmac("sha256", secret).update(rawBody).digest("hex")}`;
+  const receivedBuffer = Buffer.from(received);
+  const expectedBuffer = Buffer.from(expected);
+  if (receivedBuffer.length !== expectedBuffer.length) return { ok: false, error: "meta_signature_invalid" };
+  return crypto.timingSafeEqual(receivedBuffer, expectedBuffer)
+    ? { ok: true }
+    : { ok: false, error: "meta_signature_invalid" };
+}
+
+async function recordSignatureFailure(auditService, result = {}, path = "") {
+  await safeAuditRecord(auditService, {
+    type: "meta_webhook_signature_rejected",
+    status: "warning",
+    source: "meta_whatsapp",
+    message: "Webhook Meta rejeitado por assinatura",
+    context: {
+      path,
+      reason: result.error || "meta_signature_invalid"
+    }
+  });
+}
+
+async function readJson(req, { requireBody = false, includeRaw = false, maxBytes = 0 } = {}) {
   const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  const raw = Buffer.concat(chunks).toString("utf8").trim();
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (maxBytes > 0 && size > maxBytes) {
+      throw httpError(413, "payload_too_large", "Payload acima do limite permitido");
+    }
+    chunks.push(chunk);
+  }
+  const rawBody = Buffer.concat(chunks);
+  const raw = rawBody.toString("utf8").trim();
   if (!raw) {
-    if (!requireBody) return {};
+    if (!requireBody) return includeRaw ? { body: {}, rawBody } : {};
     throw httpError(400, "empty_body", "Body JSON vazio");
   }
   try {
-    return JSON.parse(raw);
+    const body = JSON.parse(raw);
+    return includeRaw ? { body, rawBody } : body;
   } catch (error) {
     throw httpError(400, "invalid_json", "JSON invalido", error);
   }

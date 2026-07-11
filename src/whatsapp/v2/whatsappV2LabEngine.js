@@ -37,7 +37,7 @@ export class WhatsAppV2LabProcessor {
   async handleIncoming(payload = {}) {
     const message = normalizeIncoming(payload);
     const traceId = crypto.randomUUID();
-    const reserved = await this.conversationRepository.reserveMessage(message.messageId);
+    const reserved = message.reserved === true ? true : await this.conversationRepository.reserveMessage(message.messageId);
     if (!reserved) return { ok: true, duplicate: true, traceId, repliesSent: 0 };
 
     try {
@@ -108,6 +108,7 @@ function normalizeIncoming(payload = {}) {
     conversationId: String(payload.conversationId || payload.from),
     from: String(payload.from),
     text: String(payload.text || "").trim(),
-    receivedAt: payload.receivedAt || new Date().toISOString()
+    receivedAt: payload.receivedAt || new Date().toISOString(),
+    reserved: payload.reserved === true
   };
 }

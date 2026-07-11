@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createWhatsAppProvider } from "../src/whatsapp/whatsappProvider.js";
 import { parseWhatsAppWebhookPayload } from "../src/whatsapp/whatsappWebhookParser.js";
+import { SambahMetaSendService } from "../src/sambahPay/services/sambahMetaSendService.js";
 
 test("provider mock registra mensagem sem chamar API externa", async () => {
   let logged = false;
@@ -85,6 +86,82 @@ test("erro de envio Meta nao vaza access token", async () => {
   assert.doesNotMatch(serialized, /token-super-secreto/);
   assert.doesNotMatch(serialized, /Bearer token/i);
   assert.match(serialized, /\[masked\]/);
+});
+
+test("provider meta nao confirma envio quando resposta 2xx nao contem message id", async () => {
+  const provider = createWhatsAppProvider({
+    config: {
+      provider: "meta",
+      phoneNumberId: "12345",
+      accessToken: "token-super-secreto",
+      apiVersion: "v21.0"
+    },
+    fetchImpl: async () => new Response(JSON.stringify({ messages: [] }), { status: 200 })
+  });
+  const result = await provider.sendText({ to: "5551999999999", text: "Buenas" });
+  assert.equal(result.ok, false);
+  assert.equal(result.sent, false);
+  assert.equal(result.status, "meta_missing_message_id");
+  assert.equal(result.providerMessageId, "");
+  assert.doesNotMatch(JSON.stringify(result), /token-super-secreto/);
+});
+
+test("provider meta retorna meta_timeout quando request e abortada pelo limite", async () => {
+  const provider = createWhatsAppProvider({
+    config: {
+      provider: "meta",
+      phoneNumberId: "12345",
+      accessToken: "token-super-secreto",
+      apiVersion: "v21.0",
+      timeoutMs: 1000
+    },
+    fetchImpl: async (url, options = {}) => new Promise((resolve, reject) => {
+      options.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+    })
+  });
+  const result = await provider.sendText({ to: "5551999999999", text: "Buenas" });
+  assert.equal(result.ok, false);
+  assert.equal(result.sent, false);
+  assert.equal(result.status, "meta_timeout");
+  assert.doesNotMatch(JSON.stringify(result), /token-super-secreto/);
+});
+
+test("servico Meta paralelo nao expoe IDs completos nem token em debug ou erro", async () => {
+  const logs = [];
+  const previousInfo = console.info;
+  console.info = (...args) => logs.push(args);
+  const service = new SambahMetaSendService({
+    env: {
+      META_PHONE_NUMBER_ID: "1234567890",
+      META_WABA_ID: "987654321",
+      META_ACCESS_TOKEN: "token-super-secreto",
+      META_API_VERSION: "v25.0"
+    },
+    fetchImpl: async () => new Response(JSON.stringify({
+      error: {
+        code: 190,
+        message: "Invalid token-super-secreto",
+        access_token: "token-super-secreto",
+        error_data: { details: "Bearer token-super-secreto" }
+      }
+    }), { status: 401 })
+  });
+  try {
+    const debug = service.debug();
+    assert.equal(debug.phoneNumberIdConfigured, true);
+    assert.equal(debug.wabaIdConfigured, true);
+    assert.doesNotMatch(JSON.stringify(debug), /1234567890|987654321/);
+
+    const result = await service.sendText({ to: "5551999999999", message: "teste" });
+    const serialized = JSON.stringify({ result, logs });
+    assert.equal(result.ok, false);
+    assert.doesNotMatch(serialized, /token-super-secreto/);
+    assert.doesNotMatch(serialized, /1234567890/);
+    assert.doesNotMatch(serialized, /Bearer token/i);
+    assert.match(serialized, /\[masked\]/);
+  } finally {
+    console.info = previousInfo;
+  }
 });
 
 test("provider meta envia menu com ate tres opcoes como botoes", async () => {
@@ -187,12 +264,12 @@ test("provider meta tenta nono digito brasileiro quando Meta recusa destinatario
   assert.equal(result.ok, true);
   assert.equal(result.sent, true);
   assert.equal(result.retried, true);
-  assert.equal(result.originalTo, "555180413745");
-  assert.equal(result.retryTo, "5551980413745");
+  assert.equal(result.originalTo, "5551980413745");
+  assert.equal(result.retryTo, "555180413745");
   assert.equal(requests.length, 2);
   assert.equal(requests[0].url, "https://graph.facebook.com/v25.0/12345/messages");
-  assert.equal(requests[0].body.to, "555180413745");
-  assert.equal(requests[1].body.to, "5551980413745");
+  assert.equal(requests[0].body.to, "5551980413745");
+  assert.equal(requests[1].body.to, "555180413745");
 });
 
 test("parser normaliza payload da Meta Cloud API", () => {

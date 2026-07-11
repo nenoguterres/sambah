@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import crypto from "node:crypto";
 import { AuditService } from "../src/auditService.js";
 import { CrmService } from "../src/crmService.js";
 import { EventScheduleService } from "../src/eventScheduleService.js";
@@ -31,6 +32,147 @@ test("GET /webhook/whatsapp valida challenge da Meta", async () => {
     await close(server);
     await cleanup();
     restoreEnv("WHATSAPP_META_VERIFY_TOKEN", previous);
+  }
+});
+
+test("POST /webhook/whatsapp aceita assinatura valida quando obrigatoria", async () => {
+  const previousRequired = process.env.WHATSAPP_WEBHOOK_SIGNATURE_REQUIRED;
+  const previousSecret = process.env.SAMBAH_WEBHOOK_SECRET;
+  process.env.WHATSAPP_WEBHOOK_SIGNATURE_REQUIRED = "true";
+  process.env.SAMBAH_WEBHOOK_SECRET = "segredo-webhook-teste";
+  const { server, base, cleanup } = await createTestServer();
+  try {
+    const raw = JSON.stringify(metaPayload({
+      from: "5551999999901",
+      id: "wamid-signature-valid",
+      type: "text",
+      text: { body: "oi" }
+    }));
+    const response = await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-hub-signature-256": signMetaBody(raw, process.env.SAMBAH_WEBHOOK_SECRET) },
+      body: raw
+    });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).ok, true);
+  } finally {
+    await close(server);
+    await cleanup();
+    restoreEnv("WHATSAPP_WEBHOOK_SIGNATURE_REQUIRED", previousRequired);
+    restoreEnv("SAMBAH_WEBHOOK_SECRET", previousSecret);
+  }
+});
+
+test("POST /webhook/whatsapp rejeita assinatura invalida ou ausente quando obrigatoria", async () => {
+  const previousRequired = process.env.WHATSAPP_WEBHOOK_SIGNATURE_REQUIRED;
+  const previousSecret = process.env.SAMBAH_WEBHOOK_SECRET;
+  process.env.WHATSAPP_WEBHOOK_SIGNATURE_REQUIRED = "true";
+  process.env.SAMBAH_WEBHOOK_SECRET = "segredo-webhook-teste";
+  const { server, base, cleanup } = await createTestServer();
+  const raw = JSON.stringify(metaPayload({
+    from: "5551999999902",
+    id: "wamid-signature-invalid",
+    type: "text",
+    text: { body: "oi" }
+  }));
+  try {
+    const missing = await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: raw
+    });
+    assert.equal(missing.status, 401);
+    assert.equal((await missing.json()).error, "meta_signature_missing");
+
+    const invalid = await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-hub-signature-256": "sha256=invalid" },
+      body: raw
+    });
+    assert.equal(invalid.status, 401);
+    assert.equal((await invalid.json()).error, "meta_signature_invalid");
+  } finally {
+    await close(server);
+    await cleanup();
+    restoreEnv("WHATSAPP_WEBHOOK_SIGNATURE_REQUIRED", previousRequired);
+    restoreEnv("SAMBAH_WEBHOOK_SECRET", previousSecret);
+  }
+});
+
+test("POST /webhook/whatsapp preserva compatibilidade sem assinatura quando flag esta desligada", async () => {
+  const previousRequired = process.env.WHATSAPP_WEBHOOK_SIGNATURE_REQUIRED;
+  process.env.WHATSAPP_WEBHOOK_SIGNATURE_REQUIRED = "false";
+  const { server, base, cleanup } = await createTestServer();
+  try {
+    const response = await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(metaPayload({
+        from: "5551999999903",
+        id: "wamid-signature-optional",
+        type: "text",
+        text: { body: "oi" }
+      }))
+    });
+    assert.equal(response.status, 200);
+  } finally {
+    await close(server);
+    await cleanup();
+    restoreEnv("WHATSAPP_WEBHOOK_SIGNATURE_REQUIRED", previousRequired);
+  }
+});
+
+test("POST /webhook/whatsapp com assinatura obrigatoria e segredo ausente retorna erro controlado", async () => {
+  const previousRequired = process.env.WHATSAPP_WEBHOOK_SIGNATURE_REQUIRED;
+  const previousSecret = process.env.SAMBAH_WEBHOOK_SECRET;
+  const previousWhatsappSecret = process.env.WHATSAPP_WEBHOOK_SECRET;
+  process.env.WHATSAPP_WEBHOOK_SIGNATURE_REQUIRED = "true";
+  delete process.env.SAMBAH_WEBHOOK_SECRET;
+  delete process.env.WHATSAPP_WEBHOOK_SECRET;
+  const { server, base, cleanup } = await createTestServer();
+  try {
+    const response = await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(metaPayload({
+        from: "5551999999904",
+        id: "wamid-signature-no-secret",
+        type: "text",
+        text: { body: "oi" }
+      }))
+    });
+    assert.equal(response.status, 401);
+    assert.equal((await response.json()).error, "meta_signature_configuration_incomplete");
+  } finally {
+    await close(server);
+    await cleanup();
+    restoreEnv("WHATSAPP_WEBHOOK_SIGNATURE_REQUIRED", previousRequired);
+    restoreEnv("SAMBAH_WEBHOOK_SECRET", previousSecret);
+    restoreEnv("WHATSAPP_WEBHOOK_SECRET", previousWhatsappSecret);
+  }
+});
+
+test("POST /webhook/whatsapp retorna 413 para corpo acima do limite e 400 para JSON invalido", async () => {
+  const { server, base, cleanup } = await createTestServer();
+  try {
+    const oversized = await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: `{"payload":"${"x".repeat(1024 * 1024 + 1)}"}`
+    });
+    assert.equal(oversized.status, 413);
+    assert.equal((await oversized.json()).error, "payload_too_large");
+
+    const invalid = await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{invalid-json"
+    });
+    assert.equal(invalid.status, 400);
+    assert.equal((await invalid.json()).error, "invalid_json");
+  } finally {
+    await close(server);
+    await cleanup();
   }
 });
 
@@ -576,6 +718,211 @@ test("POST /webhook/whatsapp status Meta nao entra na V2 operacional", async () 
   }
 });
 
+test("WhatsApp V2 operacional final: idempotencia, HUMANO, manual, status e automatico", async () => {
+  const previousV2 = process.env.WHATSAPP_V2_ENABLED;
+  const previousSend = process.env.WHATSAPP_SEND_ENABLED;
+  const previousAi = process.env.WHATSAPP_AI_ENABLED;
+  const previousAutoReply = process.env.WHATSAPP_AUTO_REPLY_ENABLED;
+  const previousAccessToken = process.env.META_ACCESS_TOKEN;
+  const previousPhoneNumberId = process.env.META_PHONE_NUMBER_ID;
+  const previousWhatsappPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  process.env.WHATSAPP_V2_ENABLED = "true";
+  process.env.WHATSAPP_SEND_ENABLED = "true";
+  process.env.WHATSAPP_AI_ENABLED = "false";
+  process.env.WHATSAPP_AUTO_REPLY_ENABLED = "true";
+  process.env.META_ACCESS_TOKEN = "token-teste";
+  process.env.META_PHONE_NUMBER_ID = "1234567890";
+  process.env.WHATSAPP_PHONE_NUMBER_ID = "1234567890";
+
+  const providerCalls = [];
+  let providerSeq = 0;
+  const { server, base, messagesFile, conversationsFile, v2StateFile, cleanup } = await createTestServer({
+    provider: {
+      name: "meta",
+      status: () => ({ provider: "meta", configured: true, sendEnabled: true, phoneNumberIdConfigured: true, accessTokenConfigured: true, verifyTokenConfigured: true }),
+      sendMessage: async (input) => {
+        providerCalls.push({ method: "sendMessage", input });
+        providerSeq += 1;
+        return { ok: true, sent: true, status: "sent", providerMessageId: `wamid-provider-auto-${providerSeq}`, response: { messages: [{ id: `wamid-provider-auto-${providerSeq}` }] }, metaMessageType: input.message?.type || "text" };
+      },
+      sendText: async (input) => {
+        providerCalls.push({ method: "sendText", input });
+        providerSeq += 1;
+        return { ok: true, sent: true, status: "sent", providerMessageId: `wamid-provider-manual-${providerSeq}`, response: { messages: [{ id: `wamid-provider-manual-${providerSeq}` }] }, metaMessageType: "text" };
+      }
+    }
+  });
+  try {
+    const duplicated = metaPayload({ from: "555180413745", id: "wamid-final-dup", type: "text", text: { body: "oi" } });
+    const [first, duplicate] = await Promise.all([
+      fetch(`${base}/webhook/whatsapp`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(duplicated) }),
+      fetch(`${base}/webhook/whatsapp`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(duplicated) })
+    ]);
+    const firstBody = await first.json();
+    const duplicateBody = await duplicate.json();
+    assert.equal(first.status, 200);
+    assert.equal(duplicate.status, 200);
+    assert.equal([firstBody.duplicate, duplicateBody.duplicate].filter(Boolean).length, 1);
+    assert.equal(providerCalls.length, 1);
+    assert.equal(providerCalls[0].input.to, "5551980413745");
+
+    let conversations = JSON.parse(await readFile(conversationsFile, "utf8"));
+    assert.equal(conversations.conversas.length, 1);
+    assert.equal(conversations.conversas[0].telefone, "5551980413745");
+    assert.equal(conversations.conversas[0].mensagens.filter((message) => message.direction === "in").length, 1);
+    assert.equal(conversations.conversas[0].mensagens.filter((message) => message.direction === "out").length, 1);
+
+    await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(metaPayload({ from: "555180413745", id: "wamid-final-human", type: "text", text: { body: "humano" } }))
+    });
+    const callsAfterHumanCommand = providerCalls.length;
+    const humanFollowup = await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(metaPayload({ from: "555180413745", id: "wamid-final-human-followup", type: "text", text: { body: "preciso de alguem" } }))
+    });
+    const humanFollowupBody = await humanFollowup.json();
+    assert.equal(humanFollowupBody.reason, "human_state_blocks_automation");
+    assert.equal(providerCalls.length, callsAfterHumanCommand);
+
+    const v2State = JSON.parse(await readFile(v2StateFile, "utf8"));
+    assert.equal(v2State.states["5551980413745"].serviceState, "HUMANO");
+
+    const manual = await fetch(`${base}/api/conversas/wa_5551980413745/responder`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "Atendimento manual confirmado." })
+    });
+    const manualBody = await manual.json();
+    assert.equal(manual.status, 200);
+    assert.equal(manualBody.enviado, true);
+    assert.match(manualBody.message.providerMessageId, /^wamid-provider-manual-/);
+    assert.equal(manualBody.conversa.status, "humano");
+
+    const providerMessageId = manualBody.message.providerMessageId;
+    for (const status of ["sent", "delivered", "read", "failed"]) {
+      const callback = await fetch(`${base}/webhook/whatsapp`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          object: "whatsapp_business_account",
+          entry: [{ changes: [{ field: "messages", value: { statuses: [{ id: providerMessageId, status, timestamp: "1782214373", recipient_id: "555180413745" }] } }] }]
+        })
+      });
+      assert.equal(callback.status, 200);
+    }
+
+    const automatic = await fetch(`${base}/api/conversas/wa_555180413745/automatico`, { method: "POST" });
+    assert.equal(automatic.status, 200);
+    const automaticState = JSON.parse(await readFile(v2StateFile, "utf8"));
+    assert.equal(automaticState.states["5551980413745"].serviceState, "AUTOMATICO");
+
+    await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(metaPayload({ from: "555180413745", id: "wamid-final-after-auto", type: "text", text: { body: "oi" } }))
+    });
+    assert.equal(providerCalls.filter((call) => call.method === "sendMessage").length, 3);
+
+    const status = await (await fetch(`${base}/admin/whatsapp/status`)).json();
+    assert.equal(status.engine, "v2");
+    assert.equal(status.aiEnabled, false);
+    assert.equal(status.autoReplyEnabled, true);
+    assert.equal(status.provider, "meta");
+
+    const messages = JSON.parse(await readFile(messagesFile, "utf8"));
+    assert.ok(messages.some((message) => message.providerMessageId === providerMessageId && message.status === "failed"));
+    conversations = JSON.parse(await readFile(conversationsFile, "utf8"));
+    const manualMessage = conversations.conversas[0].mensagens.find((message) => message.providerMessageId === providerMessageId);
+    assert.equal(manualMessage.status, "failed");
+    assert.equal(conversations.conversas[0].mensagens.filter((message) => message.id === "wamid-final-dup").length, 1);
+  } finally {
+    await close(server);
+    await cleanup();
+    restoreEnv("WHATSAPP_V2_ENABLED", previousV2);
+    restoreEnv("WHATSAPP_SEND_ENABLED", previousSend);
+    restoreEnv("WHATSAPP_AI_ENABLED", previousAi);
+    restoreEnv("WHATSAPP_AUTO_REPLY_ENABLED", previousAutoReply);
+    restoreEnv("META_ACCESS_TOKEN", previousAccessToken);
+    restoreEnv("META_PHONE_NUMBER_ID", previousPhoneNumberId);
+    restoreEnv("WHATSAPP_PHONE_NUMBER_ID", previousWhatsappPhoneNumberId);
+  }
+});
+
+test("POST /webhook/whatsapp processa multiplas entries, changes e mensagens na ordem", async () => {
+  const { server, base, messagesFile, conversationsFile, cleanup } = await createTestServer();
+  try {
+    const response = await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(multiMessagePayload())
+    });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.messages, 4);
+    assert.equal(body.statuses, 0);
+
+    const messages = JSON.parse(await readFile(messagesFile, "utf8"));
+    assert.equal(messages.length, 4);
+    assert.deepEqual(messages.map((message) => message.messageId).reverse(), [
+      "wamid-multi-1",
+      "wamid-multi-2",
+      "wamid-multi-3",
+      "wamid-multi-4"
+    ]);
+    const conversations = JSON.parse(await readFile(conversationsFile, "utf8"));
+    assert.equal(conversations.conversas.length, 4);
+  } finally {
+    await close(server);
+    await cleanup();
+  }
+});
+
+test("POST /webhook/whatsapp processa mensagens e statuses sem transformar status em mensagem", async () => {
+  const { server, base, messagesFile, conversationsFile, cleanup } = await createTestServer();
+  try {
+    await writeFile(messagesFile, JSON.stringify([{
+      id: "out_status_mix",
+      direction: "out",
+      provider: "meta",
+      phone: "5551999999999",
+      providerMessageId: "wamid-status-mixed",
+      text: "Resposta anterior",
+      status: "sent",
+      response: { messages: [{ id: "wamid-status-mixed" }] },
+      createdAt: "2026-07-03T10:00:00.000Z"
+    }]), "utf8");
+    await writeFile(conversationsFile, JSON.stringify({
+      conversas: [{
+        id: "wa_5551999999999",
+        telefone: "5551999999999",
+        mensagens: [{ id: "msg_out_status_mix", direction: "out", providerMessageId: "wamid-status-mixed", status: "sent" }]
+      }]
+    }), "utf8");
+
+    const response = await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(mixedMessageStatusPayload())
+    });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.messages, 1);
+    assert.equal(body.statuses, 1);
+    assert.equal(body.updated, 1);
+
+    const messages = JSON.parse(await readFile(messagesFile, "utf8"));
+    assert.equal(messages.filter((message) => message.direction === "in").length, 1);
+    assert.equal(messages.find((message) => message.providerMessageId === "wamid-status-mixed").status, "read");
+  } finally {
+    await close(server);
+    await cleanup();
+  }
+});
+
 test("POST /webhook/site continua respondendo 202", async () => {
   const { server, base, cleanup } = await createTestServer();
   try {
@@ -719,6 +1066,67 @@ function statusPayload() {
       }]
     }]
   };
+}
+
+function multiMessagePayload() {
+  return {
+    object: "whatsapp_business_account",
+    entry: [{
+      changes: [{
+        field: "messages",
+        value: {
+          messaging_product: "whatsapp",
+          contacts: [{ profile: { name: "Cliente Um" }, wa_id: "5551999999905" }],
+          messages: [
+            { from: "5551999999905", id: "wamid-multi-1", type: "text", text: { body: "primeira" } },
+            { from: "5551999999906", id: "wamid-multi-2", type: "text", text: { body: "segunda" } }
+          ]
+        }
+      }, {
+        field: "messages",
+        value: {
+          messaging_product: "whatsapp",
+          contacts: [{ profile: { name: "Cliente Tres" }, wa_id: "5551999999907" }],
+          messages: [{ from: "5551999999907", id: "wamid-multi-3", type: "text", text: { body: "terceira" } }]
+        }
+      }]
+    }, {
+      changes: [{
+        field: "messages",
+        value: {
+          messaging_product: "whatsapp",
+          contacts: [{ profile: { name: "Cliente Quatro" }, wa_id: "5551999999908" }],
+          messages: [{ from: "5551999999908", id: "wamid-multi-4", type: "text", text: { body: "quarta" } }]
+        }
+      }]
+    }]
+  };
+}
+
+function mixedMessageStatusPayload() {
+  return {
+    object: "whatsapp_business_account",
+    entry: [{
+      changes: [{
+        field: "messages",
+        value: {
+          messaging_product: "whatsapp",
+          contacts: [{ profile: { name: "Cliente Mix" }, wa_id: "5551999999909" }],
+          messages: [{ from: "5551999999909", id: "wamid-mixed-message", type: "text", text: { body: "oi" } }],
+          statuses: [{
+            id: "wamid-status-mixed",
+            status: "read",
+            timestamp: "1782214373",
+            recipient_id: "5551999999999"
+          }]
+        }
+      }]
+    }]
+  };
+}
+
+function signMetaBody(raw, secret) {
+  return `sha256=${crypto.createHmac("sha256", secret).update(Buffer.from(raw)).digest("hex")}`;
 }
 
 function menuItems() {
