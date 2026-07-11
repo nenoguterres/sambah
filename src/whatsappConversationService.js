@@ -12,18 +12,32 @@ export class WhatsAppConversationService {
   }
 
   async list() {
-    const data = await this.#safeSyncFromMessageHistory(await this.#read());
-    const conversations = data.conversas.map((item) => this.#withPriority(item));
-    return {
-      ok: true,
-      count: conversations.length,
-      items: conversations.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))
-    };
+    try {
+      return this.#listFromData(await this.#safeSyncFromMessageHistory(await this.#read()));
+    } catch (error) {
+      console.info("whatsapp.conversations.list_failed", {
+        status: "list_failed",
+        error: String(error?.code || error?.message || error)
+      });
+      return this.#listFromData(await this.#fallbackFromMessageHistory());
+    }
   }
 
   async get(id) {
-    const data = await this.#read();
-    const conversation = findConversation(data.conversas, id);
+    let data;
+    try {
+      data = await this.#read();
+    } catch (error) {
+      console.info("whatsapp.conversations.get_read_failed", {
+        status: "get_read_failed",
+        error: String(error?.code || error?.message || error)
+      });
+      data = await this.#fallbackFromMessageHistory();
+    }
+    let conversation = findConversation(data.conversas, id);
+    if (!conversation && this.messagesFile) {
+      conversation = findConversation((await this.#fallbackFromMessageHistory()).conversas, id);
+    }
     return conversation ? { ok: true, conversa: this.#withPriority(conversation) } : { ok: false, error: "Conversa nao encontrada" };
   }
 
@@ -310,6 +324,15 @@ export class WhatsAppConversationService {
     }
   }
 
+  #listFromData(data = { conversas: [] }) {
+    const conversations = (Array.isArray(data.conversas) ? data.conversas : []).filter(isPlainRecord).map((item) => this.#withPriority(item));
+    return {
+      ok: true,
+      count: conversations.length,
+      items: conversations.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))
+    };
+  }
+
   async #write(data) {
     await mkdir(dirname(this.filePath), { recursive: true });
     await writeFile(this.filePath, `${JSON.stringify(data, null, 2)}\n`, "utf8");
@@ -402,6 +425,58 @@ export class WhatsAppConversationService {
       if (error.code === "ENOENT") return [];
       throw error;
     }
+  }
+
+  async #fallbackFromMessageHistory() {
+    const history = await this.#readMessageHistory();
+    const byPhone = new Map();
+    const ordered = history
+      .filter((message) => message && message.phone && message.createdAt)
+      .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+    for (const historyMessage of ordered) {
+      const phone = normalizePhone(historyMessage.phone);
+      if (!phone) continue;
+      const id = `wa_${phone}`;
+      const existing = byPhone.get(phone) || {
+        id,
+        nome: historyMessage.customerName || "Cliente WhatsApp",
+        telefone: phone,
+        operation: "Insano",
+        origem: "whatsapp",
+        mensagens: [],
+        createdAt: historyMessage.createdAt,
+        status: "aguardando_equipe",
+        respostaSugerida: "",
+        automaticReplyCreated: false,
+        whatsappEngine: "fallback_history"
+      };
+      const text = String(historyMessage.text || "").trim();
+      const message = {
+        id: historyMessage.messageId || historyMessage.id || `history_${historyMessage.createdAt}_${phone}`,
+        direction: historyMessage.direction === "out" ? "out" : "in",
+        type: "text",
+        text,
+        transcricao: "",
+        mediaId: "",
+        rawType: "text",
+        createdAt: historyMessage.createdAt,
+        status: normalizeHistoryStatus(historyMessage),
+        providerMessageId: historyMessage.providerMessageId || "",
+        errorMessage: historyMessage.errorMessage || ""
+      };
+      const mensagens = [...(existing.mensagens || []), message].sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))).slice(-60);
+      const lastInbound = [...mensagens].reverse().find((item) => item.direction === "in");
+      const lastMessage = mensagens[mensagens.length - 1];
+      byPhone.set(phone, {
+        ...existing,
+        nome: existing.nome || historyMessage.customerName || "Cliente WhatsApp",
+        ultimaMensagem: lastInbound?.text || lastMessage?.text || "Mensagem recebida",
+        ultimaInteracao: lastInbound?.createdAt || lastMessage?.createdAt || historyMessage.createdAt,
+        updatedAt: lastMessage?.createdAt || historyMessage.createdAt,
+        mensagens
+      });
+    }
+    return { conversas: [...byPhone.values()] };
   }
 }
 
