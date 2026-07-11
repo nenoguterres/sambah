@@ -12,7 +12,7 @@ export class WhatsAppConversationService {
   }
 
   async list() {
-    const data = await this.#syncFromMessageHistory(await this.#read());
+    const data = await this.#safeSyncFromMessageHistory(await this.#read());
     const conversations = data.conversas.map((item) => this.#withPriority(item));
     return {
       ok: true,
@@ -379,6 +379,18 @@ export class WhatsAppConversationService {
     }
     if (changed) await this.#write(next);
     return next;
+  }
+
+  async #safeSyncFromMessageHistory(data) {
+    try {
+      return await this.#syncFromMessageHistory(data);
+    } catch (error) {
+      console.info("whatsapp.conversations.sync_history_failed", {
+        status: "sync_history_failed",
+        error: String(error?.code || error?.message || error)
+      });
+      return data;
+    }
   }
 
   async #readMessageHistory() {
