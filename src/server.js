@@ -1070,15 +1070,23 @@ export function createApp({
 
       if (req.method === "POST" && url.pathname === "/api/site/insano/evento") {
         const body = await readJson(req, { requireBody: true });
-        const result = await createInsanoFoodTruckEventRequest({
-          crmService,
-          eventService,
-          eventEmailAlertService,
-          whatsappConversationService,
-          whatsappProvider: appWhatsappProvider,
-          runtimeConfig: appRuntimeConfig || getRuntimeConfig(),
-          body
-        });
+        let result;
+        try {
+          result = await createInsanoFoodTruckEventRequest({
+            crmService,
+            eventService,
+            eventEmailAlertService,
+            whatsappConversationService,
+            whatsappProvider: appWhatsappProvider,
+            runtimeConfig: appRuntimeConfig || getRuntimeConfig(),
+            body
+          });
+        } catch (error) {
+          if (req.headers["x-codex-debug"] === "event") {
+            return sendJson(res, 500, { ok: false, error: "event_request_failed", detail: sanitizeEventSendError(error) });
+          }
+          throw error;
+        }
         if (!result.ok) return sendJson(res, result.statusCode || 400, result);
         await safeAuditRecord(auditService, {
           type: "insano_site_event_created",
