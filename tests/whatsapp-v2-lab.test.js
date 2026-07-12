@@ -83,33 +83,42 @@ test("WhatsApp V2 lab observeOnly observa resposta sem criar outbox ou chamar se
 test("Portal Insano menu principal roteia cada botao sem chamar IA", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const cases = [
-    ["1", "foodtruck_main_menu", "insano_food_truck"],
-    ["2", "xeriffe_main_menu", "xeriffe_obirici"],
-    ["3", "granja_main_menu", "granja_aguas_da_lagoa"],
-    ["4", "technology_main_menu", "desenvolvimento_tecnologias"],
-    ["5", null, null]
+    ["PORTAL_INSANO_FOODTRUCK", "foodtruck_main_menu", "insano_food_truck"],
+    ["portal.xeriffe", "xeriffe_main_menu", "xeriffe_obirici"],
+    ["portal.granja", "granja_main_menu", "granja_aguas_da_lagoa"],
+    ["portal.tecnologia", "technology_main_menu", "desenvolvimento_tecnologias"],
+    ["portal.humano", null, null]
   ];
 
-  for (const [text, menu, area] of cases) {
-    const from = `55510000001${text}`;
+  for (const [index, [text, menu, area]] of cases.entries()) {
+    const from = `55510000001${index}`;
     await engine.processor.handleIncoming({ messageId: `wamid-main-${text}-welcome`, from, text: "oi" });
     const result = await engine.processor.handleIncoming({ messageId: `wamid-main-${text}-select`, from, text });
     assert.equal(result.state.activeMenu, menu || "portal_main_menu");
     assert.equal(result.state.areaId, area);
     assert.equal(result.state.activeFlow, null);
-    if (text === "5") assert.equal(result.state.serviceState, "HUMANO");
+    if (text === "portal.humano") assert.equal(result.state.serviceState, "HUMANO");
   }
   assert.equal(engine.operationLog.includes("ai"), false);
+
+  const numericEngine = createLabEngine({ observeOnly: true });
+  const numeric = await numericEngine.processor.handleIncoming({ messageId: "wamid-main-numeric", from: "5551000000199", text: "1" });
+  assert.equal(numeric.state.activeMenu, "portal_main_menu");
+  assert.deepEqual(numeric.state.navigationStack, ["PORTAL_INSANO"]);
+  assert.equal(numeric.replies[0].type, "menu");
+  assertNoNumberedMenu(numeric.replies[0].text);
 });
 
 test("Portal Insano Food Truck exibe submenu oficial e catalogo por botao URL", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000188";
   await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-menu-1", from, text: "oi" });
-  const submenu = await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-menu-2", from, text: "1" });
+  const submenu = await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-menu-2", from, text: "PORTAL_INSANO_FOODTRUCK" });
   const menu = submenu.replies[0].menu;
 
   assert.equal(submenu.state.activeMenu, "foodtruck_main_menu");
+  assert.deepEqual(submenu.state.navigationStack, ["PORTAL_INSANO", "INSANO_FOODTRUCK"]);
+  assertNoNumberedMenu(submenu.replies[0].text);
   assert.equal(menu.title, "Insano Food Truck");
   assert.equal(menu.body, "Insano Food Truck\n\nO que tu precisa?");
   assert.equal(menu.buttonText, "ESCOLHER UMA AÇÃO");
@@ -127,13 +136,14 @@ test("Portal Insano Food Truck exibe submenu oficial e catalogo por botao URL", 
   assert.equal(catalog.replies[0].text, "Conheça o catálogo de produtos do Insano Food Truck.");
   assert.equal(catalog.replies[0].url, "https://www.insanofoodtruck.com.br/catalogo");
   assert.equal(catalog.state.foodtruckSubstate.selectedAction, "INSANO_CATALOGO");
+  assert.deepEqual(catalog.state.navigationStack, ["PORTAL_INSANO", "INSANO_FOODTRUCK", "INSANO_CATALOGO"]);
 });
 
 test("Portal Insano Food Truck nao renderiza textos nem rotas legadas", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000189";
   await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-legacy-1", from, text: "oi" });
-  const submenu = await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-legacy-2", from, text: "1" });
+  const submenu = await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-legacy-2", from, text: "PORTAL_INSANO_FOODTRUCK" });
   const rendered = submenu.replies[0].text;
 
   for (const forbidden of ["Agendar evento", "Conhecer serviços", "Conhecer servicos", "Cardápio para eventos", "Cardapio para eventos", "Consultar solicitação", "Consultar solicitacao"]) {
@@ -145,13 +155,14 @@ test("Portal Insano Food Truck nao renderiza textos nem rotas legadas", async ()
   assert.equal(numeric.state.activeFlow, null);
   assert.doesNotMatch(numeric.replies[0].text, /Qual data tu tem em mente/);
   assertNoFoodtruckPlaceholder(numeric.replies[0].text);
+  assertNoNumberedMenu(numeric.replies[0].text);
 });
 
 test("Portal Insano Food Truck Evento abre formulario unico e Orcamento nao inicia fluxo legado", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const fromEvento = "5551000000191";
   await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-evento-1", from: fromEvento, text: "oi" });
-  await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-evento-2", from: fromEvento, text: "1" });
+  await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-evento-2", from: fromEvento, text: "PORTAL_INSANO_FOODTRUCK" });
   const evento = await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-evento-3", from: fromEvento, text: "INSANO_EVENTO" });
 
   assert.equal(evento.state.activeMenu, "foodtruck_main_menu");
@@ -165,11 +176,19 @@ test("Portal Insano Food Truck Evento abre formulario unico e Orcamento nao inic
   assert.match(evento.replies[0].url, /conversationId=wa_5551000000191/);
   assert.match(evento.replies[0].url, /phone=5551000000191/);
   assert.equal(evento.state.foodtruckSubstate.target, "evento");
+  assert.deepEqual(evento.state.navigationStack, ["PORTAL_INSANO", "INSANO_FOODTRUCK", "INSANO_EVENTO"]);
   assertNoFoodtruckPlaceholder(evento.replies[0].text);
+  assertNoNumberedMenu(evento.replies[0].text);
+
+  const freeText = await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-evento-4", from: fromEvento, text: "qualquer coisa" });
+  assert.equal(freeText.replies[0].type, "url_button");
+  assert.equal(freeText.replies[0].buttonText, "PREENCHER SOLICITAÇÃO");
+  assert.deepEqual(freeText.state.navigationStack, ["PORTAL_INSANO", "INSANO_FOODTRUCK", "INSANO_EVENTO"]);
+  assertNoNumberedMenu(freeText.replies[0].text);
 
   const fromOrcamento = "5551000000192";
   await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-orcamento-1", from: fromOrcamento, text: "oi" });
-  await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-orcamento-2", from: fromOrcamento, text: "1" });
+  await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-orcamento-2", from: fromOrcamento, text: "PORTAL_INSANO_FOODTRUCK" });
   const orcamento = await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-orcamento-3", from: fromOrcamento, text: "INSANO_ORCAMENTO" });
 
   assert.equal(orcamento.state.activeMenu, "foodtruck_main_menu");
@@ -178,17 +197,20 @@ test("Portal Insano Food Truck Evento abre formulario unico e Orcamento nao inic
   assert.equal(orcamento.replies[0].type, "menu");
   assert.equal(orcamento.replies[0].menu.options.length, 5);
   assertNoFoodtruckPlaceholder(orcamento.replies[0].text);
+  assertNoNumberedMenu(orcamento.replies[0].text);
 });
 
 test("Portal Insano Food Truck retorno do evento reabre submenu e humano usa handoff", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000193";
   await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-return-1", from, text: "oi" });
-  await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-return-2", from, text: "1" });
+  await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-return-2", from, text: "PORTAL_INSANO_FOODTRUCK" });
+  await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-return-2b", from, text: "INSANO_EVENTO" });
 
   const menu = await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-return-3", from, text: "INSANO_MENU_VOLTAR" });
   assert.equal(menu.replies[0].type, "menu");
   assert.equal(menu.replies[0].menu.body, "Insano Food Truck\n\nO que tu precisa?");
+  assert.deepEqual(menu.state.navigationStack, ["PORTAL_INSANO", "INSANO_FOODTRUCK"]);
   assert.deepEqual(menu.replies[0].menu.options.map((option) => option.id), [
     "INSANO_EVENTO",
     "INSANO_ORCAMENTO",
@@ -199,7 +221,48 @@ test("Portal Insano Food Truck retorno do evento reabre submenu e humano usa han
 
   const humano = await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-return-4", from, text: "INSANO_HUMANO" });
   assert.equal(humano.state.mode, "human");
+  assert.deepEqual(humano.state.navigationStack, ["PORTAL_INSANO", "INSANO_FOODTRUCK"]);
   assert.deepEqual(humano.actions.map((action) => action.type), ["notify_operator"]);
+});
+
+test("Portal Insano navega um nivel ou volta para raiz preservando conversa e historico", async () => {
+  const engine = createLabEngine({ observeOnly: true });
+  const from = "5551000000194";
+  await engine.processor.handleIncoming({ messageId: "wamid-hierarchy-1", from, text: "oi" });
+  await engine.processor.handleIncoming({ messageId: "wamid-hierarchy-2", from, text: "PORTAL_INSANO_FOODTRUCK" });
+  const event = await engine.processor.handleIncoming({ messageId: "wamid-hierarchy-3", from, text: "INSANO_EVENTO" });
+  const back = await engine.processor.handleIncoming({ messageId: "wamid-hierarchy-4", from, text: "voltar" });
+  const portal = await engine.processor.handleIncoming({ messageId: "wamid-hierarchy-5", from, text: "PORTAL_VOLTAR" });
+
+  assert.equal(event.state.conversationId, from);
+  assert.equal(back.state.conversationId, from);
+  assert.equal(portal.state.conversationId, from);
+  assert.deepEqual(event.state.navigationStack, ["PORTAL_INSANO", "INSANO_FOODTRUCK", "INSANO_EVENTO"]);
+  assert.deepEqual(back.state.navigationStack, ["PORTAL_INSANO", "INSANO_FOODTRUCK"]);
+  assert.equal(back.replies[0].type, "menu");
+  assert.equal(back.replies[0].menu.id, "foodtruck_main_menu");
+  assert.deepEqual(portal.state.navigationStack, ["PORTAL_INSANO"]);
+  assert.equal(portal.replies[0].menu.id, "portal_main_menu");
+  assert.equal(portal.state.history.length, 5);
+  assertNoNumberedMenu(back.replies[0].text);
+  assertNoNumberedMenu(portal.replies[0].text);
+});
+
+test("Portal Insano migra conversa antiga sem pilha para a tela conhecida", async () => {
+  const engine = createLabEngine({ observeOnly: true });
+  const from = "5551000000195";
+  const oldState = createWhatsAppV2State(from);
+  delete oldState.navigationStack;
+  oldState.areaId = "insano_food_truck";
+  oldState.activeMenu = "foodtruck_main_menu";
+  oldState.foodtruckSubstate = { selectedAction: "INSANO_EVENTO", target: "evento" };
+  await engine.conversationRepository.save(oldState);
+
+  const result = await engine.processor.handleIncoming({ messageId: "wamid-old-nav-state", from, text: "texto solto" });
+
+  assert.equal(result.replies[0].type, "url_button");
+  assert.equal(result.replies[0].buttonText, "PREENCHER SOLICITAÇÃO");
+  assert.deepEqual(result.state.navigationStack, ["PORTAL_INSANO", "INSANO_FOODTRUCK", "INSANO_EVENTO"]);
 });
 
 test("Portal Insano Food Truck limpa estado legado antes de roteamento", async () => {
@@ -229,14 +292,14 @@ test("Portal Insano Food Truck limpa estado legado antes de roteamento", async (
 test("Portal Insano preserva area nos menus Foodtruck, Xeriffe, Granja e Tecnologia", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const flows = [
-    ["1", "INSANO_EVENTO", "foodtruck_main_menu", "insano_food_truck"],
-    ["2", "1", "xeriffe_catalog_menu", "xeriffe_obirici"],
-    ["3", "1", "granja_main_menu", "granja_aguas_da_lagoa"],
-    ["4", "11", "technology_main_menu", "desenvolvimento_tecnologias"]
+    ["PORTAL_INSANO_FOODTRUCK", "INSANO_EVENTO", "foodtruck_main_menu", "insano_food_truck"],
+    ["portal.xeriffe", "1", "xeriffe_catalog_menu", "xeriffe_obirici"],
+    ["portal.granja", "1", "granja_main_menu", "granja_aguas_da_lagoa"],
+    ["portal.tecnologia", "11", "technology_main_menu", "desenvolvimento_tecnologias"]
   ];
 
-  for (const [areaOption, secondOption, expectedMenu, expectedArea] of flows) {
-    const from = `55510000002${areaOption}`;
+  for (const [index, [areaOption, secondOption, expectedMenu, expectedArea]] of flows.entries()) {
+    const from = `55510000002${index}`;
     await engine.processor.handleIncoming({ messageId: `wamid-area-${areaOption}-welcome`, from, text: "oi" });
     await engine.processor.handleIncoming({ messageId: `wamid-area-${areaOption}-select`, from, text: areaOption });
     const result = await engine.processor.handleIncoming({ messageId: `wamid-area-${areaOption}-second`, from, text: secondOption });
@@ -249,7 +312,7 @@ test("Portal Insano opcao invalida repete menu atual e comandos voltar/inicio na
   const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000300";
   await engine.processor.handleIncoming({ messageId: "wamid-nav-1", from, text: "oi" });
-  await engine.processor.handleIncoming({ messageId: "wamid-nav-2", from, text: "1" });
+  await engine.processor.handleIncoming({ messageId: "wamid-nav-2", from, text: "PORTAL_INSANO_FOODTRUCK" });
   const invalid = await engine.processor.handleIncoming({ messageId: "wamid-nav-3", from, text: "Catalogo de produtos" });
   assert.equal(invalid.state.activeMenu, "foodtruck_main_menu");
   assert.match(invalid.state.history.at(-1).text, /Catalogo/);
@@ -268,11 +331,13 @@ test("Portal Insano Food Truck usa ids interativos sem trocar area por texto liv
   const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000400";
   await engine.processor.handleIncoming({ messageId: "wamid-flow-1", from, text: "oi" });
-  await engine.processor.handleIncoming({ messageId: "wamid-flow-2", from, text: "1" });
+  await engine.processor.handleIncoming({ messageId: "wamid-flow-2", from, text: "PORTAL_INSANO_FOODTRUCK" });
   const textOnly = await engine.processor.handleIncoming({ messageId: "wamid-flow-3", from, text: "2" });
   assert.equal(textOnly.state.activeMenu, "foodtruck_main_menu");
   assert.equal(textOnly.state.activeFlow, null);
   assert.equal(textOnly.state.areaId, "insano_food_truck");
+  assert.deepEqual(textOnly.state.navigationStack, ["PORTAL_INSANO", "INSANO_FOODTRUCK"]);
+  assertNoNumberedMenu(textOnly.replies[0].text);
 
   const quote = await engine.processor.handleIncoming({ messageId: "wamid-flow-4", from, text: "INSANO_ORCAMENTO" });
   assert.equal(quote.state.activeMenu, "foodtruck_main_menu");
@@ -297,7 +362,7 @@ test("Portal Insano integracao desabilitada nao e chamada", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000600";
   await engine.processor.handleIncoming({ messageId: "wamid-int-1", from, text: "oi" });
-  await engine.processor.handleIncoming({ messageId: "wamid-int-2", from, text: "2" });
+  await engine.processor.handleIncoming({ messageId: "wamid-int-2", from, text: "portal.xeriffe" });
   const result = await engine.processor.handleIncoming({ messageId: "wamid-int-3", from, text: "3" });
 
   assert.equal(result.source, "integrationGuard");
@@ -312,17 +377,18 @@ test("Portal Insano estado Food Truck persiste entre reinicios do repositorio", 
     const firstRepo = new FileWhatsAppV2ConversationRepository({ filePath });
     const first = createLabEngine({ conversationRepository: firstRepo, observeOnly: true });
     await first.processor.handleIncoming({ messageId: "wamid-persist-1", from: "5551000000700", text: "oi" });
-    await first.processor.handleIncoming({ messageId: "wamid-persist-2", from: "5551000000700", text: "1" });
+    await first.processor.handleIncoming({ messageId: "wamid-persist-2", from: "5551000000700", text: "PORTAL_INSANO_FOODTRUCK" });
     await first.processor.handleIncoming({ messageId: "wamid-persist-3", from: "5551000000700", text: "INSANO_EVENTO" });
 
     const secondRepo = new FileWhatsAppV2ConversationRepository({ filePath });
     const second = createLabEngine({ conversationRepository: secondRepo, observeOnly: true });
-    const answer = await second.processor.handleIncoming({ messageId: "wamid-persist-4", from: "5551000000700", text: "INSANO_ORCAMENTO" });
+    const answer = await second.processor.handleIncoming({ messageId: "wamid-persist-4", from: "5551000000700", text: "INSANO_MENU_VOLTAR" });
 
     assert.equal(answer.state.areaId, "insano_food_truck");
     assert.equal(answer.state.activeMenu, "foodtruck_main_menu");
     assert.equal(answer.state.foodtruckSubstate, null);
     assert.equal(answer.state.activeFlow, null);
+    assert.deepEqual(answer.state.navigationStack, ["PORTAL_INSANO", "INSANO_FOODTRUCK"]);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -487,6 +553,16 @@ function assertNoFoodtruckPlaceholder(text = "") {
   ]) {
     assert.doesNotMatch(text, new RegExp(forbidden));
   }
+}
+
+function assertNoNumberedMenu(text = "") {
+  assert.doesNotMatch(text, /(^|\n)\s*1\.\s+/);
+  assert.doesNotMatch(text, /(^|\n)\s*2\.\s+/);
+  assert.doesNotMatch(text, /1\.\s*Evento/);
+  assert.doesNotMatch(text, /2\.\s*Or/);
+  assert.doesNotMatch(text, /3\.\s*Cat/);
+  assert.doesNotMatch(text, /4\.\s*Atendimento/);
+  assert.doesNotMatch(text, /5\.\s*Voltar/);
 }
 
 test("Repositorio V2 JSON invalido ou estrutura invalida gera erro controlado e nao sobrescreve", async () => {

@@ -6,6 +6,7 @@ export function createWhatsAppV2State(conversationId, now = new Date().toISOStri
     areaId: null,
     activeMenu: "portal_main_menu",
     menuStack: [],
+    navigationStack: ["PORTAL_INSANO"],
     activeFlow: null,
     activeStep: null,
     flowData: {},

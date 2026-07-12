@@ -23,9 +23,9 @@ export const portalInsanoContract = {
       id: "portal_main_menu",
       title: "Portal Insano",
       body: "Escolha uma area para continuar:",
-      fallbackText: "1. Insano Food Truck\n2. Xeriffe Obirici\n3. Granja Aguas da Lagoa\n4. Desenvolvimento de Tecnologias\n5. Atendimento Humano",
+      strictInteractiveIds: true,
       options: [
-        option("portal.foodtruck", 1, "Insano Food Truck", { type: "open_menu", target: "foodtruck_main_menu", areaId: "insano_food_truck" }),
+        option("PORTAL_INSANO_FOODTRUCK", 1, "Insano Food Truck", { type: "open_menu", target: "foodtruck_main_menu", areaId: "insano_food_truck" }),
         option("portal.xeriffe", 2, "Xeriffe Obirici", { type: "open_menu", target: "xeriffe_main_menu", areaId: "xeriffe_obirici" }),
         option("portal.granja", 3, "Granja Aguas da Lagoa", { type: "open_menu", target: "granja_main_menu", areaId: "granja_aguas_da_lagoa" }),
         option("portal.tecnologia", 4, "Desenvolvimento de Tecnologias", { type: "open_menu", target: "technology_main_menu", areaId: "desenvolvimento_tecnologias" }),
@@ -38,7 +38,6 @@ export const portalInsanoContract = {
       body: "Insano Food Truck\n\nO que tu precisa?",
       buttonText: "ESCOLHER UMA AÇÃO",
       strictInteractiveIds: true,
-      fallbackText: "1. Evento\n2. Orçamento\n3. Catálogo de produtos\n4. Atendimento Humano\n5. Voltar ao Portal Insano",
       options: [
         option("INSANO_EVENTO", 1, "Evento", { type: "open_url_button", target: "integration.insano_food_truck.event_form_url" }),
         option("INSANO_ORCAMENTO", 2, "Orçamento", { type: "open_menu", target: "foodtruck_main_menu" }),
