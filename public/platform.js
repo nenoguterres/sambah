@@ -264,6 +264,11 @@ async function submitEventRequest(form) {
     result.textContent = body.error || "Nao foi possivel enviar a solicitacao.";
     return;
   }
+  if (body.emailSend && body.emailSend.ok !== true) {
+    sendButton.disabled = false;
+    result.textContent = "Nao foi possivel enviar o email da solicitacao. Tenta novamente em alguns instantes.";
+    return;
+  }
   localStorage.setItem(`insano:event-submitted:${data.submissionId}`, body.id || "sent");
   app.innerHTML = eventSuccessMarkup();
 }
