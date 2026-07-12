@@ -23,7 +23,7 @@ function crmFiles(dir) {
   };
 }
 
-async function makeServer({ smtpClient = null, env = {} } = {}) {
+async function makeServer({ smtpClient = null, env = {}, whatsappProvider = null, runtimeConfig = null } = {}) {
   const dir = await mkdtemp(join(tmpdir(), "sambha-insano-event-"));
   const eventService = new EventScheduleService({ leadsFile: join(dir, "event-leads.json"), servicesFile: join(dir, "services.json") });
   const eventEmailAlertService = new EventEmailAlertService({
@@ -40,7 +40,9 @@ async function makeServer({ smtpClient = null, env = {} } = {}) {
     crmService: new CrmService({ files: crmFiles(dir), whatsappNumber: "5551980413745" }),
     eventService,
     eventEmailAlertService,
-    whatsappConversationService
+    whatsappConversationService,
+    ...(whatsappProvider ? { whatsappProvider } : {}),
+    ...(runtimeConfig ? { runtimeConfig } : {})
   });
   await new Promise((resolve) => server.listen(0, resolve));
   return {
@@ -174,6 +176,58 @@ test("falha de SMTP preserva solicitação e marca alerta como FAILED sem duplic
     assert.equal(alerts.length, 1);
     assert.equal(alerts[0].status, "FAILED");
     assert.doesNotMatch(alerts[0].error, /secret-password/);
+  } finally {
+    await app.close();
+  }
+});
+
+test("falha no retorno WhatsApp nao bloqueia email do formulario Evento", async () => {
+  const smtpCalls = [];
+  const app = await makeServer({
+    env: {
+      EVENT_SMTP_HOST: "smtp.test",
+      EVENT_SMTP_PORT: "587",
+      EVENT_SMTP_USER: "sambah@test.local",
+      EVENT_SMTP_PASSWORD: "secret-password",
+      EVENT_EMAIL_FROM: "sambah@test.local"
+    },
+    smtpClient: async (message) => {
+      smtpCalls.push(message);
+      return "smtp-message-whatsapp-failed";
+    },
+    whatsappProvider: {
+      sendMessage: async () => {
+        throw new Error("Meta Bearer SECRET_TOKEN_123456789012345678901234 failure");
+      }
+    },
+    runtimeConfig: {
+      whatsappBusiness: { sendEnabled: true },
+      whatsappNumber: "5551980413745",
+      publicBaseUrl: "https://sambah.onrender.com"
+    }
+  });
+  try {
+    const response = await fetch(`${app.base}/api/site/insano/evento`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(validPayload({ submissionId: "event_form_test_whatsapp_failed" }))
+    });
+    const body = await response.json();
+    assert.equal(response.status, 201);
+    assert.equal(body.ok, true);
+    assert.equal(body.emailAlert.status, "SENT");
+    assert.equal(body.emailAlert.to, "chefnenogutterres@gmail.com,kdoiegutterresgastronomia@gmail.com");
+    assert.equal(body.emailSend.ok, true);
+    assert.equal(body.whatsappSent, false);
+    assert.equal(smtpCalls.length, 1);
+    assert.equal(smtpCalls[0].to, "chefnenogutterres@gmail.com,kdoiegutterresgastronomia@gmail.com");
+
+    const conversations = JSON.parse(await readFile(join(app.dir, "conversas.json"), "utf8"));
+    const conversa = conversations.conversas.find((item) => item.id === "wa_5551987654321");
+    const returnMessage = conversa.mensagens.find((item) => item.correlationId === "insano-event-return:event_form_test_whatsapp_failed");
+    assert.ok(returnMessage);
+    assert.equal(returnMessage.status, "whatsapp_return_failed");
+    assert.doesNotMatch(returnMessage.errorMessage, /SECRET_TOKEN/);
   } finally {
     await app.close();
   }

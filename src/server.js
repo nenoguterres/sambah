@@ -2177,7 +2177,7 @@ async function createInsanoFoodTruckEventRequest({
     }
   };
   const humanMode = isHumanConversation(conversation?.conversa);
-  const sendResult = humanMode ? { ok: false, sent: false, status: "human_mode_no_auto_reply", metaMessageType: "menu" } : await sendEventWhatsappReturn({ whatsappProvider, runtimeConfig, phone: payload.originalPhone || payload.phone, message: interactiveReturn });
+  const sendResult = humanMode ? { ok: false, sent: false, status: "human_mode_no_auto_reply", metaMessageType: "menu" } : await safeSendEventWhatsappReturn({ whatsappProvider, runtimeConfig, phone: payload.originalPhone || payload.phone, message: interactiveReturn });
   if (!humanMode && conversationId && whatsappConversationService?.recordOutgoing) {
     await whatsappConversationService.recordOutgoing(conversationId, {
       text: whatsappReturn,
@@ -2897,6 +2897,29 @@ async function sendEventWhatsappReturn({ whatsappProvider, runtimeConfig = getRu
   const canSend = Boolean(runtimeConfig.whatsappBusiness?.sendEnabled && whatsappProvider?.sendMessage && phone && message);
   if (!canSend) return { ok: false, sent: false, status: "registrada_sem_envio", metaMessageType: message?.type || "menu" };
   return whatsappProvider.sendMessage({ to: phone, message });
+}
+
+async function safeSendEventWhatsappReturn(args = {}) {
+  try {
+    return await sendEventWhatsappReturn(args);
+  } catch (error) {
+    return {
+      ok: false,
+      sent: false,
+      status: "whatsapp_return_failed",
+      metaMessageType: args.message?.type || "menu",
+      error: sanitizeEventSendError(error)
+    };
+  }
+}
+
+function sanitizeEventSendError(error = "") {
+  return String(error?.message || error || "whatsapp_return_failed")
+    .replace(/Bearer\s+\S+/gi, "Bearer [masked]")
+    .replace(/(access_token=)[^&\s]+/gi, "$1[masked]")
+    .replace(/(token|authorization|secret|password|senha)\s*[:=]\s*["']?[^"',\s}]+/gi, "$1: [masked]")
+    .replace(/[A-Za-z0-9_-]{24,}/g, "[masked]")
+    .slice(0, 300);
 }
 
 function buildInsanoEventWhatsappReturn(payload = {}) {
