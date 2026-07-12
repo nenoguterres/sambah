@@ -58,6 +58,8 @@ async function loadConversas() {
     const data = await response.json();
     if (!data.ok) throw new Error(data.error || "Erro ao carregar conversas");
     state.items = data.items || [];
+    const requestedId = new URLSearchParams(location.search).get("conversationId") || "";
+    if (!state.selectedId && requestedId) state.selectedId = requestedId;
     if (!state.selectedId && state.items[0]) state.selectedId = state.items[0].id;
     renderList();
     if (state.selectedId) await openConversation(state.selectedId, { silent: true });

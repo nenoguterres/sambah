@@ -5,6 +5,7 @@ import { dirname } from "node:path";
 const DEFAULT_LEADS_FILE = "data/event-leads.json";
 const DEFAULT_SERVICES_FILE = "data/insano-services.json";
 const VALID_STATUSES = new Set([
+  "AGUARDANDO_ANALISE",
   "new",
   "needs_info",
   "pre_reserved",
@@ -117,9 +118,15 @@ export class EventScheduleService {
     const service = event.service || input.service || formData.service || inferService(type, input.message || input.text || input.notes || "");
     return {
       id: input.id || `event_${crypto.randomUUID()}`,
+      eventRequestId: input.eventRequestId || input.id || "",
       externalId: input.externalId || input.eventId || null,
       source: input.source || input.channel || "samBah!",
       status: VALID_STATUSES.has(input.status) ? input.status : "new",
+      conversationId: input.conversationId || formData.conversationId || "",
+      telefoneOriginal: input.telefoneOriginal || input.originalPhone || formData.originalPhone || input.from || "",
+      telefoneContato: input.telefoneContato || input.contactPhone || formData.contactPhone || input.phone || formData.phone || "",
+      telefone: input.telefone || input.phone || input.from || formData.phone || "",
+      submittedAt: input.submittedAt || now,
       customer: {
         name: customer.name || input.name || formData.name || "",
         phone: customer.phone || input.phone || input.from || formData.phone || "",
@@ -132,9 +139,16 @@ export class EventScheduleService {
         time: event.time || formData.time || "",
         location: event.location || event.place || formData.place || formData.location || "",
         people: normalizePeople(event.people ?? formData.people),
+        startsAt: event.startsAt || formData.startsAt || "",
+        endsAt: event.endsAt || formData.endsAt || "",
+        endTimeUndefined: Boolean(event.endTimeUndefined || formData.endTimeUndefined),
+        city: event.city || formData.city || "",
         service,
         notes: event.notes || input.message || input.text || input.notes || formData.message || formData.celebration || ""
       },
+      origin: input.origin || formData.origin || "",
+      alert: input.alert || null,
+      formData,
       createdAt: input.createdAt || now,
       updatedAt: input.updatedAt || now,
       history: addHistory(input.history || [], "created", "Lead registrado na Agenda Insano", this.now)

@@ -1,16 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AuditService } from "../src/auditService.js";
 import { CrmService } from "../src/crmService.js";
 import { EventScheduleService } from "../src/eventScheduleService.js";
+import { EventEmailAlertService } from "../src/eventEmailAlertService.js";
 import { MenuSyncService } from "../src/menuSyncService.js";
 import { MesaIntegrationService } from "../src/mesaIntegrationService.js";
 import { OrderDraftService } from "../src/orderDraftService.js";
 import { OrderTrackingService } from "../src/orderTrackingService.js";
 import { createApp } from "../src/server.js";
+import { WhatsAppConversationService } from "../src/whatsappConversationService.js";
 
 function crmFiles(dir) {
   return {
@@ -276,9 +278,11 @@ test("plataformas externas, cardapios, mesa, garcom e cozinha respondem", async 
     leadsFile: join(dir, "event-leads.json"),
     servicesFile: join(dir, "insano-services.json")
   });
+  const eventEmailAlertService = new EventEmailAlertService({ filePath: join(dir, "event-email-alerts.json") });
+  const whatsappConversationService = new WhatsAppConversationService({ filePath: join(dir, "whatsapp-conversas.json") });
   const trackingService = new OrderTrackingService({ filePath: join(dir, "tracking.json") });
   const crmService = new CrmService({ files: crmFiles(dir), whatsappNumber: "5551980413745" });
-  const server = createApp({ auditService, menuService, draftService, mesaService, eventService, trackingService, crmService });
+  const server = createApp({ auditService, menuService, draftService, mesaService, eventService, eventEmailAlertService, whatsappConversationService, trackingService, crmService });
   await new Promise((resolve) => server.listen(0, resolve));
   const { port } = server.address();
   const base = `http://127.0.0.1:${port}`;
@@ -376,20 +380,37 @@ test("plataformas externas, cardapios, mesa, garcom e cozinha respondem", async 
     assert.match(insanoPedido.whatsappUrl, /^https:\/\/wa\.me\/5551980413745/);
 
     const insanoEvento = await post("/api/site/insano/evento", {
+      conversationId: "wa_555197000009",
       nome: "Evento Wix Insano",
+      telefoneOriginal: "51970000009",
       whatsapp: "51970000009",
-      data: "20/06/2026",
+      data: "25/08/2026",
       local: "Porto Alegre",
+      cidade: "Porto Alegre",
       pessoas: "90",
+      horarioInicio: "18:00",
+      horarioTermino: "23:00",
       tipo_evento: "executivo",
       page: "/service-page/insano",
       observacoes: "Evento executivo com churrascaria"
     });
     assert.equal(insanoEvento.ok, true);
     assert.equal(insanoEvento.operation, "Insano");
-    assert.equal(insanoEvento.pipeline, "orcamento_corporativo");
-    assert.equal(insanoEvento.lead.origem, "insanofoodtruck.com.br");
+    assert.equal(insanoEvento.pipeline, "food_truck_evento");
+    assert.equal(insanoEvento.status, "AGUARDANDO_ANALISE");
+    assert.equal(insanoEvento.lead.source, "WHATSAPP_PORTAL_INSANO_FOODTRUCK_EVENTO");
+    assert.equal(insanoEvento.crm.lead.origem, "insanofoodtruck.com.br");
+    assert.equal(insanoEvento.emailAlert.to, "chefnenogutterres@gmail.com");
+    assert.match(insanoEvento.emailAlert.subject, /\[NOVO EVENTO\] 25\/08\/2026 — Porto Alegre — 90 pessoas/);
+    assert.match(insanoEvento.conversationUrl, /\/conversas\?conversationId=wa_555197000009/);
     assert.match(insanoEvento.whatsappUrl, /^https:\/\/wa\.me\/5551980413745/);
+    const eventLeads = JSON.parse(await readFile(join(dir, "event-leads.json"), "utf8"));
+    assert.equal(eventLeads[0].status, "AGUARDANDO_ANALISE");
+    assert.equal(eventLeads[0].conversationId, "wa_555197000009");
+    assert.equal(eventLeads[0].event.startsAt, "18:00");
+    const emailAlerts = JSON.parse(await readFile(join(dir, "event-email-alerts.json"), "utf8"));
+    assert.equal(emailAlerts[0].to, "chefnenogutterres@gmail.com");
+    assert.match(emailAlerts[0].body, /ABRIR CONVERSA NO SAMBAH/);
 
     const insanoWhatsapp = await post("/api/site/insano/whatsapp", {
       nome: "WhatsApp Wix Insano",
@@ -427,7 +448,7 @@ test("plataformas externas, cardapios, mesa, garcom e cozinha respondem", async 
 
     const resumo = await fetch(`${base}/api/crm/resumo`).then((response) => response.json());
     assert.ok(resumo.leadsInsanoSite.some((item) => item.id === insanoLead.id));
-    assert.ok(resumo.leadsInsanoSite.some((item) => item.id === insanoEvento.id));
+    assert.ok(resumo.leadsInsanoSite.some((item) => item.id === insanoEvento.crm.lead.id));
 
     const crmHtml = await fetch(`${base}/crm.js`).then((response) => response.text());
     assert.match(crmHtml, /Leads vindos do site Insano/);
@@ -556,15 +577,20 @@ test("Portal Insano cria pedidos, eventos, empresas, Xeriffe e WhatsApp sem expo
       type: "empresa",
       customerName: "Empresa Portal",
       nome: "Empresa Portal",
+      telefoneOriginal: "51971000005",
       phone: "51971000005",
       whatsapp: "51971000005",
-      data: "21/06/2026",
+      data: "25/08/2026",
+      local: "Centro de Eventos",
+      cidade: "Porto Alegre",
       quantidade_pessoas: "90",
+      horarioInicio: "14:00",
+      terminoADefinir: true,
       notes: "Coffee break",
       createdAt: old,
       atualizado_em: old
     });
-    assert.equal(empresa.pipeline, "orcamento_corporativo");
+    assert.equal(empresa.pipeline, "food_truck_evento");
 
     const xeriffe = await post("/api/site/lead", {
       operation: "Buteco Xeriffe",
@@ -601,7 +627,7 @@ test("Portal Insano cria pedidos, eventos, empresas, Xeriffe e WhatsApp sem expo
     assert.ok(oportunidades.items.some((item) => item.recordId === retirar.precomanda.id));
     assert.ok(oportunidades.items.some((item) => item.recordId === mesa.precomanda.id));
     assert.ok(oportunidades.items.some((item) => item.recordId === evento.id));
-    assert.ok(oportunidades.items.some((item) => item.recordId === empresa.id));
+    assert.ok(oportunidades.items.some((item) => item.recordId === empresa.crm.lead.id));
     assert.ok(oportunidades.items.some((item) => item.recordId === xeriffe.id));
     assert.ok(oportunidades.items.some((item) => item.recordId === whatsapp.id));
 
@@ -769,17 +795,21 @@ test("operacao diaria completa cobre Insano, evento, festa Xeriffe, mesa e dashb
 
     const insanoEvento = await post("/api/site/insano/evento", {
       nome: "Operacao Evento Insano",
+      telefoneOriginal: "51980000002",
       whatsapp: "51980000002",
-      data: "20/06/2026",
+      data: "26/08/2026",
       local: "Porto Alegre",
+      cidade: "Porto Alegre",
       pessoas: "120",
+      horarioInicio: "18:00",
+      horarioTermino: "23:00",
       tipo_evento: "executivo",
       observacoes: "Churrasco Insano corporativo",
       valor_estimado: 12000
     });
-    assert.equal(insanoEvento.pipeline, "orcamento_corporativo");
-    await post(`/api/crm/leads/${encodeURIComponent(insanoEvento.lead.id)}/mark-quote-sent`);
-    const closedInsano = await post(`/api/crm/leads/${encodeURIComponent(insanoEvento.lead.id)}/mark-won`);
+    assert.equal(insanoEvento.pipeline, "food_truck_evento");
+    await post(`/api/crm/leads/${encodeURIComponent(insanoEvento.crm.lead.id)}/mark-quote-sent`);
+    const closedInsano = await post(`/api/crm/leads/${encodeURIComponent(insanoEvento.crm.lead.id)}/mark-won`);
     assert.equal(closedInsano.item.status, "fechado");
     assert.equal(closedInsano.item.valorFechado, 12000);
 

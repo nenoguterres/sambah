@@ -8,6 +8,7 @@ import { AuditService } from "./auditService.js";
 import { CallCenterService } from "./callCenterService.js";
 import { CrmService } from "./crmService.js";
 import { EventScheduleService } from "./eventScheduleService.js";
+import { EventEmailAlertService } from "./eventEmailAlertService.js";
 import { InsanoWorkhubController } from "./insanoWorkhubController.js";
 import { InsanoWorkhubService } from "./insanoWorkhubService.js";
 import { buildMesaOrder, MesaIntegrationService } from "./mesaIntegrationService.js";
@@ -50,6 +51,7 @@ const whatsappConversations = new WhatsAppConversationService({
 });
 const drafts = new OrderDraftService({ draftsFile: dataFile("order-drafts.json"), rulesFile: dataFile("sambah-menu-rules.json") });
 const events = new EventScheduleService({ leadsFile: dataFile("event-leads.json"), servicesFile: dataFile("insano-services.json") });
+const eventEmailAlerts = new EventEmailAlertService({ filePath: dataFile("event-email-alerts.json") });
 const tracking = new OrderTrackingService({ filePath: dataFile("order-tracking.json") });
 const callCenter = new CallCenterService({
   operatorsFile: dataFile("call-center-operators.json"),
@@ -112,6 +114,7 @@ export function createApp({
   whatsappConversationService = whatsappConversations,
   draftService = drafts,
   eventService = events,
+  eventEmailAlertService = eventEmailAlerts,
   trackingService = tracking,
   perolaRouteModule = perolaRoutes,
   workhubController = insanoWorkhubController,
@@ -1064,7 +1067,16 @@ export function createApp({
 
       if (req.method === "POST" && url.pathname === "/api/site/insano/evento") {
         const body = await readJson(req, { requireBody: true });
-        const result = await createSiteEventQuote(crmService, insanoSitePayload(body, { pipeline: "orcamento_corporativo", tipo: "evento" }));
+        const result = await createInsanoFoodTruckEventRequest({
+          crmService,
+          eventService,
+          eventEmailAlertService,
+          whatsappConversationService,
+          whatsappProvider: appWhatsappProvider,
+          runtimeConfig: appRuntimeConfig || getRuntimeConfig(),
+          body
+        });
+        if (!result.ok) return sendJson(res, result.statusCode || 400, result);
         await safeAuditRecord(auditService, {
           type: "insano_site_event_created",
           status: "info",
@@ -2043,6 +2055,170 @@ async function createSiteEventQuote(crmService, body = {}) {
   });
 }
 
+async function createInsanoFoodTruckEventRequest({
+  crmService,
+  eventService,
+  eventEmailAlertService,
+  whatsappConversationService,
+  whatsappProvider,
+  runtimeConfig = getRuntimeConfig(),
+  body = {}
+} = {}) {
+  const payload = normalizeInsanoEventPayload(body);
+  const validation = validateInsanoEventPayload(payload);
+  if (!validation.ok) return { ok: false, statusCode: 400, error: "invalid_event_request", errors: validation.errors };
+  const conversationId = normalizeEventConversationId(payload.conversationId, payload.phone);
+  const eventRequestId = normalizeEventRequestId(body.eventRequestId || body.submissionId || body.requestId || "", conversationId, payload);
+  const conversationUrl = buildConversationUrl(conversationId, runtimeConfig);
+  const eventLead = await eventService.createLead({
+    id: eventRequestId,
+    eventRequestId,
+    externalId: eventRequestId,
+    source: "WHATSAPP_PORTAL_INSANO_FOODTRUCK_EVENTO",
+    origin: "WHATSAPP_PORTAL_INSANO_FOODTRUCK_EVENTO",
+    status: "AGUARDANDO_ANALISE",
+    conversationId,
+    telefoneOriginal: payload.originalPhone,
+    telefoneContato: payload.phone,
+    telefone: payload.originalPhone,
+    phone: payload.phone,
+    name: payload.name,
+    submittedAt: payload.submittedAt,
+    formType: "insano_food_truck_evento",
+    formData: {
+      conversationId,
+      originalPhone: payload.originalPhone,
+      contactPhone: payload.phone,
+      name: payload.name,
+      date: payload.date,
+      displayDate: formatBrazilianDate(payload.date),
+      location: payload.location,
+      city: payload.city,
+      people: payload.people,
+      startsAt: payload.startsAt,
+      endsAt: payload.endsAt,
+      endTimeUndefined: payload.endTimeUndefined,
+      message: payload.notes,
+      origin: "WHATSAPP_PORTAL_INSANO_FOODTRUCK_EVENTO"
+    },
+    event: {
+      type: "food_truck_event",
+      service: "Insano Food Truck",
+      date: payload.date,
+      time: payload.startsAt,
+      location: payload.location,
+      city: payload.city,
+      people: payload.people,
+      startsAt: payload.startsAt,
+      endsAt: payload.endsAt,
+      endTimeUndefined: payload.endTimeUndefined,
+      notes: payload.notes
+    }
+  });
+
+  if (eventLead.duplicated) {
+    return siteResponse({
+      id: eventLead.lead.id,
+      pipeline: "food_truck_evento",
+      operation: "Insano",
+      status: "AGUARDANDO_ANALISE",
+      whatsappUrl: "",
+      whatsappMessage: buildInsanoEventWhatsappReturn(payload),
+      confirmation: buildInsanoEventConfirmation(),
+      lead: eventLead.lead,
+      duplicate: true,
+      conversationId,
+      conversationUrl
+    });
+  }
+
+  const crmResult = await createSiteEventQuote(crmService, insanoSitePayload({
+    ...body,
+    nome: payload.name,
+    whatsapp: payload.phone,
+    data: payload.date,
+    local: payload.location,
+    cidade: payload.city,
+    quantidade_pessoas: payload.people,
+    pessoas: payload.people,
+    tipo_evento: "Insano Food Truck",
+    observacoes: payload.notes,
+    message: payload.notes,
+    pipeline: "food_truck_evento",
+    tipo: "evento"
+  }, { pipeline: "food_truck_evento", tipo: "evento" }));
+
+  const conversation = await ensureEventConversation(whatsappConversationService, payload, conversationId);
+  const internalSummary = buildInsanoEventInternalSummary(payload);
+  if (conversationId && whatsappConversationService?.recordOutgoing) {
+    await whatsappConversationService.recordOutgoing(conversationId, {
+      text: internalSummary,
+      status: "registro_interno",
+      metaMessageType: "internal_event",
+      correlationId: `insano-event-summary:${eventLead.lead.id}`
+    });
+  }
+  const whatsappReturn = buildInsanoEventWhatsappReturn(payload);
+  const interactiveReturn = {
+    type: "menu",
+    text: whatsappReturn,
+    menu: {
+      id: "insano_evento_enviado",
+      title: "Insano Food Truck",
+      body: whatsappReturn,
+      buttonText: "ESCOLHER UMA ACAO",
+      options: [
+        { id: "INSANO_MENU_VOLTAR", order: 1, title: "VOLTAR AO INSANO FOOD TRUCK", fallbackText: "VOLTAR AO INSANO FOOD TRUCK" },
+        { id: "INSANO_HUMANO", order: 2, title: "ATENDIMENTO HUMANO", fallbackText: "ATENDIMENTO HUMANO" }
+      ]
+    }
+  };
+  const humanMode = isHumanConversation(conversation?.conversa);
+  const sendResult = humanMode ? { ok: false, sent: false, status: "human_mode_no_auto_reply", metaMessageType: "menu" } : await sendEventWhatsappReturn({ whatsappProvider, runtimeConfig, phone: payload.originalPhone || payload.phone, message: interactiveReturn });
+  if (!humanMode && conversationId && whatsappConversationService?.recordOutgoing) {
+    await whatsappConversationService.recordOutgoing(conversationId, {
+      text: whatsappReturn,
+      status: sendResult?.status || "registrada",
+      sendResult,
+      metaMessageType: sendResult?.metaMessageType || "interactive_button",
+      correlationId: `insano-event-return:${eventLead.lead.id}`
+    });
+  }
+
+  const emailAlert = await eventEmailAlertService.createAlert(buildInsanoEventEmailAlert({
+    payload,
+    leadId: eventLead.lead.id,
+    eventRequestId: eventLead.lead.id,
+    conversationId,
+    conversationUrl
+  }));
+  const emailSend = await eventEmailAlertService.sendAlert(eventLead.lead.id);
+
+  return siteResponse({
+    id: eventLead.lead.id,
+    pipeline: "food_truck_evento",
+    operation: "Insano",
+    status: "AGUARDANDO_ANALISE",
+    whatsappUrl: crmResult.whatsappUrl,
+    whatsappMessage: whatsappReturn,
+    confirmation: buildInsanoEventConfirmation(),
+    lead: eventLead.lead,
+    crm: { lead: crmResult.lead, evento: crmResult.evento },
+    emailAlert: {
+      alertId: emailAlert.alert.alertId,
+      to: emailAlert.alert.to,
+      subject: emailAlert.alert.subject,
+      status: emailSend.alert?.status || emailAlert.alert.status,
+      conversationUrl
+    },
+    emailSend: { ok: emailSend.ok, status: emailSend.alert?.status || emailAlert.alert.status, error: emailSend.error || "" },
+    whatsappSent: Boolean(sendResult?.sent),
+    humanMode,
+    conversationId,
+    conversationUrl
+  });
+}
+
 async function createSiteQuickOrder(crmService, body = {}) {
   const operation = normalizeOperation(body.operation || body.operacao || body.site || body.origem);
   const tracking = siteTrackingFields(body);
@@ -2610,6 +2786,232 @@ function siteBodyPlace(body = {}) {
 
 function siteBodyNotes(body = {}) {
   return body.observacoes || body.notes || body.observacao || body.message || body.text || formatRequestItems(body.items || body.itens) || "";
+}
+
+function normalizeInsanoEventPayload(body = {}) {
+  const endValue = body.horarioTermino || body.endsAt || body.endTime || body.termino || "";
+  const normalizedEnd = normalizeSiteText(endValue);
+  const originalPhone = normalizeSitePhone(body.telefoneOriginal || body.originalPhone || body.conversationPhone || body.from || body.phoneFromConversation || "");
+  const contactPhone = normalizeSitePhone(body.telefone || body.whatsapp || body.phone || body.customer?.phone || "");
+  const endUndefined = normalizedEnd.includes("definir") || body.endTimeUndefined === true || body.terminoADefinir === "sim" || body.terminoADefinir === true;
+  return {
+    conversationId: cleanSiteOrderText(body.conversationId || body.conversaId || ""),
+    name: cleanSiteOrderText(body.nome || body.name || body.customerName || ""),
+    originalPhone: originalPhone || contactPhone,
+    phone: contactPhone,
+    date: normalizeEventDate(body.dataEvento || body.data || body.date || body.eventDate || ""),
+    location: cleanSiteOrderText(body.local || body.endereco || body.location || body.place || ""),
+    city: cleanSiteOrderText(body.cidade || body.city || ""),
+    people: Number(body.publicoPrevisto || body.pessoas || body.people || body.quantidade_pessoas || 0) || null,
+    startsAt: cleanSiteOrderText(body.horarioInicio || body.startsAt || body.startTime || body.inicio || ""),
+    endsAt: endUndefined ? "" : cleanSiteOrderText(endValue),
+    endTimeUndefined: endUndefined,
+    notes: cleanSiteOrderText(body.duvidasObservacoes || body.observacoes || body.notes || body.message || ""),
+    submittedAt: body.submittedAt || new Date().toISOString()
+  };
+}
+
+function validateInsanoEventPayload(payload = {}) {
+  const errors = [];
+  if (!payload.name) errors.push({ field: "nome", error: "required" });
+  if (!payload.date || !isValidIsoDate(payload.date)) errors.push({ field: "dataEvento", error: "invalid_date" });
+  else if (payload.date < todayIsoDate()) errors.push({ field: "dataEvento", error: "past_date" });
+  if (!payload.location) errors.push({ field: "local", error: "required" });
+  if (!payload.city) errors.push({ field: "cidade", error: "required" });
+  if (!Number.isInteger(payload.people) || payload.people <= 0) errors.push({ field: "publicoPrevisto", error: "positive_integer_required" });
+  if (!isValidTime(payload.startsAt)) errors.push({ field: "horarioInicio", error: "invalid_time" });
+  if (!payload.endTimeUndefined && !isValidTime(payload.endsAt)) errors.push({ field: "horarioTermino", error: "required_or_a_definir" });
+  if (!payload.phone || payload.phone.length < 10) errors.push({ field: "telefone", error: "usable_phone_required" });
+  return { ok: errors.length === 0, errors };
+}
+
+function normalizeEventDate(value = "") {
+  const text = cleanSiteOrderText(value);
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return text;
+  const br = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!br) return text;
+  return `${br[3]}-${br[2].padStart(2, "0")}-${br[1].padStart(2, "0")}`;
+}
+
+function normalizeEventRequestId(value = "", conversationId = "", payload = {}) {
+  const clean = cleanSiteOrderText(value);
+  if (clean) return clean;
+  const base = [conversationId, payload.date, payload.location, payload.city, payload.people, payload.startsAt, payload.phone].join("|");
+  return `event_${crypto.createHash("sha256").update(base).digest("hex").slice(0, 24)}`;
+}
+
+function isValidIsoDate(value = "") {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function isValidTime(value = "") {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value || ""));
+}
+
+function buildConversationUrl(conversationId = "", runtimeConfig = getRuntimeConfig()) {
+  const base = getEventPublicOrigin(runtimeConfig) || String(runtimeConfig.publicBaseUrl || runtimeConfig.baseUrl || "https://insanofoodtruck.com.br").replace(/\/$/, "");
+  return conversationId ? `${base}/conversas?conversationId=${encodeURIComponent(conversationId)}` : `${base}/conversas`;
+}
+
+function getEventPublicOrigin(runtimeConfig = getRuntimeConfig()) {
+  try {
+    const configured = String(runtimeConfig.eventFormPublicUrl || "").trim();
+    if (!configured) return "";
+    return new URL(configured).origin.replace(/\/$/, "");
+  } catch {
+    return "";
+  }
+}
+
+function normalizeEventConversationId(conversationId = "", phone = "") {
+  const clean = String(conversationId || "").trim();
+  if (clean.startsWith("wa_")) return clean;
+  const digits = String(clean || phone || "").replace(/\D/g, "");
+  return digits ? `wa_${digits}` : clean;
+}
+
+async function ensureEventConversation(whatsappConversationService, payload = {}, conversationId = "") {
+  if (!whatsappConversationService || !payload.originalPhone) return null;
+  const existing = conversationId ? await whatsappConversationService.get?.(conversationId) : null;
+  if (existing?.ok) return existing;
+  return whatsappConversationService.recordNeutralIncoming?.({
+    from: payload.originalPhone,
+    telefone: payload.originalPhone,
+    nome: payload.name || "Cliente WhatsApp",
+    text: "Solicitacao de evento enviada pelo formulario do Insano Food Truck.",
+    messageId: `insano-event-form-${crypto.randomUUID()}`
+  });
+}
+
+async function sendEventWhatsappReturn({ whatsappProvider, runtimeConfig = getRuntimeConfig(), phone = "", message = null } = {}) {
+  const canSend = Boolean(runtimeConfig.whatsappBusiness?.sendEnabled && whatsappProvider?.sendMessage && phone && message);
+  if (!canSend) return { ok: false, sent: false, status: "registrada_sem_envio", metaMessageType: message?.type || "menu" };
+  return whatsappProvider.sendMessage({ to: phone, message });
+}
+
+function buildInsanoEventWhatsappReturn(payload = {}) {
+  return [
+    "Recebemos tua solicitacao de evento.",
+    "",
+    `Data: ${formatBrazilianDate(payload.date)}`,
+    `Cidade: ${payload.city || ""}`,
+    `Publico previsto: ${payload.people || ""} pessoas`,
+    "",
+    "Nossa equipe vai verificar a agenda e responder nesta mesma conversa."
+  ].join("\n");
+}
+
+function buildInsanoEventInternalSummary(payload = {}) {
+  return [
+    "Nova solicitacao de evento",
+    "",
+    `Nome: ${payload.name}`,
+    `Data: ${formatBrazilianDate(payload.date)}`,
+    `Local: ${payload.location}`,
+    `Cidade: ${payload.city}`,
+    `Publico previsto: ${payload.people} pessoas`,
+    `Horario de inicio: ${payload.startsAt}`,
+    `Horario de termino: ${payload.endTimeUndefined ? "A definir" : payload.endsAt}`,
+    `Telefone de contato: ${payload.phone}`,
+    `Observacoes: ${payload.notes || "Sem observacoes"}`,
+    "Status: Aguardando analise"
+  ].join("\n");
+}
+
+function buildInsanoEventConfirmation() {
+  return {
+    title: "Solicitacao enviada",
+    text: "Recebemos as informacoes do teu evento. Nossa equipe vai verificar a agenda e responder na mesma conversa do WhatsApp.",
+    status: "AGUARDANDO_ANALISE",
+    kind: "evento"
+  };
+}
+
+function buildInsanoEventEmailAlert({ payload = {}, leadId = "", eventRequestId = "", conversationId = "", conversationUrl = "" } = {}) {
+  const date = formatBrazilianDate(payload.date);
+  const city = payload.city || "";
+  const people = payload.people || "";
+  const subject = `[NOVO EVENTO] ${date} — ${city} — ${people} pessoas`;
+  const endTime = payload.endTimeUndefined ? "A definir" : payload.endsAt;
+  const body = [
+    "Nova solicitacao de evento recebida pelo SamBah",
+    "",
+    "Nome:",
+    payload.name || "",
+    "",
+    "Data:",
+    date,
+    "",
+    "Local ou endereco:",
+    payload.location || "",
+    "",
+    "Cidade:",
+    city,
+    "",
+    "Publico previsto:",
+    people ? `${people} pessoas` : "",
+    "",
+    "Horario de inicio:",
+    payload.startsAt || "",
+    "",
+    "Horario de termino:",
+    endTime || "",
+    "",
+    "Telefone de contato:",
+    payload.phone || "",
+    "",
+    "Observacoes:",
+    payload.notes || "Sem observacoes",
+    "",
+    "Origem:",
+    "WhatsApp — Portal Insano — Insano Food Truck — Evento",
+    "",
+    "Status:",
+    "Aguardando analise da equipe",
+    "",
+    "ABRIR CONVERSA NO SAMBAH:",
+    conversationUrl,
+    "",
+    `conversationId: ${conversationId}`,
+    `eventRequestId: ${eventRequestId || leadId}`
+  ].join("\n");
+  return {
+    to: "chefnenogutterres@gmail.com",
+    subject,
+    body,
+    conversationUrl,
+    leadId,
+    eventRequestId: eventRequestId || leadId,
+    conversationId
+  };
+}
+
+function isHumanConversation(conversa = {}) {
+  return normalizeSiteText(conversa?.status || "") === "humano" || normalizeSiteText(conversa?.serviceState || "") === "humano";
+}
+
+function formatBrazilianDate(value = "") {
+  const iso = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return iso ? `${iso[3]}/${iso[2]}/${iso[1]}` : String(value || "");
+}
+
+function normalizeSitePhone(value = "") {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function normalizeSiteText(value = "") {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
 }
 
 function normalizeSitePedidoItems(items = []) {

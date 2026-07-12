@@ -49,25 +49,51 @@ function renderMenu(op) {
 }
 
 function renderInsanoEvent() {
+  const params = new URLSearchParams(location.search);
+  const phone = params.get("phone") || "";
+  const conversationId = params.get("conversationId") || "";
+  const submissionId = eventSubmissionId(conversationId, phone);
+  if (localStorage.getItem(`insano:event-submitted:${submissionId}`)) {
+    app.innerHTML = eventSuccessMarkup();
+    return;
+  }
   app.innerHTML = `
-    ${hero("Evento Insano", "Orcamento corporativo direto para o CRM SamBah.")}
+    ${hero("Evento - Insano Food Truck", "Preenche os dados do teu evento para nossa equipe verificar a agenda e preparar o atendimento.")}
     <section class="panel">
-      <h2>Solicitar orcamento de evento</h2>
+      <h2>Solicitacao de evento</h2>
+      <p class="muted">Preenche as informacoes abaixo. Nossa equipe vai verificar a agenda e responder nesta mesma conversa do WhatsApp.</p>
       <form id="eventForm">
+        <input name="conversationId" value="${escapeHtml(conversationId)}" hidden>
+        <input name="submissionId" value="${escapeHtml(submissionId)}" hidden>
+        <input name="telefoneOriginal" value="${escapeHtml(phone)}" hidden>
         <div class="row">
-          <input name="nome" placeholder="Nome">
-          <input name="telefone" placeholder="Telefone" inputmode="tel">
+          <label>Nome do contato<input name="nome" placeholder="Nome do contato" required></label>
+          <label>Telefone de contato<input name="telefone" value="${escapeHtml(phone)}" placeholder="Telefone de contato" inputmode="tel" required></label>
         </div>
         <div class="row">
-          <input name="dataEvento" placeholder="Data do evento">
-          <input name="local" placeholder="Local">
+          <label>Data do evento<input name="dataEvento" type="date" min="${escapeHtml(todayDateInput())}" required></label>
+          <label>Publico previsto<input name="pessoas" type="number" min="1" step="1" placeholder="Apenas numero" inputmode="numeric" required></label>
         </div>
         <div class="row">
-          <input name="pessoas" placeholder="Numero de pessoas" inputmode="numeric">
-          <input name="tipoEvento" placeholder="Tipo de evento">
+          <label>Local ou endereco<input name="local" placeholder="Local ou endereco" required></label>
+          <label>Cidade<input name="cidade" placeholder="Cidade" required></label>
         </div>
-        <textarea name="observacoes" placeholder="Observacoes"></textarea>
-        <button class="primary" type="submit">Solicitar orcamento</button>
+        <div class="row">
+          <label>Horario de inicio<input name="horarioInicio" type="time" required></label>
+          <label>Horario de termino<input name="horarioTermino" type="time"></label>
+        </div>
+        <label class="inline-check"><input name="terminoADefinir" type="checkbox" value="sim"> A definir</label>
+        <label>Duvidas ou observacoes
+          <textarea name="observacoes" placeholder="Conta pra gente o que tu precisa saber ou deseja incluir na proposta."></textarea>
+        </label>
+        <div id="eventReview" class="review-box" hidden></div>
+        <div class="action-row">
+          <button class="primary" type="submit" data-event-action="review">Conferir dados</button>
+          <button class="primary" type="button" data-event-action="send" hidden>ENVIAR PARA ANALISE</button>
+          <button type="button" data-event-action="edit" hidden>CORRIGIR DADOS</button>
+          <a class="wa-link" href="/cardapio/insano">Voltar ao Insano Food Truck</a>
+          <a class="wa-link" href="https://wa.me/5551980413745?text=Atendimento%20Humano%20Insano%20Food%20Truck" data-whatsapp-url>Atendimento Humano</a>
+        </div>
         <p id="eventResult" class="result" role="status"></p>
       </form>
     </section>
@@ -189,33 +215,137 @@ async function submitOrder(event) {
 }
 
 function bindEventForm() {
-  document.querySelector("#eventForm").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const data = Object.fromEntries(new FormData(form).entries());
-    const result = document.querySelector("#eventResult");
-    result.textContent = "Salvando orcamento no CRM...";
-    const payload = {
-      nome: data.nome,
-      whatsapp: data.telefone,
-      phone: data.telefone,
-      data: data.dataEvento,
-      date: data.dataEvento,
-      local: data.local,
-      location: data.local,
-      quantidade_pessoas: data.pessoas,
-      people: data.pessoas,
-      tipo_evento: data.tipoEvento,
-      eventType: data.tipoEvento,
-      observacoes: data.observacoes,
-      message: data.observacoes,
-      page: location.pathname,
-      pipeline: "orcamento_corporativo"
-    };
-    const body = await postJson("/api/site/insano/evento", payload);
-    result.innerHTML = `Orcamento salvo no CRM. ${body.whatsappUrl ? `<a href="${body.whatsappUrl}" data-whatsapp-url>Continuar no WhatsApp</a>` : ""}`;
-    form.reset();
+  const form = document.querySelector("#eventForm");
+  const review = document.querySelector("#eventReview");
+  const submitButton = form.querySelector("[data-event-action='review']");
+  const sendButton = form.querySelector("[data-event-action='send']");
+  const editButton = form.querySelector("[data-event-action='edit']");
+  form.querySelector("[name='terminoADefinir']")?.addEventListener("change", (event) => {
+    const endInput = form.querySelector("[name='horarioTermino']");
+    endInput.disabled = event.target.checked;
+    if (event.target.checked) endInput.value = "";
   });
+  editButton.addEventListener("click", () => {
+    review.hidden = true;
+    sendButton.hidden = true;
+    editButton.hidden = true;
+    submitButton.hidden = false;
+    form.querySelectorAll("input, textarea").forEach((field) => {
+      if (field.name !== "conversationId") field.disabled = false;
+    });
+  });
+  sendButton.addEventListener("click", () => submitEventRequest(form));
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const data = Object.fromEntries(new FormData(form).entries());
+    const validation = validateEventFormData(data);
+    if (!validation.ok) {
+      document.querySelector("#eventResult").textContent = validation.message;
+      return;
+    }
+    review.hidden = false;
+    review.innerHTML = buildEventReview(data);
+    submitButton.hidden = true;
+    sendButton.hidden = false;
+    editButton.hidden = false;
+  });
+}
+
+async function submitEventRequest(form) {
+  const data = Object.fromEntries(new FormData(form).entries());
+  const result = document.querySelector("#eventResult");
+  const validation = validateEventFormData(data);
+  if (!validation.ok) {
+    result.textContent = validation.message;
+    return;
+  }
+  const sendButton = form.querySelector("[data-event-action='send']");
+  if (sendButton.disabled) return;
+  sendButton.disabled = true;
+  result.textContent = "Enviando para analise...";
+  const payload = {
+    conversationId: data.conversationId,
+    submissionId: data.submissionId,
+    telefoneOriginal: data.telefoneOriginal,
+    nome: data.nome,
+    telefone: data.telefone,
+    whatsapp: data.telefone,
+    dataEvento: data.dataEvento,
+    data: data.dataEvento,
+    local: data.local,
+    cidade: data.cidade,
+    publicoPrevisto: data.pessoas,
+    pessoas: data.pessoas,
+    horarioInicio: data.horarioInicio,
+    horarioTermino: data.terminoADefinir ? "a definir" : data.horarioTermino,
+    observacoes: data.observacoes,
+    page: location.pathname,
+    source: "WhatsApp - Portal Insano - Insano Food Truck - Evento"
+  };
+  const body = await postJson("/api/site/insano/evento", payload);
+  if (!body.ok) {
+    sendButton.disabled = false;
+    result.textContent = body.error || "Nao foi possivel enviar a solicitacao.";
+    return;
+  }
+  localStorage.setItem(`insano:event-submitted:${data.submissionId}`, body.id || "sent");
+  app.innerHTML = eventSuccessMarkup();
+}
+
+function buildEventReview(data = {}) {
+  const end = data.terminoADefinir ? "a definir" : data.horarioTermino;
+  return `
+    <h3>Confere os dados do teu evento:</h3>
+    <p>Nome: ${escapeHtml(data.nome)}</p>
+    <p>Data: ${escapeHtml(data.dataEvento)}</p>
+    <p>Local: ${escapeHtml(data.local)}</p>
+    <p>Cidade: ${escapeHtml(data.cidade)}</p>
+    <p>Publico previsto: ${escapeHtml(data.pessoas)} pessoas</p>
+    <p>Horario: das ${escapeHtml(data.horarioInicio)} as ${escapeHtml(end || "")}</p>
+    <p>Telefone: ${escapeHtml(data.telefone)}</p>
+    <p>Observacoes: ${escapeHtml(data.observacoes || "")}</p>
+  `;
+}
+
+function validateEventFormData(data = {}) {
+  if (!data.nome?.trim()) return { ok: false, message: "Informe o nome do contato." };
+  if (!data.dataEvento || data.dataEvento < todayDateInput()) return { ok: false, message: "Informe uma data valida, sem usar data anterior a hoje." };
+  if (!data.local?.trim()) return { ok: false, message: "Informe o local ou endereco." };
+  if (!data.cidade?.trim()) return { ok: false, message: "Informe a cidade." };
+  const people = Number(data.pessoas);
+  if (!Number.isInteger(people) || people <= 0) return { ok: false, message: "Informe o publico previsto como numero inteiro positivo." };
+  if (!/^\d{2}:\d{2}$/.test(data.horarioInicio || "")) return { ok: false, message: "Informe o horario de inicio." };
+  if (!data.terminoADefinir && !/^\d{2}:\d{2}$/.test(data.horarioTermino || "")) return { ok: false, message: "Informe o horario de termino ou marque A definir." };
+  if (String(data.telefone || "").replace(/\D/g, "").length < 10) return { ok: false, message: "Informe um telefone de contato utilizavel." };
+  return { ok: true };
+}
+
+function eventSuccessMarkup() {
+  return `
+    ${hero("Solicitacao enviada", "Recebemos as informacoes do teu evento.")}
+    <section class="panel">
+      <h2>Solicitacao enviada</h2>
+      <p>Recebemos as informacoes do teu evento.</p>
+      <p>Nossa equipe vai verificar a agenda e responder na mesma conversa do WhatsApp.</p>
+      <div class="action-row">
+        <a class="wa-link" href="/cardapio/insano">VOLTAR AO INSANO FOOD TRUCK</a>
+        <a class="wa-link" href="https://wa.me/5551980413745?text=Atendimento%20Humano%20Insano%20Food%20Truck" data-whatsapp-url>ATENDIMENTO HUMANO</a>
+      </div>
+    </section>
+  `;
+}
+
+function eventSubmissionId(conversationId = "", phone = "") {
+  const key = `${conversationId || "sem-conversa"}:${phone || "sem-telefone"}`;
+  const existing = sessionStorage.getItem(`insano:event-submission:${key}`);
+  if (existing) return existing;
+  const generated = `event_form_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  sessionStorage.setItem(`insano:event-submission:${key}`, generated);
+  return generated;
+}
+
+function todayDateInput() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 async function loadKitchen() {

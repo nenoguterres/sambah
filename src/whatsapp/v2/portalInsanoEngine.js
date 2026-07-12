@@ -1,5 +1,6 @@
 import { response, responseWithReplies } from "./responseContract.js";
 import { portalInsanoContract } from "./portalInsanoContract.js";
+import { getRuntimeConfig } from "../../config.js";
 
 export function routePortalInsanoMessage({ state, message, contract = portalInsanoContract }) {
   const text = normalizeText(message.text);
@@ -61,7 +62,7 @@ function executeAction(state, contract, action, source) {
       activeFlow: null,
       activeStep: null,
       awaitingInput: false,
-      foodtruckSubstate: action.clearFoodtruckSubstate ? null : state.foodtruckSubstate || null
+      foodtruckSubstate: action.clearFoodtruckSubstate || source === "INSANO_ORCAMENTO" ? null : state.foodtruckSubstate || null
     };
     const stack = action.target === contract.welcome.menuId ? [] : [...(state.menuStack || []), state.activeMenu || contract.welcome.menuId];
     return openMenu({ ...nextState, menuStack: stack }, contract, action.target, source);
@@ -97,9 +98,30 @@ function isLegacyFoodtruckState(state = {}) {
 }
 
 function openUrlButton(state, contract, target, source) {
-  const url = resolveContractPath(contract, target);
+  const baseUrl = resolveContractPath(contract, target);
+  const url = buildUrlButtonTarget(baseUrl, target, state);
   if (!url) {
     return response("missingCatalogUrl", state, "CONFIGURAÇÃO AUSENTE: integration.insano_food_truck.catalog_url", [{ type: "missing_config", source, target }]);
+  }
+  if (target === "integration.insano_food_truck.event_form_url") {
+    return responseWithReplies(
+      source,
+      {
+        ...state,
+        areaId: "insano_food_truck",
+        activeFlow: null,
+        activeStep: null,
+        awaitingInput: false,
+        foodtruckSubstate: { selectedAction: source, target: "evento" }
+      },
+      [{
+        type: "url_button",
+        text: "Evento — Insano Food Truck\n\nPreenche os dados do teu evento para nossa equipe verificar a agenda e responder nesta mesma conversa.",
+        buttonText: "PREENCHER SOLICITAÇÃO",
+        url
+      }],
+      [{ type: "event_form_url_button", source, url }]
+    );
   }
   return responseWithReplies(
     source,
@@ -109,7 +131,7 @@ function openUrlButton(state, contract, target, source) {
       activeFlow: null,
       activeStep: null,
       awaitingInput: false,
-      foodtruckSubstate: { selectedAction: source, target: "catalogo" }
+      foodtruckSubstate: { selectedAction: source, target: target === "integration.insano_food_truck.event_form_url" ? "evento" : "catalogo" }
     },
     [{
       type: "url_button",
@@ -175,11 +197,26 @@ function showCatalog(state, contract, catalogId, source) {
 }
 
 function resolveContractPath(contract, target = "") {
+  if (target === "integration.insano_food_truck.event_form_url") {
+    return getRuntimeConfig().eventFormPublicUrl;
+  }
   const aliases = {
-    "integration.insano_food_truck.catalog_url": "integrations.insano_food_truck.catalogUrl"
+    "integration.insano_food_truck.catalog_url": "integrations.insano_food_truck.catalogUrl",
+    "integration.insano_food_truck.event_form_url": "integrations.insano_food_truck.eventFormUrl"
   };
   const path = aliases[target] || target;
   return path.split(".").reduce((value, key) => value?.[key], contract);
+}
+
+function buildUrlButtonTarget(baseUrl, target, state = {}) {
+  if (!baseUrl || target !== "integration.insano_food_truck.event_form_url") return baseUrl;
+  const url = new URL(baseUrl);
+  if (state.conversationId) {
+    const phone = String(state.conversationId).replace(/\D/g, "");
+    url.searchParams.set("conversationId", phone ? `wa_${phone}` : state.conversationId);
+    url.searchParams.set("phone", phone || state.conversationId);
+  }
+  return url.toString();
 }
 
 function integrationDisabled(state, source) {
@@ -193,6 +230,7 @@ function integrationDisabled(state, source) {
 
 function handleNavigationCommand(state, contract, command) {
   if (command === "inicio") return openMenu(resetToPortal(state, contract), contract, contract.welcome.menuId, "homeCommand", []);
+  if (command === "insano_menu_voltar") return openMenu({ ...state, areaId: "insano_food_truck", activeFlow: null, activeStep: null, awaitingInput: false, foodtruckSubstate: null }, contract, "foodtruck_main_menu", "INSANO_MENU_VOLTAR", []);
   if (command === "voltar") {
     const stack = [...(state.menuStack || [])];
     const target = stack.pop() || contract.welcome.menuId;
@@ -205,6 +243,7 @@ function handleNavigationCommand(state, contract, command) {
 
 function routeNavigationCommand(text) {
   if (["inicio", "menu principal", "portal", "comecar de novo"].includes(text)) return "inicio";
+  if (["insano_menu_voltar", "voltar ao insano food truck"].includes(text)) return "insano_menu_voltar";
   if (["voltar", "retornar", "menu anterior"].includes(text)) return "voltar";
   if (["cancelar", "parar", "desistir"].includes(text)) return "cancelar";
   if (["humano", "atendente", "pessoa", "falar com alguem"].includes(text)) return "humano";

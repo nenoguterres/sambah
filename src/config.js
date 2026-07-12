@@ -6,6 +6,8 @@ export const API_BASES = {
   alternative: "https://api.sambahcrm.com.br"
 };
 
+export const EVENT_FORM_PUBLIC_URL = "https://sambah.onrender.com/evento/insano";
+
 export const DEFAULT_CORS_ORIGINS = [
   "http://localhost:3000",
   "http://127.0.0.1:3000",
@@ -26,6 +28,7 @@ export function getRuntimeConfig(env = globalThis.process?.env || {}) {
     port: Number(env.PORT || 3000),
     baseUrl: env.BASE_URL || API_BASES.local,
     publicBaseUrl: env.PUBLIC_BASE_URL || "https://insanofoodtruck.com.br",
+    eventFormPublicUrl: env.EVENT_FORM_PUBLIC_URL || EVENT_FORM_PUBLIC_URL,
     corsOrigins: parseList(env.CORS_ORIGINS, DEFAULT_CORS_ORIGINS),
     whatsappNumber: env.WHATSAPP_NUMBER || "5551980413745",
     insanoWhatsappNumber: env.INSANO_WHATSAPP_NUMBER || "",
@@ -95,6 +98,7 @@ export function getPublicConfig(env = globalThis.process?.env || {}) {
     ok: true,
     baseApi: getBaseApi(env),
     publicBaseUrl: runtime.publicBaseUrl,
+    eventFormPublicUrl: runtime.eventFormPublicUrl,
     bases: API_BASES,
     endpoints: {
       siteLead: "/api/site/lead",

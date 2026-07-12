@@ -152,6 +152,23 @@ form {
   gap: 9px;
 }
 
+label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.inline-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inline-check input {
+  width: auto;
+}
+
 input,
 select,
 textarea {
@@ -178,6 +195,18 @@ textarea {
 .status-list {
   display: grid;
   gap: 9px;
+}
+
+.review-box {
+  border: 1px solid rgba(211, 163, 58, 0.42);
+  border-radius: 8px;
+  background: rgba(211, 163, 58, 0.08);
+  padding: 12px;
+}
+
+.review-box h3,
+.review-box p {
+  margin: 0 0 8px;
 }
 
 .status-item {

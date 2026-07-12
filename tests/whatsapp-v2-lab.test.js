@@ -147,7 +147,7 @@ test("Portal Insano Food Truck nao renderiza textos nem rotas legadas", async ()
   assertNoFoodtruckPlaceholder(numeric.replies[0].text);
 });
 
-test("Portal Insano Food Truck Evento e Orcamento reapresentam somente submenu aprovado", async () => {
+test("Portal Insano Food Truck Evento abre formulario unico e Orcamento nao inicia fluxo legado", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const fromEvento = "5551000000191";
   await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-evento-1", from: fromEvento, text: "oi" });
@@ -157,15 +157,14 @@ test("Portal Insano Food Truck Evento e Orcamento reapresentam somente submenu a
   assert.equal(evento.state.activeMenu, "foodtruck_main_menu");
   assert.equal(evento.state.activeFlow, null);
   assert.equal(evento.state.awaitingInput, false);
-  assert.equal(evento.replies[0].type, "menu");
-  assert.equal(evento.replies[0].menu.body, "Insano Food Truck\n\nO que tu precisa?");
-  assert.deepEqual(evento.replies[0].menu.options.map((option) => option.id), [
-    "INSANO_EVENTO",
-    "INSANO_ORCAMENTO",
-    "INSANO_CATALOGO",
-    "INSANO_HUMANO",
-    "PORTAL_VOLTAR"
-  ]);
+  assert.equal(evento.replies[0].type, "url_button");
+  assert.equal(evento.replies[0].buttonText, "PREENCHER SOLICITAÇÃO");
+  assert.match(evento.replies[0].text, /Evento — Insano Food Truck/);
+  assert.match(evento.replies[0].url, /^https:\/\/sambah\.onrender\.com\/evento\/insano/);
+  assert.doesNotMatch(evento.replies[0].url, /www\.insanofoodtruck\.com\.br/);
+  assert.match(evento.replies[0].url, /conversationId=wa_5551000000191/);
+  assert.match(evento.replies[0].url, /phone=5551000000191/);
+  assert.equal(evento.state.foodtruckSubstate.target, "evento");
   assertNoFoodtruckPlaceholder(evento.replies[0].text);
 
   const fromOrcamento = "5551000000192";
@@ -179,6 +178,28 @@ test("Portal Insano Food Truck Evento e Orcamento reapresentam somente submenu a
   assert.equal(orcamento.replies[0].type, "menu");
   assert.equal(orcamento.replies[0].menu.options.length, 5);
   assertNoFoodtruckPlaceholder(orcamento.replies[0].text);
+});
+
+test("Portal Insano Food Truck retorno do evento reabre submenu e humano usa handoff", async () => {
+  const engine = createLabEngine({ observeOnly: true });
+  const from = "5551000000193";
+  await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-return-1", from, text: "oi" });
+  await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-return-2", from, text: "1" });
+
+  const menu = await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-return-3", from, text: "INSANO_MENU_VOLTAR" });
+  assert.equal(menu.replies[0].type, "menu");
+  assert.equal(menu.replies[0].menu.body, "Insano Food Truck\n\nO que tu precisa?");
+  assert.deepEqual(menu.replies[0].menu.options.map((option) => option.id), [
+    "INSANO_EVENTO",
+    "INSANO_ORCAMENTO",
+    "INSANO_CATALOGO",
+    "INSANO_HUMANO",
+    "PORTAL_VOLTAR"
+  ]);
+
+  const humano = await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-return-4", from, text: "INSANO_HUMANO" });
+  assert.equal(humano.state.mode, "human");
+  assert.deepEqual(humano.actions.map((action) => action.type), ["notify_operator"]);
 });
 
 test("Portal Insano Food Truck limpa estado legado antes de roteamento", async () => {

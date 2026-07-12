@@ -40,7 +40,7 @@ export const portalInsanoContract = {
       strictInteractiveIds: true,
       fallbackText: "1. Evento\n2. Orçamento\n3. Catálogo de produtos\n4. Atendimento Humano\n5. Voltar ao Portal Insano",
       options: [
-        option("INSANO_EVENTO", 1, "Evento", { type: "open_menu", target: "foodtruck_main_menu" }),
+        option("INSANO_EVENTO", 1, "Evento", { type: "open_url_button", target: "integration.insano_food_truck.event_form_url" }),
         option("INSANO_ORCAMENTO", 2, "Orçamento", { type: "open_menu", target: "foodtruck_main_menu" }),
         option("INSANO_CATALOGO", 3, "Catálogo de produtos", { type: "open_url_button", target: "integration.insano_food_truck.catalog_url" }),
         option("INSANO_HUMANO", 4, "Atendimento Humano", { type: "start_flow", target: "human_handoff" }),
@@ -168,7 +168,10 @@ export const portalInsanoContract = {
     "catalog.projects": "Projetos Insano: Mesa do Xeriffe, SamBah, SamBah Pay, Perola, i9ACAO Security, Workhub, Studio N, Locker Frio e automacoes."
   },
   integrations: {
-    insano_food_truck: { catalogUrl: "https://www.insanofoodtruck.com.br/catalogo" },
+    insano_food_truck: {
+      catalogUrl: "https://www.insanofoodtruck.com.br/catalogo",
+      eventFormUrl: null
+    },
     mesa_do_xeriffe: { enabled: false, customerUrl: null },
     sambah_pay: { enabled: false },
     meta_sender: { enabled: false, realSenderAllowed: false },
