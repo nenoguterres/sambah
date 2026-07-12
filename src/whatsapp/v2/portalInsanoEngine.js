@@ -67,7 +67,6 @@ function executeAction(state, contract, action, source) {
     return openMenu({ ...nextState, menuStack: stack }, contract, action.target, source);
   }
   if (action.type === "start_flow") return startFlow(state, contract, action.target, source);
-  if (action.type === "temporary_foodtruck_response") return temporaryFoodtruckResponse(state, contract, action.target, source);
   if (action.type === "open_url_button") return openUrlButton(state, contract, action.target, source);
   if (action.type === "show_catalog") return showCatalog(state, contract, action.target, source);
   if (action.type === "open_authorized_link") return integrationDisabled(state, source);
@@ -97,35 +96,6 @@ function isLegacyFoodtruckState(state = {}) {
   );
 }
 
-function temporaryFoodtruckResponse(state, contract, target, source) {
-  const textByTarget = {
-    evento: "Vamos organizar teu evento.\n\nEsta opção será configurada na próxima etapa.",
-    orcamento: "Vamos preparar teu orçamento.\n\nEsta opção será configurada na próxima etapa."
-  };
-  const menu = contract.menus.foodtruck_followup_menu;
-  return responseWithReplies(
-    source,
-    {
-      ...state,
-      areaId: "insano_food_truck",
-      activeMenu: menu.id,
-      activeFlow: null,
-      activeStep: null,
-      awaitingInput: false,
-      foodtruckSubstate: { selectedAction: source, target }
-    },
-    [{
-      ...renderMenuReply(menu),
-      text: `${textByTarget[target] || "Opção registrada."}\n\n${renderMenu(menu)}`,
-      menu: {
-        ...renderMenuReply(menu).menu,
-        body: `${textByTarget[target] || "Opção registrada."}\n\nComo tu quer seguir?`
-      }
-    }],
-    [{ type: "foodtruck_action_selected", source, target }]
-  );
-}
-
 function openUrlButton(state, contract, target, source) {
   const url = resolveContractPath(contract, target);
   if (!url) {
@@ -143,7 +113,7 @@ function openUrlButton(state, contract, target, source) {
     },
     [{
       type: "url_button",
-      text: "Conheça os produtos do Insano Food Truck.",
+      text: "Conheça o catálogo de produtos do Insano Food Truck.",
       buttonText: "ABRIR CATÁLOGO",
       url
     }],

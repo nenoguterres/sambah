@@ -276,7 +276,7 @@ test("provider meta envia botao URL para catalogo Insano", async () => {
     to: "5551999999999",
     message: {
       type: "url_button",
-      text: "Conheça os produtos do Insano Food Truck.",
+      text: "Conheça o catálogo de produtos do Insano Food Truck.",
       buttonText: "ABRIR CATÁLOGO",
       url: "https://www.insanofoodtruck.com.br/catalogo"
     }
