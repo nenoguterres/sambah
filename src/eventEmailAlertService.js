@@ -95,6 +95,7 @@ export class EventEmailAlertService {
         await this.writeAlerts([]);
         return [];
       }
+      if (error instanceof SyntaxError) return [];
       throw error;
     }
   }

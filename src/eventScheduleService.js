@@ -165,6 +165,7 @@ export class EventScheduleService {
         await this.writeLeads([]);
         return [];
       }
+      if (error instanceof SyntaxError) return [];
       throw error;
     }
   }
