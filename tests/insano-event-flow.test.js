@@ -200,7 +200,10 @@ test("formulario publico do Evento nao expoe shell operacional do SamBah", async
     assert.match(script, /Telefone de contato/);
     assert.match(script, /Data do evento/);
     assert.match(script, /Publico previsto/);
-    assert.match(script, /Voltar ao WhatsApp/);
+    assert.match(script, /ENVIAR SOLICITACAO/);
+    assert.doesNotMatch(script, /Conferir dados/);
+    assert.doesNotMatch(script, /ENVIAR PARA ANALISE/);
+    assert.doesNotMatch(script, /CORRIGIR DADOS/);
   } finally {
     await app.close();
   }

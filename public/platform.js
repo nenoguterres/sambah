@@ -87,13 +87,8 @@ function renderInsanoEvent() {
         <label>Duvidas ou observacoes
           <textarea name="observacoes" placeholder="Conta pra gente o que tu precisa saber ou deseja incluir na proposta."></textarea>
         </label>
-        <div id="eventReview" class="review-box" hidden></div>
         <div class="action-row">
-          <button class="primary" type="submit" data-event-action="review">Conferir dados</button>
-          <button class="primary" type="button" data-event-action="send" hidden>ENVIAR PARA ANALISE</button>
-          <button type="button" data-event-action="edit" hidden>CORRIGIR DADOS</button>
-          <a class="wa-link" href="${whatsappLink("Voltar ao Insano Food Truck")}" data-whatsapp-url>Voltar ao WhatsApp</a>
-          <a class="wa-link" href="${whatsappLink("Atendimento Humano Insano Food Truck")}" data-whatsapp-url>Atendimento Humano</a>
+          <button class="primary" type="submit" data-event-action="send">ENVIAR SOLICITACAO</button>
         </div>
         <p id="eventResult" class="result" role="status"></p>
       </form>
@@ -221,38 +216,14 @@ async function submitOrder(event) {
 
 function bindEventForm() {
   const form = document.querySelector("#eventForm");
-  const review = document.querySelector("#eventReview");
-  const submitButton = form.querySelector("[data-event-action='review']");
-  const sendButton = form.querySelector("[data-event-action='send']");
-  const editButton = form.querySelector("[data-event-action='edit']");
   form.querySelector("[name='terminoADefinir']")?.addEventListener("change", (event) => {
     const endInput = form.querySelector("[name='horarioTermino']");
     endInput.disabled = event.target.checked;
     if (event.target.checked) endInput.value = "";
   });
-  editButton.addEventListener("click", () => {
-    review.hidden = true;
-    sendButton.hidden = true;
-    editButton.hidden = true;
-    submitButton.hidden = false;
-    form.querySelectorAll("input, textarea").forEach((field) => {
-      if (field.name !== "conversationId") field.disabled = false;
-    });
-  });
-  sendButton.addEventListener("click", () => submitEventRequest(form));
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const data = Object.fromEntries(new FormData(form).entries());
-    const validation = validateEventFormData(data);
-    if (!validation.ok) {
-      document.querySelector("#eventResult").textContent = validation.message;
-      return;
-    }
-    review.hidden = false;
-    review.innerHTML = buildEventReview(data);
-    submitButton.hidden = true;
-    sendButton.hidden = false;
-    editButton.hidden = false;
+    await submitEventRequest(form);
   });
 }
 
@@ -295,21 +266,6 @@ async function submitEventRequest(form) {
   }
   localStorage.setItem(`insano:event-submitted:${data.submissionId}`, body.id || "sent");
   app.innerHTML = eventSuccessMarkup();
-}
-
-function buildEventReview(data = {}) {
-  const end = data.terminoADefinir ? "a definir" : data.horarioTermino;
-  return `
-    <h3>Confere os dados do teu evento:</h3>
-    <p>Nome: ${escapeHtml(data.nome)}</p>
-    <p>Data: ${escapeHtml(data.dataEvento)}</p>
-    <p>Local: ${escapeHtml(data.local)}</p>
-    <p>Cidade: ${escapeHtml(data.cidade)}</p>
-    <p>Publico previsto: ${escapeHtml(data.pessoas)} pessoas</p>
-    <p>Horario: das ${escapeHtml(data.horarioInicio)} as ${escapeHtml(end || "")}</p>
-    <p>Telefone: ${escapeHtml(data.telefone)}</p>
-    <p>Observacoes: ${escapeHtml(data.observacoes || "")}</p>
-  `;
 }
 
 function validateEventFormData(data = {}) {
