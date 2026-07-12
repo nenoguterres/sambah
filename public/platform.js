@@ -14,6 +14,7 @@ const page = route.page;
 const operation = route.operation;
 const table = route.table;
 const app = document.querySelector("#app");
+const INSANO_WHATSAPP_URL = "https://wa.me/5551980413745";
 
 render();
 
@@ -58,7 +59,7 @@ function renderInsanoEvent() {
     return;
   }
   app.innerHTML = `
-    ${hero("Evento - Insano Food Truck", "Preenche os dados do teu evento para nossa equipe verificar a agenda e preparar o atendimento.")}
+    ${eventHero("Evento - Insano Food Truck", "Preenche os dados do teu evento para nossa equipe verificar a agenda e preparar o atendimento.")}
     <section class="panel">
       <h2>Solicitacao de evento</h2>
       <p class="muted">Preenche as informacoes abaixo. Nossa equipe vai verificar a agenda e responder nesta mesma conversa do WhatsApp.</p>
@@ -91,8 +92,8 @@ function renderInsanoEvent() {
           <button class="primary" type="submit" data-event-action="review">Conferir dados</button>
           <button class="primary" type="button" data-event-action="send" hidden>ENVIAR PARA ANALISE</button>
           <button type="button" data-event-action="edit" hidden>CORRIGIR DADOS</button>
-          <a class="wa-link" href="/cardapio/insano">Voltar ao Insano Food Truck</a>
-          <a class="wa-link" href="https://wa.me/5551980413745?text=Atendimento%20Humano%20Insano%20Food%20Truck" data-whatsapp-url>Atendimento Humano</a>
+          <a class="wa-link" href="${whatsappLink("Voltar ao Insano Food Truck")}" data-whatsapp-url>Voltar ao WhatsApp</a>
+          <a class="wa-link" href="${whatsappLink("Atendimento Humano Insano Food Truck")}" data-whatsapp-url>Atendimento Humano</a>
         </div>
         <p id="eventResult" class="result" role="status"></p>
       </form>
@@ -148,6 +149,10 @@ async function renderKitchen() {
 
 function hero(title, subtitle) {
   return `<section class="hero"><div><p>SamBah operacional</p><h1>${escapeHtml(title)}</h1><span>${escapeHtml(subtitle)}</span></div><a class="wa-link" href="/crm">Abrir CRM</a></section>`;
+}
+
+function eventHero(title, subtitle) {
+  return `<section class="hero public-event-hero"><div><p>Insano Food Truck</p><h1>${escapeHtml(title)}</h1><span>${escapeHtml(subtitle)}</span></div></section>`;
 }
 
 function productCard(name, op) {
@@ -322,17 +327,21 @@ function validateEventFormData(data = {}) {
 
 function eventSuccessMarkup() {
   return `
-    ${hero("Solicitacao enviada", "Recebemos as informacoes do teu evento.")}
+    ${eventHero("Solicitacao enviada", "Recebemos as informacoes do teu evento.")}
     <section class="panel">
       <h2>Solicitacao enviada</h2>
       <p>Recebemos as informacoes do teu evento.</p>
       <p>Nossa equipe vai verificar a agenda e responder na mesma conversa do WhatsApp.</p>
       <div class="action-row">
-        <a class="wa-link" href="/cardapio/insano">VOLTAR AO INSANO FOOD TRUCK</a>
-        <a class="wa-link" href="https://wa.me/5551980413745?text=Atendimento%20Humano%20Insano%20Food%20Truck" data-whatsapp-url>ATENDIMENTO HUMANO</a>
+        <a class="wa-link" href="${whatsappLink("Voltar ao Insano Food Truck")}" data-whatsapp-url>VOLTAR AO WHATSAPP</a>
+        <a class="wa-link" href="${whatsappLink("Atendimento Humano Insano Food Truck")}" data-whatsapp-url>ATENDIMENTO HUMANO</a>
       </div>
     </section>
   `;
+}
+
+function whatsappLink(text = "") {
+  return `${INSANO_WHATSAPP_URL}?text=${encodeURIComponent(text)}`;
 }
 
 function eventSubmissionId(conversationId = "", phone = "") {

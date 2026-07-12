@@ -400,7 +400,7 @@ test("plataformas externas, cardapios, mesa, garcom e cozinha respondem", async 
     assert.equal(insanoEvento.status, "AGUARDANDO_ANALISE");
     assert.equal(insanoEvento.lead.source, "WHATSAPP_PORTAL_INSANO_FOODTRUCK_EVENTO");
     assert.equal(insanoEvento.crm.lead.origem, "insanofoodtruck.com.br");
-    assert.equal(insanoEvento.emailAlert.to, "chefnenogutterres@gmail.com");
+    assert.equal(insanoEvento.emailAlert.to, "chefnenogutterres@gmail.com,kdoiegutterresgastronomia@gmail.com");
     assert.match(insanoEvento.emailAlert.subject, /\[NOVO EVENTO\] 25\/08\/2026 — Porto Alegre — 90 pessoas/);
     assert.match(insanoEvento.conversationUrl, /\/conversas\?conversationId=wa_555197000009/);
     assert.match(insanoEvento.whatsappUrl, /^https:\/\/wa\.me\/5551980413745/);
@@ -409,7 +409,7 @@ test("plataformas externas, cardapios, mesa, garcom e cozinha respondem", async 
     assert.equal(eventLeads[0].conversationId, "wa_555197000009");
     assert.equal(eventLeads[0].event.startsAt, "18:00");
     const emailAlerts = JSON.parse(await readFile(join(dir, "event-email-alerts.json"), "utf8"));
-    assert.equal(emailAlerts[0].to, "chefnenogutterres@gmail.com");
+    assert.equal(emailAlerts[0].to, "chefnenogutterres@gmail.com,kdoiegutterresgastronomia@gmail.com");
     assert.match(emailAlerts[0].body, /ABRIR CONVERSA NO SAMBAH/);
 
     const insanoWhatsapp = await post("/api/site/insano/whatsapp", {
@@ -437,11 +437,15 @@ test("plataformas externas, cardapios, mesa, garcom e cozinha respondem", async 
     }).then((response) => response.json());
     assert.match(directPre.whatsappUrl, /^https:\/\/wa\.me\/5551980413745/);
 
-    for (const path of ["/cardapio/insano", "/evento/insano", "/cardapio/xeriffe", "/mesa/insano/1", "/mesa/xeriffe/10", "/garcom", "/cozinha", "/admin/qrcodes"]) {
+    for (const path of ["/cardapio/insano", "/cardapio/xeriffe", "/mesa/insano/1", "/mesa/xeriffe/10", "/garcom", "/cozinha", "/admin/qrcodes"]) {
       const response = await fetch(`${base}${path}`);
       assert.equal(response.status, 200);
       assert.match(await response.text(), /SamBah/);
     }
+
+    const eventForm = await fetch(`${base}/evento/insano`).then((response) => response.text());
+    assert.match(eventForm, /Solicitacao de evento - Insano Food Truck/);
+    assert.doesNotMatch(eventForm, /renderSambahShell|Abrir CRM|Cardapio Xeriffe|QR Codes|Garcom|Cozinha/);
 
     const precomandas = await fetch(`${base}/api/precomandas`).then((response) => response.json());
     assert.ok(precomandas.items.some((item) => item.id === pre.precomanda.id));

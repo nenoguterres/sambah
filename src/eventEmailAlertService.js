@@ -5,6 +5,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 const DEFAULT_ALERTS_FILE = "data/event-email-alerts.json";
+const DEFAULT_EVENT_EMAIL_TO = "chefnenogutterres@gmail.com,kdoiegutterresgastronomia@gmail.com";
 
 export class EventEmailAlertService {
   constructor({ filePath = DEFAULT_ALERTS_FILE, now = () => new Date(), env = globalThis.process?.env || {}, smtpClient = null } = {}) {
@@ -23,7 +24,7 @@ export class EventEmailAlertService {
       alertId: input.alertId || input.id || `event_alert_${crypto.randomUUID()}`,
       eventRequestId,
       conversationId: input.conversationId || "",
-      to: input.to || this.env.EVENT_EMAIL_TO || "chefnenogutterres@gmail.com",
+      to: input.to || this.env.EVENT_EMAIL_TO || DEFAULT_EVENT_EMAIL_TO,
       subject: input.subject || "",
       body: input.body || "",
       conversationUrl: input.conversationUrl || "",
@@ -110,7 +111,8 @@ function smtpConfig(env = {}, to = "") {
   const user = env.EVENT_SMTP_USER || "";
   const password = env.EVENT_SMTP_PASSWORD || "";
   const from = env.EVENT_EMAIL_FROM || user;
-  if (!host || !port || !user || !password || !from || !to) return { ok: false, error: "smtp_not_configured" };
+  const recipients = parseRecipients(to);
+  if (!host || !port || !user || !password || !from || !recipients.length) return { ok: false, error: "smtp_not_configured" };
   return {
     ok: true,
     host,
@@ -118,7 +120,8 @@ function smtpConfig(env = {}, to = "") {
     secure: String(env.EVENT_SMTP_SECURE || "").toLowerCase() === "true" || port === 465,
     user,
     password,
-    from
+    from,
+    recipients
   };
 }
 
@@ -159,12 +162,14 @@ class SmtpClient {
     await this.command(Buffer.from(this.config.user).toString("base64"), [334]);
     await this.command(Buffer.from(this.config.password).toString("base64"), [235]);
     await this.command(`MAIL FROM:<${this.config.from}>`, [250]);
-    await this.command(`RCPT TO:<${this.config.to}>`, [250, 251]);
+    for (const recipient of this.config.recipients || parseRecipients(this.config.to)) {
+      await this.command(`RCPT TO:<${recipient}>`, [250, 251]);
+    }
     await this.command("DATA", [354]);
     const messageId = `<${crypto.randomUUID()}@sambah.local>`;
     const message = [
       `From: ${this.config.from}`,
-      `To: ${this.config.to}`,
+      `To: ${(this.config.recipients || parseRecipients(this.config.to)).join(", ")}`,
       `Subject: ${this.config.subject}`,
       `Message-ID: ${messageId}`,
       "Content-Type: text/plain; charset=utf-8",
@@ -216,6 +221,13 @@ function sanitizeText(value = "", secrets = []) {
     text = text.replaceAll(String(secret), "[secret]");
   }
   return text.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[email]").replace(/[A-Za-z0-9_-]{24,}/g, "[secret]");
+}
+
+function parseRecipients(value = "") {
+  return String(value || "")
+    .split(/[;,]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function stripBom(value = "") {

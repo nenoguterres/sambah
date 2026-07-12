@@ -32,6 +32,14 @@ a {
   margin: 0 auto;
 }
 
+.public-event-main {
+  padding-top: 28px;
+}
+
+.public-event-page .hero {
+  border-top: 0;
+}
+
 .platform-header {
   display: flex;
   align-items: center;

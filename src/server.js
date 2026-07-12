@@ -591,13 +591,16 @@ export function createApp({
         return serveStatic(res, "crm.html");
       }
 
+      if (req.method === "GET" && url.pathname === "/evento/insano") {
+        return serveStatic(res, "event-insano.html");
+      }
+
       if (
         req.method === "GET"
         && (
           url.pathname === "/admin/qrcodes"
           || url.pathname === "/garcom"
           || url.pathname === "/cozinha"
-          || url.pathname === "/evento/insano"
           || /^\/cardapio\/(insano|xeriffe)$/.test(url.pathname)
           || /^\/mesa\/(insano|xeriffe)\/\d+$/.test(url.pathname)
         )
@@ -2983,7 +2986,7 @@ function buildInsanoEventEmailAlert({ payload = {}, leadId = "", eventRequestId 
     `eventRequestId: ${eventRequestId || leadId}`
   ].join("\n");
   return {
-    to: "chefnenogutterres@gmail.com",
+    to: "chefnenogutterres@gmail.com,kdoiegutterresgastronomia@gmail.com",
     subject,
     body,
     conversationUrl,

@@ -110,7 +110,7 @@ test("fluxo final Evento valida campos, registra uma solicitação e preserva co
     assert.equal(created.body.conversationId, "wa_5551987654321");
     assert.equal(created.body.emailAlert.status, "SENT");
     assert.equal(smtpCalls.length, 1);
-    assert.equal(smtpCalls[0].to, "chefnenogutterres@gmail.com");
+    assert.equal(smtpCalls[0].to, "chefnenogutterres@gmail.com,kdoiegutterresgastronomia@gmail.com");
     assert.match(smtpCalls[0].subject, /\[NOVO EVENTO\] 25\/08\/2026 — Porto Alegre — 100 pessoas/);
 
     const duplicate = await post(validPayload());
@@ -131,6 +131,7 @@ test("fluxo final Evento valida campos, registra uma solicitação e preserva co
     assert.equal(alerts.length, 1);
     assert.equal(alerts[0].status, "SENT");
     assert.equal(alerts[0].eventRequestId, "event_form_test_1");
+    assert.equal(alerts[0].to, "chefnenogutterres@gmail.com,kdoiegutterresgastronomia@gmail.com");
     assert.match(alerts[0].body, /ABRIR CONVERSA NO SAMBAH/);
     assert.match(alerts[0].conversationUrl, /conversationId=wa_5551987654321/);
 
@@ -173,6 +174,33 @@ test("falha de SMTP preserva solicitação e marca alerta como FAILED sem duplic
     assert.equal(alerts.length, 1);
     assert.equal(alerts[0].status, "FAILED");
     assert.doesNotMatch(alerts[0].error, /secret-password/);
+  } finally {
+    await app.close();
+  }
+});
+
+test("formulario publico do Evento nao expoe shell operacional do SamBah", async () => {
+  const app = await makeServer();
+  try {
+    const response = await fetch(`${app.base}/evento/insano?conversationId=wa_5551987654321&phone=5551987654321`);
+    const html = await response.text();
+    assert.equal(response.status, 200);
+    assert.match(html, /Solicitacao de evento - Insano Food Truck/);
+    assert.match(html, /platform\.js/);
+    assert.doesNotMatch(html, /renderSambahShell/);
+    assert.doesNotMatch(html, /admin\/assets\/sambah-shell/);
+    assert.doesNotMatch(html, /Abrir CRM/);
+    assert.doesNotMatch(html, /Cardapio Xeriffe/);
+    assert.doesNotMatch(html, /QR Codes/);
+    assert.doesNotMatch(html, /Garcom/);
+    assert.doesNotMatch(html, /Cozinha/);
+
+    const script = await fetch(`${app.base}/platform.js`).then((item) => item.text());
+    assert.match(script, /Nome do contato/);
+    assert.match(script, /Telefone de contato/);
+    assert.match(script, /Data do evento/);
+    assert.match(script, /Publico previsto/);
+    assert.match(script, /Voltar ao WhatsApp/);
   } finally {
     await app.close();
   }
