@@ -102,10 +102,76 @@ test("Portal Insano menu principal roteia cada botao sem chamar IA", async () =>
   assert.equal(engine.operationLog.includes("ai"), false);
 });
 
+test("Portal Insano Food Truck exibe submenu oficial e catalogo por botao URL", async () => {
+  const engine = createLabEngine({ observeOnly: true });
+  const from = "5551000000188";
+  await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-menu-1", from, text: "oi" });
+  const submenu = await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-menu-2", from, text: "1" });
+  const menu = submenu.replies[0].menu;
+
+  assert.equal(submenu.state.activeMenu, "foodtruck_main_menu");
+  assert.equal(menu.title, "Insano Food Truck");
+  assert.equal(menu.body, "Insano Food Truck\n\nO que tu precisa?");
+  assert.equal(menu.buttonText, "ESCOLHER UMA AÇÃO");
+  assert.deepEqual(menu.options.map((option) => option.id), [
+    "INSANO_EVENTO",
+    "INSANO_ORCAMENTO",
+    "INSANO_CATALOGO",
+    "INSANO_HUMANO",
+    "PORTAL_VOLTAR"
+  ]);
+
+  const catalog = await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-menu-3", from, text: "INSANO_CATALOGO" });
+  assert.equal(catalog.replies[0].type, "url_button");
+  assert.equal(catalog.replies[0].buttonText, "ABRIR CATÁLOGO");
+  assert.equal(catalog.replies[0].url, "https://www.insanofoodtruck.com.br/catalogo");
+  assert.equal(catalog.state.foodtruckSubstate.selectedAction, "INSANO_CATALOGO");
+});
+
+test("Portal Insano Food Truck nao renderiza textos nem rotas legadas", async () => {
+  const engine = createLabEngine({ observeOnly: true });
+  const from = "5551000000189";
+  await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-legacy-1", from, text: "oi" });
+  const submenu = await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-legacy-2", from, text: "1" });
+  const rendered = submenu.replies[0].text;
+
+  for (const forbidden of ["Agendar evento", "Conhecer serviços", "Conhecer servicos", "Cardápio para eventos", "Cardapio para eventos", "Consultar solicitação", "Consultar solicitacao"]) {
+    assert.doesNotMatch(rendered, new RegExp(forbidden));
+  }
+
+  const numeric = await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-legacy-3", from, text: "1" });
+  assert.equal(numeric.state.activeMenu, "foodtruck_main_menu");
+  assert.equal(numeric.state.activeFlow, null);
+  assert.doesNotMatch(numeric.replies[0].text, /Qual data tu tem em mente/);
+});
+
+test("Portal Insano Food Truck limpa estado legado antes de roteamento", async () => {
+  const engine = createLabEngine({ observeOnly: true });
+  const from = "5551000000190";
+  const legacyState = createWhatsAppV2State(from);
+  legacyState.areaId = "insano_food_truck";
+  legacyState.activeMenu = "foodtruck_services_menu";
+  legacyState.activeFlow = "foodtruck_event_request";
+  legacyState.activeStep = "event_date";
+  legacyState.awaitingInput = true;
+  await engine.conversationRepository.save(legacyState);
+
+  const result = await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-legacy-state", from, text: "17/07" });
+
+  assert.equal(result.state.areaId, "insano_food_truck");
+  assert.equal(result.state.activeMenu, "foodtruck_main_menu");
+  assert.equal(result.state.activeFlow, null);
+  assert.equal(result.state.activeStep, null);
+  assert.equal(result.state.awaitingInput, false);
+  assert.equal(result.state.foodtruckSubstate, null);
+  assert.doesNotMatch(result.replies[0].text, /Registrado/);
+  assert.doesNotMatch(result.replies[0].text, /Agendar evento|Conhecer servicos|Cardapio para eventos|Consultar solicitacao/);
+});
+
 test("Portal Insano preserva area nos menus Foodtruck, Xeriffe, Granja e Tecnologia", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const flows = [
-    ["1", "3", "foodtruck_services_menu", "insano_food_truck"],
+    ["1", "INSANO_EVENTO", "foodtruck_followup_menu", "insano_food_truck"],
     ["2", "1", "xeriffe_catalog_menu", "xeriffe_obirici"],
     ["3", "1", "granja_main_menu", "granja_aguas_da_lagoa"],
     ["4", "11", "technology_main_menu", "desenvolvimento_tecnologias"]
@@ -126,29 +192,34 @@ test("Portal Insano opcao invalida repete menu atual e comandos voltar/inicio na
   const from = "5551000000300";
   await engine.processor.handleIncoming({ messageId: "wamid-nav-1", from, text: "oi" });
   await engine.processor.handleIncoming({ messageId: "wamid-nav-2", from, text: "1" });
-  const invalid = await engine.processor.handleIncoming({ messageId: "wamid-nav-3", from, text: "99" });
+  const invalid = await engine.processor.handleIncoming({ messageId: "wamid-nav-3", from, text: "Catalogo de produtos" });
   assert.equal(invalid.state.activeMenu, "foodtruck_main_menu");
-  assert.match(invalid.state.history.at(-1).text, /99/);
+  assert.match(invalid.state.history.at(-1).text, /Catalogo/);
   assert.match(invalid.outboxId ? engine.outboxRepository.list().at(-1).reply.text : "Insano Food Truck", /Insano Food Truck/);
 
-  await engine.processor.handleIncoming({ messageId: "wamid-nav-4", from, text: "3" });
-  const back = await engine.processor.handleIncoming({ messageId: "wamid-nav-5", from, text: "voltar" });
+  await engine.processor.handleIncoming({ messageId: "wamid-nav-4", from, text: "INSANO_EVENTO" });
+  const back = await engine.processor.handleIncoming({ messageId: "wamid-nav-5", from, text: "INSANO_MENU_VOLTAR" });
   assert.equal(back.state.activeMenu, "foodtruck_main_menu");
   const home = await engine.processor.handleIncoming({ messageId: "wamid-nav-6", from, text: "inicio" });
   assert.equal(home.state.activeMenu, "portal_main_menu");
   assert.equal(home.state.areaId, null);
 });
 
-test("Portal Insano resposta curta usa etapa ativa sem trocar area por texto livre", async () => {
+test("Portal Insano Food Truck usa ids interativos sem trocar area por texto livre", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000400";
   await engine.processor.handleIncoming({ messageId: "wamid-flow-1", from, text: "oi" });
   await engine.processor.handleIncoming({ messageId: "wamid-flow-2", from, text: "1" });
-  const start = await engine.processor.handleIncoming({ messageId: "wamid-flow-3", from, text: "2" });
-  assert.equal(start.state.activeFlow, "foodtruck_quote_request");
-  const answer = await engine.processor.handleIncoming({ messageId: "wamid-flow-4", from, text: "80" });
-  assert.equal(answer.state.areaId, "insano_food_truck");
-  assert.equal(answer.state.flowData.quote.people, "80");
+  const textOnly = await engine.processor.handleIncoming({ messageId: "wamid-flow-3", from, text: "2" });
+  assert.equal(textOnly.state.activeMenu, "foodtruck_main_menu");
+  assert.equal(textOnly.state.activeFlow, null);
+  assert.equal(textOnly.state.areaId, "insano_food_truck");
+
+  const quote = await engine.processor.handleIncoming({ messageId: "wamid-flow-4", from, text: "INSANO_ORCAMENTO" });
+  assert.equal(quote.state.activeMenu, "foodtruck_followup_menu");
+  assert.equal(quote.state.activeFlow, null);
+  assert.equal(quote.state.foodtruckSubstate.selectedAction, "INSANO_ORCAMENTO");
+  assert.match(quote.replies[0].text, /Vamos preparar teu orçamento/);
 });
 
 test("Portal Insano texto de pagamento nunca confirma pagamento", async () => {
@@ -174,7 +245,7 @@ test("Portal Insano integracao desabilitada nao e chamada", async () => {
   assert.equal(engine.operationLog.includes("mesa_do_xeriffe"), false);
 });
 
-test("Portal Insano estado de fluxo persiste entre reinicios do repositorio", async () => {
+test("Portal Insano estado Food Truck persiste entre reinicios do repositorio", async () => {
   const dir = await mkdtemp(join(tmpdir(), "sambah-v2-state-"));
   try {
     const filePath = join(dir, "state.json");
@@ -182,14 +253,15 @@ test("Portal Insano estado de fluxo persiste entre reinicios do repositorio", as
     const first = createLabEngine({ conversationRepository: firstRepo, observeOnly: true });
     await first.processor.handleIncoming({ messageId: "wamid-persist-1", from: "5551000000700", text: "oi" });
     await first.processor.handleIncoming({ messageId: "wamid-persist-2", from: "5551000000700", text: "1" });
-    await first.processor.handleIncoming({ messageId: "wamid-persist-3", from: "5551000000700", text: "2" });
+    await first.processor.handleIncoming({ messageId: "wamid-persist-3", from: "5551000000700", text: "INSANO_EVENTO" });
 
     const secondRepo = new FileWhatsAppV2ConversationRepository({ filePath });
     const second = createLabEngine({ conversationRepository: secondRepo, observeOnly: true });
-    const answer = await second.processor.handleIncoming({ messageId: "wamid-persist-4", from: "5551000000700", text: "120 pessoas" });
+    const answer = await second.processor.handleIncoming({ messageId: "wamid-persist-4", from: "5551000000700", text: "INSANO_MENU_VOLTAR" });
 
     assert.equal(answer.state.areaId, "insano_food_truck");
-    assert.equal(answer.state.flowData.quote.people, "120 pessoas");
+    assert.equal(answer.state.activeMenu, "foodtruck_main_menu");
+    assert.equal(answer.state.foodtruckSubstate.selectedAction, "INSANO_EVENTO");
     assert.equal(answer.state.activeFlow, null);
   } finally {
     await rm(dir, { recursive: true, force: true });

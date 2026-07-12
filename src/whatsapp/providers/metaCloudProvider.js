@@ -120,6 +120,31 @@ async function sendMetaPayload(fetchImpl, endpoint, accessToken, body, { timeout
 }
 
 function buildMetaMessagePayload({ to, message = {} } = {}) {
+  if (message.type === "url_button" && message.url) {
+    const fallbackText = `${message.text || ""}\n${message.buttonText || "ABRIR"}: ${message.url}`.trim();
+    return {
+      type: "interactive_cta_url",
+      interactive: true,
+      fallbackText,
+      body: {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to,
+        type: "interactive",
+        interactive: {
+          type: "cta_url",
+          body: { text: trimMetaText(message.text || "Abrir link") },
+          action: {
+            name: "cta_url",
+            parameters: {
+              display_text: trimMetaButtonTitle(message.buttonText || "ABRIR"),
+              url: String(message.url).slice(0, 2000)
+            }
+          }
+        }
+      }
+    };
+  }
   if (message.type === "menu" && Array.isArray(message.menu?.options) && message.menu.options.length > 0) {
     const options = message.menu.options;
     const fallbackText = message.text || options.map((item) => item.fallbackText || item.title).join("\n");
@@ -159,7 +184,7 @@ function buildMetaMessagePayload({ to, message = {} } = {}) {
           type: "list",
           body: { text: trimMetaText(message.menu.body || message.text || "Escolha uma opcao:") },
           action: {
-            button: trimMetaButtonTitle(message.menu.title || "Opcoes"),
+            button: trimMetaButtonTitle(message.menu.buttonText || message.menu.title || "Opcoes"),
             sections: [{
               title: trimMetaButtonTitle(message.menu.title || "Menu"),
               rows: options.map((item) => ({

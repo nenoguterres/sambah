@@ -153,7 +153,7 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
       } else {
         sendResult = await whatsappProvider?.sendMessage?.({
           to: outboundCommand.recipient,
-          message: { type: "text", text: outboundCommand.text },
+          message: outboundCommand.message,
           phoneNumberId: outboundCommand.phoneNumberId
         });
         reason = sendResult?.sent ? "sent" : "meta_send_failed";
@@ -274,10 +274,16 @@ function buildV2OutboundCommand({ incoming = {}, reply = {}, correlationId = "" 
     conversationId: String(incoming.telefone || incoming.from || incoming.phone || "").trim(),
     recipient,
     text: renderV2ReplyAsText(reply),
-    interactive: null,
+    message: normalizeV2ProviderMessage(reply),
+    interactive: reply.type === "menu" || reply.type === "url_button" ? reply : null,
     correlationId,
     phoneNumberId: String(incoming.phoneNumberIdReceived || "").trim()
   };
+}
+
+function normalizeV2ProviderMessage(reply = {}) {
+  if (reply.type === "menu" || reply.type === "url_button") return reply;
+  return { type: "text", text: renderV2ReplyAsText(reply) };
 }
 
 function renderV2ReplyAsText(reply = {}) {

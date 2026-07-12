@@ -3,16 +3,17 @@ import { portalInsanoContract } from "./portalInsanoContract.js";
 
 export function routePortalInsanoMessage({ state, message, contract = portalInsanoContract }) {
   const text = normalizeText(message.text);
-  if (state.mode === "human" || state.serviceState === "HUMANO") return humanState(state);
-  if (isPaymentClaim(text)) return startFlow(state, contract, "payment_receipt_review", "paymentSafety");
-  if (state.activeFlow) return handleActiveFlow(state, contract, text, message.text);
+  const routedState = normalizeLegacyFoodtruckState(state, contract);
+  if (routedState.mode === "human" || routedState.serviceState === "HUMANO") return humanState(routedState);
+  if (isPaymentClaim(text)) return startFlow(routedState, contract, "payment_receipt_review", "paymentSafety");
+  if (routedState.activeFlow) return handleActiveFlow(routedState, contract, text, message.text);
   const command = routeNavigationCommand(text);
-  if (command) return handleNavigationCommand(state, contract, command);
-  const currentMenuId = state.activeMenu || contract.welcome.menuId;
+  if (command) return handleNavigationCommand(routedState, contract, command);
+  const currentMenuId = routedState.activeMenu || contract.welcome.menuId;
   const selected = resolveMenuOption(contract.menus[currentMenuId], text);
-  if (selected) return executeAction(state, contract, selected.action, selected.id);
-  if (isWelcome(text)) return openMenu(resetToPortal(state, contract), contract, contract.welcome.menuId, "welcomeFlow", []);
-  return response("fallbackMenu", state, renderMenu(contract.menus[currentMenuId]));
+  if (selected) return executeAction(routedState, contract, selected.action, selected.id);
+  if (isWelcome(text)) return openMenu(resetToPortal(routedState, contract), contract, contract.welcome.menuId, "welcomeFlow", []);
+  return response("fallbackMenu", routedState, renderMenu(contract.menus[currentMenuId]));
 }
 
 export function renderMenu(menu) {
@@ -29,6 +30,7 @@ export function renderMenuReply(menu) {
       id: menu.id,
       title: menu.title,
       body: menu.body,
+      buttonText: menu.buttonText || menu.title,
       options: menu.options.map((item) => ({
         id: item.id,
         order: item.order,
@@ -43,6 +45,9 @@ export function renderMenuReply(menu) {
 export function resolveMenuOption(menu, text) {
   if (!menu) return null;
   const normalized = normalizeText(text);
+  if (menu.strictInteractiveIds) {
+    return menu.options.find((item) => normalizeText(item.id) === normalized) || null;
+  }
   return menu.options.find((item) => {
     return String(item.order) === normalized || normalizeText(item.id) === normalized || normalizeText(item.title) === normalized;
   }) || null;
@@ -55,15 +60,95 @@ function executeAction(state, contract, action, source) {
       areaId: Object.prototype.hasOwnProperty.call(action, "areaId") ? action.areaId : state.areaId,
       activeFlow: null,
       activeStep: null,
-      awaitingInput: false
+      awaitingInput: false,
+      foodtruckSubstate: action.clearFoodtruckSubstate ? null : state.foodtruckSubstate || null
     };
     const stack = action.target === contract.welcome.menuId ? [] : [...(state.menuStack || []), state.activeMenu || contract.welcome.menuId];
     return openMenu({ ...nextState, menuStack: stack }, contract, action.target, source);
   }
   if (action.type === "start_flow") return startFlow(state, contract, action.target, source);
+  if (action.type === "temporary_foodtruck_response") return temporaryFoodtruckResponse(state, contract, action.target, source);
+  if (action.type === "open_url_button") return openUrlButton(state, contract, action.target, source);
   if (action.type === "show_catalog") return showCatalog(state, contract, action.target, source);
   if (action.type === "open_authorized_link") return integrationDisabled(state, source);
   return response("invalidAction", state, "Essa funcao ainda nao esta habilitada. Vou encaminhar para atendimento.", [{ type: "safe_handoff" }]);
+}
+
+function normalizeLegacyFoodtruckState(state, contract) {
+  if (!isLegacyFoodtruckState(state)) return state;
+  return {
+    ...state,
+    areaId: "insano_food_truck",
+    activeMenu: "foodtruck_main_menu",
+    activeFlow: null,
+    activeStep: null,
+    awaitingInput: false,
+    menuStack: [],
+    foodtruckSubstate: null,
+    legacyFoodtruckClearedAt: new Date().toISOString()
+  };
+}
+
+function isLegacyFoodtruckState(state = {}) {
+  const legacyMenus = new Set(["foodtruck_services_menu", "foodtruck_event_menu"]);
+  const legacyFlows = new Set(["foodtruck_event_request", "foodtruck_quote_request", "foodtruck_request_tracking"]);
+  return state.areaId === "insano_food_truck" && (
+    legacyMenus.has(state.activeMenu) || legacyFlows.has(state.activeFlow)
+  );
+}
+
+function temporaryFoodtruckResponse(state, contract, target, source) {
+  const textByTarget = {
+    evento: "Vamos organizar teu evento.\n\nEsta opção será configurada na próxima etapa.",
+    orcamento: "Vamos preparar teu orçamento.\n\nEsta opção será configurada na próxima etapa."
+  };
+  const menu = contract.menus.foodtruck_followup_menu;
+  return responseWithReplies(
+    source,
+    {
+      ...state,
+      areaId: "insano_food_truck",
+      activeMenu: menu.id,
+      activeFlow: null,
+      activeStep: null,
+      awaitingInput: false,
+      foodtruckSubstate: { selectedAction: source, target }
+    },
+    [{
+      ...renderMenuReply(menu),
+      text: `${textByTarget[target] || "Opção registrada."}\n\n${renderMenu(menu)}`,
+      menu: {
+        ...renderMenuReply(menu).menu,
+        body: `${textByTarget[target] || "Opção registrada."}\n\nComo tu quer seguir?`
+      }
+    }],
+    [{ type: "foodtruck_action_selected", source, target }]
+  );
+}
+
+function openUrlButton(state, contract, target, source) {
+  const url = resolveContractPath(contract, target);
+  if (!url) {
+    return response("missingCatalogUrl", state, "CONFIGURAÇÃO AUSENTE: integration.insano_food_truck.catalog_url", [{ type: "missing_config", source, target }]);
+  }
+  return responseWithReplies(
+    source,
+    {
+      ...state,
+      areaId: "insano_food_truck",
+      activeFlow: null,
+      activeStep: null,
+      awaitingInput: false,
+      foodtruckSubstate: { selectedAction: source, target: "catalogo" }
+    },
+    [{
+      type: "url_button",
+      text: "Conheça os produtos do Insano Food Truck.",
+      buttonText: "ABRIR CATÁLOGO",
+      url
+    }],
+    [{ type: "catalog_url_button", source, url }]
+  );
 }
 
 function openMenu(state, contract, menuId, source, stack = state.menuStack || []) {
@@ -117,6 +202,14 @@ function handleActiveFlow(state, contract, text, rawText) {
 
 function showCatalog(state, contract, catalogId, source) {
   return response("catalogService", { ...state, catalogId }, contract.catalogs[catalogId] || "Catalogo indisponivel sem validacao operacional.", [{ type: "catalog_viewed", source }]);
+}
+
+function resolveContractPath(contract, target = "") {
+  const aliases = {
+    "integration.insano_food_truck.catalog_url": "integrations.insano_food_truck.catalogUrl"
+  };
+  const path = aliases[target] || target;
+  return path.split(".").reduce((value, key) => value?.[key], contract);
 }
 
 function integrationDisabled(state, source) {

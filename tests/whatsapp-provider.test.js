@@ -263,6 +263,33 @@ test("provider meta usa texto numerado quando lista interativa falha", async () 
   assert.match(requests[1].text.body, /1\. Um/);
 });
 
+test("provider meta envia botao URL para catalogo Insano", async () => {
+  let request = null;
+  const provider = createWhatsAppProvider({
+    config: { provider: "meta", phoneNumberId: "12345", accessToken: "token-secreto" },
+    fetchImpl: async (url, options) => {
+      request = { url, body: JSON.parse(options.body) };
+      return new Response(JSON.stringify({ messages: [{ id: "wamid-url-button" }] }), { status: 200 });
+    }
+  });
+  const result = await provider.sendMessage({
+    to: "5551999999999",
+    message: {
+      type: "url_button",
+      text: "Conheça os produtos do Insano Food Truck.",
+      buttonText: "ABRIR CATÁLOGO",
+      url: "https://www.insanofoodtruck.com.br/catalogo"
+    }
+  });
+
+  assert.equal(result.sent, true);
+  assert.equal(result.metaMessageType, "interactive_cta_url");
+  assert.equal(request.body.type, "interactive");
+  assert.equal(request.body.interactive.type, "cta_url");
+  assert.equal(request.body.interactive.action.parameters.display_text, "ABRIR CATÁLOGO");
+  assert.equal(request.body.interactive.action.parameters.url, "https://www.insanofoodtruck.com.br/catalogo");
+});
+
 test("provider meta preserva destinatario Meta recebido e tenta alias brasileiro se a Meta recusar", async () => {
   const requests = [];
   const provider = createWhatsAppProvider({

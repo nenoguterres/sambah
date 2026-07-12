@@ -35,44 +35,28 @@ export const portalInsanoContract = {
     foodtruck_main_menu: {
       id: "foodtruck_main_menu",
       title: "Insano Food Truck",
-      body: "Como podemos ajudar no Insano Food Truck?",
-      fallbackText: "1. Agendar evento\n2. Solicitar orcamento\n3. Conhecer servicos\n4. Cardapio para eventos\n5. Consultar solicitacao\n6. Falar com a equipe\n7. Voltar ao Portal Insano",
+      body: "Insano Food Truck\n\nO que tu precisa?",
+      buttonText: "ESCOLHER UMA AÇÃO",
+      strictInteractiveIds: true,
+      fallbackText: "1. Evento\n2. Orçamento\n3. Catálogo de produtos\n4. Atendimento Humano\n5. Voltar ao Portal Insano",
       options: [
-        option("foodtruck.schedule_event", 1, "Agendar evento", { type: "start_flow", target: "foodtruck_event_request" }),
-        option("foodtruck.quote", 2, "Solicitar orcamento", { type: "start_flow", target: "foodtruck_quote_request" }),
-        option("foodtruck.services", 3, "Conhecer servicos", { type: "open_menu", target: "foodtruck_services_menu" }),
-        option("foodtruck.event_menu", 4, "Cardapio para eventos", { type: "open_menu", target: "foodtruck_event_menu" }),
-        option("foodtruck.track_request", 5, "Consultar solicitacao", { type: "start_flow", target: "foodtruck_request_tracking" }),
-        option("foodtruck.human", 6, "Falar com a equipe", { type: "start_flow", target: "human_handoff" }),
-        option("foodtruck.back", 7, "Voltar ao Portal Insano", { type: "open_menu", target: "portal_main_menu", areaId: null })
+        option("INSANO_EVENTO", 1, "Evento", { type: "temporary_foodtruck_response", target: "evento" }),
+        option("INSANO_ORCAMENTO", 2, "Orçamento", { type: "temporary_foodtruck_response", target: "orcamento" }),
+        option("INSANO_CATALOGO", 3, "Catálogo de produtos", { type: "open_url_button", target: "integration.insano_food_truck.catalog_url" }),
+        option("INSANO_HUMANO", 4, "Atendimento Humano", { type: "start_flow", target: "human_handoff" }),
+        option("PORTAL_VOLTAR", 5, "Voltar ao Portal Insano", { type: "open_menu", target: "portal_main_menu", areaId: null, clearFoodtruckSubstate: true })
       ]
     },
-    foodtruck_services_menu: {
-      id: "foodtruck_services_menu",
-      title: "Servicos para Eventos",
-      body: "Escolha o servico de interesse:",
-      fallbackText: "1. Insano Food Truck\n2. Insaninha Food Truck\n3. Pizza para Eventos\n4. Comida de Boteco Insano\n5. Churrasco para Eventos\n6. Voltar",
+    foodtruck_followup_menu: {
+      id: "foodtruck_followup_menu",
+      title: "Insano Food Truck",
+      body: "Como tu quer seguir?",
+      buttonText: "ESCOLHER UMA AÇÃO",
+      strictInteractiveIds: true,
+      fallbackText: "1. Voltar ao menu Insano Food Truck\n2. Atendimento Humano",
       options: [
-        option("foodtruck.service.main_truck", 1, "Insano Food Truck", { type: "start_flow", target: "foodtruck_quote_request" }),
-        option("foodtruck.service.insaninha", 2, "Insaninha Food Truck", { type: "start_flow", target: "foodtruck_quote_request" }),
-        option("foodtruck.service.pizza", 3, "Pizza para Eventos", { type: "start_flow", target: "foodtruck_quote_request" }),
-        option("foodtruck.service.boteco", 4, "Comida de Boteco Insano", { type: "start_flow", target: "foodtruck_quote_request" }),
-        option("foodtruck.service.churrasco", 5, "Churrasco para Eventos", { type: "start_flow", target: "foodtruck_quote_request" }),
-        option("foodtruck.services.back", 6, "Voltar", { type: "open_menu", target: "foodtruck_main_menu" })
-      ]
-    },
-    foodtruck_event_menu: {
-      id: "foodtruck_event_menu",
-      title: "Cardapio para Eventos",
-      body: "Escolha a categoria:",
-      fallbackText: "1. Burgers\n2. Pizzas\n3. Comida de Boteco Insano\n4. Churrasco\n5. Montar proposta personalizada\n6. Voltar",
-      options: [
-        option("event_menu.burgers", 1, "Burgers", { type: "show_catalog", target: "catalog.foodtruck.burgers" }),
-        option("event_menu.pizzas", 2, "Pizzas", { type: "show_catalog", target: "catalog.foodtruck.pizzas" }),
-        option("event_menu.boteco", 3, "Comida de Boteco Insano", { type: "show_catalog", target: "catalog.foodtruck.boteco" }),
-        option("event_menu.churrasco", 4, "Churrasco", { type: "show_catalog", target: "catalog.foodtruck.churrasco" }),
-        option("event_menu.custom", 5, "Montar proposta personalizada", { type: "start_flow", target: "foodtruck_quote_request" }),
-        option("event_menu.back", 6, "Voltar", { type: "open_menu", target: "foodtruck_main_menu" })
+        option("INSANO_MENU_VOLTAR", 1, "Voltar ao menu Insano Food Truck", { type: "open_menu", target: "foodtruck_main_menu" }),
+        option("INSANO_HUMANO", 2, "Atendimento Humano", { type: "start_flow", target: "human_handoff" })
       ]
     },
     xeriffe_main_menu: {
@@ -161,9 +145,6 @@ export const portalInsanoContract = {
     }
   },
   flows: {
-    foodtruck_event_request: flow("foodtruck_event_request", "Qual data tu tem em mente para o evento?", "event.date"),
-    foodtruck_quote_request: flow("foodtruck_quote_request", "Para quantas pessoas seria o evento?", "quote.people"),
-    foodtruck_request_tracking: flow("foodtruck_request_tracking", "Informe o telefone ou codigo da solicitacao.", "tracking.reference"),
     xeriffe_order: flow("xeriffe_order", "Me diz os itens do pedido para registrar como pre-atendimento.", "order.items"),
     xeriffe_command_access: flow("xeriffe_command_access", "Informe o numero da comanda ou telefone.", "command.reference"),
     xeriffe_order_tracking: flow("xeriffe_order_tracking", "Informe o numero do pedido ou telefone.", "order.reference"),
@@ -199,6 +180,7 @@ export const portalInsanoContract = {
     "catalog.projects": "Projetos Insano: Mesa do Xeriffe, SamBah, SamBah Pay, Perola, i9ACAO Security, Workhub, Studio N, Locker Frio e automacoes."
   },
   integrations: {
+    insano_food_truck: { catalogUrl: "https://www.insanofoodtruck.com.br/catalogo" },
     mesa_do_xeriffe: { enabled: false, customerUrl: null },
     sambah_pay: { enabled: false },
     meta_sender: { enabled: false, realSenderAllowed: false },
