@@ -42,7 +42,7 @@ test("WhatsApp V2 lab modo humano preserva contexto e bloqueia automacao apos mo
   const engine = createLabEngine();
   const handoff = await engine.processor.handleIncoming({ messageId: "wamid-v2-human-1", from: "5551000000003", text: "humano" });
   const reason = await engine.processor.handleIncoming({ messageId: "wamid-v2-human-2", from: "5551000000003", text: "quero falar sobre evento" });
-  const afterHuman = await engine.processor.handleIncoming({ messageId: "wamid-v2-human-3", from: "5551000000003", text: "oi" });
+  const afterHuman = await engine.processor.handleIncoming({ messageId: "wamid-v2-human-3", from: "5551000000003", text: "quero mais detalhes" });
 
   assert.equal(handoff.state.activeFlow, null);
   assert.equal(handoff.state.mode, "human");
@@ -52,6 +52,24 @@ test("WhatsApp V2 lab modo humano preserva contexto e bloqueia automacao apos mo
   assert.equal(afterHuman.state.mode, "human");
   assert.equal(afterHuman.repliesSent, 0);
   assert.equal(engine.sender.sent.length, 1);
+});
+
+test("WhatsApp V2 lab permite reiniciar Portal com oi quando conversa estava em humano", async () => {
+  const engine = createLabEngine({ observeOnly: true });
+  const from = "5551000000006";
+  const state = createWhatsAppV2State(from);
+  state.mode = "human";
+  state.serviceState = "HUMANO";
+  state.navigationStack = ["PORTAL_INSANO", "INSANO_FOODTRUCK"];
+  await engine.conversationRepository.save(state);
+
+  const result = await engine.processor.handleIncoming({ messageId: "wamid-v2-human-reset", from, text: "oi" });
+
+  assert.equal(result.state.mode, "bot");
+  assert.equal(result.state.serviceState, "AUTOMATICO");
+  assert.equal(result.replies[0].type, "menu");
+  assert.equal(result.replies[0].menu.id, "portal_main_menu");
+  assert.deepEqual(result.state.navigationStack, ["PORTAL_INSANO"]);
 });
 
 test("WhatsApp V2 lab sender fake falha sem chamar servico real e deixa outbox failed", async () => {

@@ -5,7 +5,12 @@ import { getRuntimeConfig } from "../../config.js";
 export function routePortalInsanoMessage({ state, message, contract = portalInsanoContract }) {
   const text = normalizeText(message.text);
   const routedState = normalizeNavigationState(normalizeLegacyFoodtruckState(state, contract), contract);
-  if (routedState.mode === "human" || routedState.serviceState === "HUMANO") return humanState(routedState);
+  if (routedState.mode === "human" || routedState.serviceState === "HUMANO") {
+    if (isWelcome(text) || routeNavigationCommand(text) === "inicio" || routeNavigationCommand(text) === "portal_voltar") {
+      return openMenu(resetToPortal(routedState, contract), contract, contract.welcome.menuId, "humanResetToPortal", []);
+    }
+    return humanState(routedState);
+  }
   if (isPaymentClaim(text)) return startFlow(routedState, contract, "payment_receipt_review", "paymentSafety");
   if (routedState.activeFlow) return handleActiveFlow(routedState, contract, text, message.text);
   const command = routeNavigationCommand(text);
@@ -379,7 +384,7 @@ function humanState(state) {
 }
 
 function resetToPortal(state, contract) {
-  return { ...state, areaId: null, activeMenu: contract.welcome.menuId, navigationStack: ["PORTAL_INSANO"], activeFlow: null, activeStep: null, awaitingInput: false, menuStack: [] };
+  return { ...state, mode: "bot", serviceState: "AUTOMATICO", areaId: null, activeMenu: contract.welcome.menuId, navigationStack: ["PORTAL_INSANO"], activeFlow: null, activeStep: null, awaitingInput: false, menuStack: [] };
 }
 
 function isWelcome(text) {
