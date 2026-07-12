@@ -2118,6 +2118,14 @@ async function createInsanoFoodTruckEventRequest({
       notes: payload.notes
     }
   });
+  const emailAlert = await eventEmailAlertService.createAlert(buildInsanoEventEmailAlert({
+    payload,
+    leadId: eventLead.lead.id,
+    eventRequestId: eventLead.lead.id,
+    conversationId,
+    conversationUrl
+  }));
+  const emailSend = await eventEmailAlertService.sendAlert(eventLead.lead.id);
 
   if (eventLead.duplicated) {
     return siteResponse({
@@ -2130,28 +2138,46 @@ async function createInsanoFoodTruckEventRequest({
       confirmation: buildInsanoEventConfirmation(),
       lead: eventLead.lead,
       duplicate: true,
+      emailAlert: {
+        alertId: emailAlert.alert.alertId,
+        to: emailAlert.alert.to,
+        subject: emailAlert.alert.subject,
+        status: emailSend.alert?.status || emailAlert.alert.status,
+        conversationUrl
+      },
+      emailSend: { ok: emailSend.ok, status: emailSend.alert?.status || emailAlert.alert.status, error: emailSend.error || "" },
       conversationId,
       conversationUrl
     });
   }
 
-  const crmResult = await createSiteEventQuote(crmService, insanoSitePayload({
-    ...body,
-    nome: payload.name,
-    whatsapp: payload.phone,
-    data: payload.date,
-    local: payload.location,
-    cidade: payload.city,
-    quantidade_pessoas: payload.people,
-    pessoas: payload.people,
-    tipo_evento: "Insano Food Truck",
-    observacoes: payload.notes,
-    message: payload.notes,
-    pipeline: "food_truck_evento",
-    tipo: "evento"
-  }, { pipeline: "food_truck_evento", tipo: "evento" }));
+  let crmResult = { whatsappUrl: "", lead: null, evento: null };
+  try {
+    crmResult = await createSiteEventQuote(crmService, insanoSitePayload({
+      ...body,
+      nome: payload.name,
+      whatsapp: payload.phone,
+      data: payload.date,
+      local: payload.location,
+      cidade: payload.city,
+      quantidade_pessoas: payload.people,
+      pessoas: payload.people,
+      tipo_evento: "Insano Food Truck",
+      observacoes: payload.notes,
+      message: payload.notes,
+      pipeline: "food_truck_evento",
+      tipo: "evento"
+    }, { pipeline: "food_truck_evento", tipo: "evento" }));
+  } catch (error) {
+    crmResult = { whatsappUrl: "", lead: null, evento: null, error: sanitizeEventSendError(error) };
+  }
 
-  const conversation = await ensureEventConversation(whatsappConversationService, payload, conversationId);
+  let conversation = null;
+  try {
+    conversation = await ensureEventConversation(whatsappConversationService, payload, conversationId);
+  } catch {
+    conversation = null;
+  }
   const internalSummary = buildInsanoEventInternalSummary(payload);
   if (conversationId && whatsappConversationService?.recordOutgoing) {
     await whatsappConversationService.recordOutgoing(conversationId, {
@@ -2159,7 +2185,7 @@ async function createInsanoFoodTruckEventRequest({
       status: "registro_interno",
       metaMessageType: "internal_event",
       correlationId: `insano-event-summary:${eventLead.lead.id}`
-    });
+    }).catch(() => null);
   }
   const whatsappReturn = buildInsanoEventWhatsappReturn(payload);
   const interactiveReturn = {
@@ -2185,17 +2211,8 @@ async function createInsanoFoodTruckEventRequest({
       sendResult,
       metaMessageType: sendResult?.metaMessageType || "interactive_button",
       correlationId: `insano-event-return:${eventLead.lead.id}`
-    });
+    }).catch(() => null);
   }
-
-  const emailAlert = await eventEmailAlertService.createAlert(buildInsanoEventEmailAlert({
-    payload,
-    leadId: eventLead.lead.id,
-    eventRequestId: eventLead.lead.id,
-    conversationId,
-    conversationUrl
-  }));
-  const emailSend = await eventEmailAlertService.sendAlert(eventLead.lead.id);
 
   return siteResponse({
     id: eventLead.lead.id,
