@@ -77,7 +77,7 @@ function renderInsanoRequest(kind = "evento") {
         </div>
         <div class="row">
           <label>Data do evento<input name="dataEvento" type="date" min="${escapeHtml(todayDateInput())}" required></label>
-          <label>Publico previsto<input name="pessoas" type="number" min="1" step="1" placeholder="Apenas numero" inputmode="numeric" required></label>
+          ${requestQuantityField(kind)}
         </div>
         <div class="row">
           <label>Local ou endereco<input name="local" placeholder="Local ou endereco" required></label>
@@ -258,6 +258,7 @@ async function submitEventRequest(form, fallbackKind = "evento") {
     cidade: data.cidade,
     publicoPrevisto: data.pessoas,
     pessoas: data.pessoas,
+    produto: data.produto || "",
     horarioInicio: data.horarioInicio,
     horarioTermino: data.terminoADefinir ? "a definir" : data.horarioTermino,
     observacoes: data.observacoes,
@@ -286,7 +287,9 @@ function validateEventFormData(data = {}) {
   if (!data.dataEvento || data.dataEvento < todayDateInput()) return { ok: false, message: "Informe uma data valida, sem usar data anterior a hoje." };
   if (!data.local?.trim()) return { ok: false, message: "Informe o local ou endereco." };
   if (!data.cidade?.trim()) return { ok: false, message: "Informe a cidade." };
+  if (data.requestKind === "orcamento" && !data.produto?.trim()) return { ok: false, message: "Escolha o produto para o orcamento." };
   const people = Number(data.pessoas);
+  if (data.requestKind === "orcamento" && (!Number.isInteger(people) || people < 50)) return { ok: false, message: "A quantidade minima para orcamento e 50 porcoes." };
   if (!Number.isInteger(people) || people <= 0) return { ok: false, message: "Informe o publico previsto como numero inteiro positivo." };
   if (!/^\d{2}:\d{2}$/.test(data.horarioInicio || "")) return { ok: false, message: "Informe o horario de inicio." };
   if (!data.terminoADefinir && !/^\d{2}:\d{2}$/.test(data.horarioTermino || "")) return { ok: false, message: "Informe o horario de termino ou marque A definir." };
@@ -347,6 +350,25 @@ function insanoRequestLabels(kind = "evento") {
     successText: "Recebemos as informacoes do teu evento.",
     nextText: "Nossa equipe vai verificar a agenda e responder na mesma conversa do WhatsApp."
   };
+}
+
+function requestQuantityField(kind = "evento") {
+  if (kind === "orcamento") {
+    return `
+      <label>Produto
+        <select name="produto" required>
+          <option value="">Escolha o produto</option>
+          <option>Hamburguer</option>
+          <option>Pizzas</option>
+          <option>Churrasquinho</option>
+          <option>Porcoes de buteco</option>
+          <option>Joelho de Porco</option>
+        </select>
+      </label>
+      <label>Quantidade de porcoes<input name="pessoas" type="number" min="50" step="1" value="50" placeholder="Minimo 50 porcoes" inputmode="numeric" required></label>
+    `;
+  }
+  return `<label>Publico previsto<input name="pessoas" type="number" min="1" step="1" placeholder="Apenas numero" inputmode="numeric" required></label>`;
 }
 
 function insanoRequestSubmissionId(kind = "evento", conversationId = "", phone = "") {

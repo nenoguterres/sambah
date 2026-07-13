@@ -2099,7 +2099,7 @@ async function createInsanoFoodTruckEventRequest({
   const kind = requestKind === "orcamento" ? "orcamento" : "evento";
   const labels = insanoRequestKindLabels(kind);
   const payload = normalizeInsanoEventPayload(body);
-  const validation = validateInsanoEventPayload(payload);
+  const validation = validateInsanoEventPayload(payload, kind);
   if (!validation.ok) return { ok: false, statusCode: 400, error: "invalid_event_request", errors: validation.errors };
   const conversationId = normalizeEventConversationId(payload.conversationId, payload.phone);
   const eventRequestId = normalizeEventRequestId(body.eventRequestId || body.submissionId || body.requestId || "", conversationId, payload);
@@ -2125,6 +2125,7 @@ async function createInsanoFoodTruckEventRequest({
       originalPhone: payload.originalPhone,
       contactPhone: payload.phone,
       name: payload.name,
+      product: payload.product,
       date: payload.date,
       displayDate: formatBrazilianDate(payload.date),
       location: payload.location,
@@ -2139,6 +2140,7 @@ async function createInsanoFoodTruckEventRequest({
     event: {
       type: "food_truck_event",
       service: "Insano Food Truck",
+      product: payload.product,
       date: payload.date,
       time: payload.startsAt,
       location: payload.location,
@@ -2195,6 +2197,7 @@ async function createInsanoFoodTruckEventRequest({
       cidade: payload.city,
       quantidade_pessoas: payload.people,
       pessoas: payload.people,
+      produto: payload.product,
       tipo_evento: "Insano Food Truck",
       observacoes: payload.notes,
       message: payload.notes,
@@ -2855,6 +2858,7 @@ function normalizeInsanoEventPayload(body = {}) {
     date: normalizeEventDate(body.dataEvento || body.data || body.date || body.eventDate || ""),
     location: cleanSiteOrderText(body.local || body.endereco || body.location || body.place || ""),
     city: cleanSiteOrderText(body.cidade || body.city || ""),
+    product: cleanSiteOrderText(body.produto || body.product || body.item || ""),
     people: Number(body.publicoPrevisto || body.pessoas || body.people || body.quantidade_pessoas || 0) || null,
     startsAt: cleanSiteOrderText(body.horarioInicio || body.startsAt || body.startTime || body.inicio || ""),
     endsAt: endUndefined ? "" : cleanSiteOrderText(endValue),
@@ -2864,13 +2868,15 @@ function normalizeInsanoEventPayload(body = {}) {
   };
 }
 
-function validateInsanoEventPayload(payload = {}) {
+function validateInsanoEventPayload(payload = {}, kind = "evento") {
   const errors = [];
   if (!payload.name) errors.push({ field: "nome", error: "required" });
   if (!payload.date || !isValidIsoDate(payload.date)) errors.push({ field: "dataEvento", error: "invalid_date" });
   else if (payload.date < todayIsoDate()) errors.push({ field: "dataEvento", error: "past_date" });
   if (!payload.location) errors.push({ field: "local", error: "required" });
   if (!payload.city) errors.push({ field: "cidade", error: "required" });
+  if (kind === "orcamento" && !payload.product) errors.push({ field: "produto", error: "required" });
+  if (kind === "orcamento" && (!Number.isInteger(payload.people) || payload.people < 50)) errors.push({ field: "quantidadePorcoes", error: "min_50_required" });
   if (!Number.isInteger(payload.people) || payload.people <= 0) errors.push({ field: "publicoPrevisto", error: "positive_integer_required" });
   if (!isValidTime(payload.startsAt)) errors.push({ field: "horarioInicio", error: "invalid_time" });
   if (!payload.endTimeUndefined && !isValidTime(payload.endsAt)) errors.push({ field: "horarioTermino", error: "required_or_a_definir" });
@@ -2984,6 +2990,8 @@ function insanoRequestKindLabels(kind = "evento") {
       teamAction: "Nossa equipe vai preparar o orcamento e responder nesta mesma conversa.",
       emailOpening: "Nova solicitacao de orcamento recebida pelo SamBah",
       emailOrigin: "WhatsApp - Portal Insano - Insano Food Truck - Orcamento",
+      amountLabel: "Quantidade de porcoes",
+      amountUnit: "porcoes",
       confirmationText: "Recebemos as informacoes do teu orcamento. Nossa equipe vai preparar o orcamento e responder na mesma conversa do WhatsApp."
     };
   }
@@ -2996,6 +3004,8 @@ function insanoRequestKindLabels(kind = "evento") {
     teamAction: "Nossa equipe vai verificar a agenda e responder nesta mesma conversa.",
     emailOpening: "Nova solicitacao de evento recebida pelo SamBah",
     emailOrigin: "WhatsApp - Portal Insano - Insano Food Truck - Evento",
+    amountLabel: "Publico previsto",
+    amountUnit: "pessoas",
     confirmationText: "Recebemos as informacoes do teu evento. Nossa equipe vai verificar a agenda e responder na mesma conversa do WhatsApp."
   };
 }
@@ -3007,7 +3017,8 @@ function buildInsanoEventWhatsappReturn(payload = {}, kind = "evento") {
     "",
     `Data: ${formatBrazilianDate(payload.date)}`,
     `Cidade: ${payload.city || ""}`,
-    `Publico previsto: ${payload.people || ""} pessoas`,
+    kind === "orcamento" ? `Produto: ${payload.product || ""}` : "",
+    `${labels.amountLabel}: ${payload.people || ""} ${labels.amountUnit}`,
     "",
     labels.teamAction
   ].join("\n");
@@ -3022,7 +3033,8 @@ function buildInsanoEventInternalSummary(payload = {}, kind = "evento") {
     `Data: ${formatBrazilianDate(payload.date)}`,
     `Local: ${payload.location}`,
     `Cidade: ${payload.city}`,
-    `Publico previsto: ${payload.people} pessoas`,
+    kind === "orcamento" ? `Produto: ${payload.product || ""}` : "",
+    `${labels.amountLabel}: ${payload.people} ${labels.amountUnit}`,
     `Horario de inicio: ${payload.startsAt}`,
     `Horario de termino: ${payload.endTimeUndefined ? "A definir" : payload.endsAt}`,
     `Telefone de contato: ${payload.phone}`,
@@ -3046,7 +3058,8 @@ function buildInsanoEventEmailAlert({ payload = {}, leadId = "", eventRequestId 
   const date = formatBrazilianDate(payload.date);
   const city = payload.city || "";
   const people = payload.people || "";
-  const subject = `${labels.subjectPrefix} ${date} \u2014 ${city} \u2014 ${people} pessoas`;
+  const subjectDetail = kind === "orcamento" && payload.product ? payload.product : `${people} ${labels.amountUnit}`;
+  const subject = `${labels.subjectPrefix} ${date} \u2014 ${city} \u2014 ${subjectDetail}`;
   const endTime = payload.endTimeUndefined ? "A definir" : payload.endsAt;
   const body = [
     labels.emailOpening,
@@ -3063,8 +3076,9 @@ function buildInsanoEventEmailAlert({ payload = {}, leadId = "", eventRequestId 
     "Cidade:",
     city,
     "",
-    "Publico previsto:",
-    people ? `${people} pessoas` : "",
+    ...(kind === "orcamento" ? ["Produto:", payload.product || "", ""] : []),
+    `${labels.amountLabel}:`,
+    people ? `${people} ${labels.amountUnit}` : "",
     "",
     "Horario de inicio:",
     payload.startsAt || "",

@@ -282,10 +282,25 @@ test("fluxo Orcamento usa formulario proprio e envia email sem cair no Evento", 
     }
   });
   try {
+    const invalidQuantity = await fetch(`${app.base}/api/site/insano/orcamento`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(validPayload({ submissionId: "quote_form_invalid_quantity", produto: "Hamburguer", pessoas: "49" }))
+    });
+    const invalidProduct = await fetch(`${app.base}/api/site/insano/orcamento`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(validPayload({ submissionId: "quote_form_invalid_product", produto: "" }))
+    });
+    assert.equal(invalidQuantity.status, 400);
+    assert.equal((await invalidQuantity.json()).errors.some((item) => item.field === "quantidadePorcoes"), true);
+    assert.equal(invalidProduct.status, 400);
+    assert.equal((await invalidProduct.json()).errors.some((item) => item.field === "produto"), true);
+
     const response = await fetch(`${app.base}/api/site/insano/orcamento`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(validPayload({ submissionId: "quote_form_test_1" }))
+      body: JSON.stringify(validPayload({ submissionId: "quote_form_test_1", produto: "Hamburguer", pessoas: "50" }))
     });
     const body = await response.json();
     assert.equal(response.status, 201);
@@ -295,14 +310,17 @@ test("fluxo Orcamento usa formulario proprio e envia email sem cair no Evento", 
     assert.equal(body.emailAlert.status, "SENT");
     assert.equal(smtpCalls.length, 1);
     assert.equal(smtpCalls[0].to, "chefnenogutterres@gmail.com,kdoiegutterresgastronomia@gmail.com");
-    assert.match(smtpCalls[0].subject, /\[NOVO ORCAMENTO\] 25\/08\/2026 — Porto Alegre — 100 pessoas/);
+    assert.match(smtpCalls[0].subject, /\[NOVO ORCAMENTO\] 25\/08\/2026 — Porto Alegre — Hamburguer/);
     assert.match(smtpCalls[0].body, /Nova solicitacao de orcamento recebida pelo SamBah/);
+    assert.match(smtpCalls[0].body, /Produto:\nHamburguer/);
+    assert.match(smtpCalls[0].body, /Quantidade de porcoes:\n50 porcoes/);
     assert.match(smtpCalls[0].body, /WhatsApp - Portal Insano - Insano Food Truck - Orcamento/);
 
     const leads = JSON.parse(await readFile(join(app.dir, "event-leads.json"), "utf8"));
     assert.equal(leads.length, 1);
     assert.equal(leads[0].id, "quote_form_test_1");
     assert.equal(leads[0].formData.formType, "insano_food_truck_orcamento");
+    assert.equal(leads[0].formData.product, "Hamburguer");
     assert.equal(leads[0].origin, "WHATSAPP_PORTAL_INSANO_FOODTRUCK_ORCAMENTO");
   } finally {
     await app.close();
@@ -323,6 +341,14 @@ test("formulario publico do Orcamento nao expoe shell operacional do SamBah", as
 
     const script = await fetch(`${app.base}/platform.js`).then((item) => item.text());
     assert.match(script, /Solicitacao de orcamento/);
+    assert.match(script, /Produto/);
+    assert.match(script, /Hamburguer/);
+    assert.match(script, /Pizzas/);
+    assert.match(script, /Churrasquinho/);
+    assert.match(script, /Porcoes de buteco/);
+    assert.match(script, /Joelho de Porco/);
+    assert.match(script, /Quantidade de porcoes/);
+    assert.match(script, /min="50"/);
     assert.match(script, /ENVIAR ORCAMENTO/);
     assert.match(script, /\/api\/site\/insano\/orcamento/);
     assert.match(script, /VOLTAR AO WHATSAPP/);
