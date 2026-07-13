@@ -132,6 +132,7 @@ export function createApp({
   aiPerformanceService = aiPerformance,
   aiConversionService = aiConversion,
   whatsappProvider: appWhatsappProvider = whatsappProvider,
+  whatsappV2ConversationRepository = null,
   runtimeConfig: appRuntimeConfig = null,
   whatsappSendFetch = globalThis.fetch,
   authMode = globalThis.process?.env?.SAMBAH_AUTH_MODE || "session"
@@ -677,6 +678,35 @@ export function createApp({
         return sendJson(res, 200, await mesaService.queueSnapshot({
           limit: url.searchParams.get("limit")
         }));
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/mesa/whatsapp/order-completed") {
+        const body = await readJson(req, { requireBody: true });
+        const activeRuntimeConfig = appRuntimeConfig || getRuntimeConfig();
+        const repository = whatsappV2ConversationRepository || createWhatsAppV2StateRepository(activeRuntimeConfig);
+        const result = await markWhatsAppV2MesaOrderReceived(repository, body);
+        await safeAuditRecord(auditService, {
+          type: result.ok ? "whatsapp_mesa_order_received" : "whatsapp_mesa_order_rejected",
+          status: result.ok ? "info" : "warning",
+          source: "mesa_do_xeriffe",
+          message: result.ok ? "Pedido do Mesa vinculado a conversa WhatsApp" : "Retorno do Mesa recusado por correlacao invalida",
+          context: {
+            mesaOrderId: String(body.mesaOrderId || ""),
+            conversationId: body.conversationId ? `wa_${maskPhone(body.phone || body.conversationId)}` : "",
+            status: result.state?.serviceState || "",
+            error: result.error || ""
+          },
+          dedupeKey: body.mesaOrderId ? `whatsapp-mesa-order:${body.mesaOrderId}` : undefined
+        });
+        return sendJson(res, result.statusCode || (result.ok ? 200 : 400), result.ok ? {
+          ok: true,
+          duplicate: result.duplicate === true,
+          serviceState: result.state?.serviceState || "",
+          mesaOrderId: result.state?.mesaOrderId || ""
+        } : {
+          ok: false,
+          error: result.error || "mesa_order_return_rejected"
+        });
       }
 
       if (req.method === "GET" && url.pathname === "/admin/whatsapp/status") {
@@ -1489,10 +1519,29 @@ async function buildWhatsAppOperationalStatus(messageService, conversationServic
 }
 
 async function setWhatsAppV2Automatic(conversationId, config = getRuntimeConfig()) {
-  const repository = new FileWhatsAppV2ConversationRepository({
+  const repository = createWhatsAppV2StateRepository(config);
+  return repository.setAutomatic(conversationId);
+}
+
+function createWhatsAppV2StateRepository(config = getRuntimeConfig()) {
+  return new FileWhatsAppV2ConversationRepository({
     filePath: join(config.dataDir || "data", "whatsapp-v2-state.json")
   });
-  return repository.setAutomatic(conversationId);
+}
+
+export async function markWhatsAppV2MesaOrderReceived(repository, body = {}) {
+  const conversationId = String(body.conversationId || "").trim();
+  const phone = String(body.phone || conversationId.replace(/^wa_/i, "")).replace(/\D/g, "");
+  const mesaOrderId = String(body.mesaOrderId || body.orderId || "").trim();
+  const sambahConversationId = String(body.sambahConversationId || "").trim();
+  const mesaStatus = String(body.status || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  if (!conversationId || !phone || !mesaOrderId || !sambahConversationId) {
+    return { ok: false, statusCode: 400, error: "mesa_correlation_required" };
+  }
+  if (!["completed", "concluido", "finalizado"].includes(mesaStatus)) {
+    return { ok: false, statusCode: 409, error: "mesa_order_not_completed" };
+  }
+  return repository.markMesaOrderReceived({ conversationId, sambahConversationId, phone, mesaOrderId });
 }
 
 async function handleMetaWebhook(req, res, auditService) {

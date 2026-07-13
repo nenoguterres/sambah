@@ -43,7 +43,15 @@ export class WhatsAppV2LabProcessor {
     try {
       const currentState = await this.conversationRepository.get(message.conversationId);
       const nextHistory = [...(currentState.history || []), { messageId: message.messageId, text: message.text, at: message.receivedAt }];
-      const routed = routePortalInsanoMessage({ state: { ...currentState, history: nextHistory }, message });
+      const routed = routePortalInsanoMessage({
+        state: {
+          ...currentState,
+          phone: message.from,
+          sambahConversationId: message.sambahConversationId || currentState.sambahConversationId || null,
+          history: nextHistory
+        },
+        message
+      });
       const result = assertWhatsAppV2ResponseContract(routed);
       const nextState = {
         ...result.nextState,
@@ -109,6 +117,7 @@ function normalizeIncoming(payload = {}) {
     from: String(payload.from),
     text: String(payload.text || "").trim(),
     receivedAt: payload.receivedAt || new Date().toISOString(),
+    sambahConversationId: String(payload.sambahConversationId || "").trim() || null,
     reserved: payload.reserved === true
   };
 }

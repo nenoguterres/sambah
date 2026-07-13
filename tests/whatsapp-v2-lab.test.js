@@ -7,6 +7,7 @@ import { adaptMetaWebhookV2 } from "../src/whatsapp/v2/metaWebhookAdapter.js";
 import { createWhatsAppV2LabEngine } from "../src/whatsapp/v2/whatsappV2LabEngine.js";
 import { FileWhatsAppV2ConversationRepository } from "../src/whatsapp/v2/inMemoryRepositories.js";
 import { createWhatsAppV2State } from "../src/whatsapp/v2/conversationState.js";
+import { markWhatsAppV2MesaOrderReceived } from "../src/server.js";
 
 test("WhatsApp V2 lab adapta payload Meta fake sem usar token ou webhook real", () => {
   const adapted = adaptMetaWebhookV2(metaPayload({ id: "wamid-v2-1", from: "5551000000001", text: { body: "oi" } }));
@@ -43,6 +44,7 @@ test("WhatsApp V2 lab modo humano preserva contexto e bloqueia automacao apos mo
   const handoff = await engine.processor.handleIncoming({ messageId: "wamid-v2-human-1", from: "5551000000003", text: "humano" });
   const reason = await engine.processor.handleIncoming({ messageId: "wamid-v2-human-2", from: "5551000000003", text: "quero falar sobre evento" });
   const afterHuman = await engine.processor.handleIncoming({ messageId: "wamid-v2-human-3", from: "5551000000003", text: "quero mais detalhes" });
+  const orderIntentAfterHuman = await engine.processor.handleIncoming({ messageId: "wamid-v2-human-4", from: "5551000000003", text: "quero pedir" });
 
   assert.equal(handoff.state.activeFlow, null);
   assert.equal(handoff.state.mode, "human");
@@ -50,6 +52,9 @@ test("WhatsApp V2 lab modo humano preserva contexto e bloqueia automacao apos mo
   assert.equal(reason.state.mode, "human");
   assert.equal(reason.state.serviceState, "HUMANO");
   assert.equal(afterHuman.state.mode, "human");
+  assert.equal(orderIntentAfterHuman.state.mode, "human");
+  assert.equal(orderIntentAfterHuman.state.serviceState, "HUMANO");
+  assert.equal(orderIntentAfterHuman.replies.length, 0);
   assert.equal(afterHuman.repliesSent, 0);
   assert.equal(engine.sender.sent.length, 1);
 });
@@ -125,6 +130,105 @@ test("Portal Insano menu principal roteia cada botao sem chamar IA", async () =>
   assert.deepEqual(numeric.state.navigationStack, ["PORTAL_INSANO"]);
   assert.equal(numeric.replies[0].type, "menu");
   assertNoNumberedMenu(numeric.replies[0].text);
+});
+
+test("Motor 1 conduz Quero Pedir ao Mesa sem pedido ou pre-comanda no WhatsApp", async () => {
+  const engine = createLabEngine({ observeOnly: true });
+  const from = "5551000000201";
+  const sambahConversationId = "conversation-central-motor-1";
+
+  const portal = await engine.processor.handleIncoming({
+    messageId: "wamid-motor-1-portal",
+    from,
+    sambahConversationId,
+    text: "quero pedir"
+  });
+  assert.equal(portal.replies[0].type, "menu");
+  assert.equal(portal.replies[0].menu.id, "portal_main_menu");
+  assert.deepEqual(portal.replies[0].menu.options.slice(0, 5).map((item) => item.title), [
+    "Quero Pedir",
+    "Preciso de Food Truck",
+    "Evento Corporativo",
+    "Conhecer o Xeriffe",
+    "Atendimento Humano"
+  ]);
+
+  const units = await engine.processor.handleIncoming({ messageId: "wamid-motor-1-units", from, text: "portal.order" });
+  assert.equal(units.state.activeMenu, "order_units_menu");
+  assert.equal(units.replies[0].menu.options[0].id, "order.xeriffe");
+
+  const xeriffe = await engine.processor.handleIncoming({ messageId: "wamid-motor-1-xeriffe", from, text: "order.xeriffe" });
+  assert.equal(xeriffe.state.areaId, "xeriffe_obirici");
+  assert.deepEqual(xeriffe.replies[0].menu.options.map((item) => item.id), ["xeriffe.menu", "xeriffe.human", "xeriffe.back"]);
+
+  const cardapio = await engine.processor.handleIncoming({ messageId: "wamid-motor-1-cardapio", from, text: "xeriffe.menu" });
+  const url = new URL(cardapio.replies[0].url);
+  assert.equal(cardapio.replies[0].type, "url_button");
+  assert.equal(cardapio.replies[0].buttonText, "VER CARDAPIO");
+  assert.equal(url.pathname, "/");
+  assert.equal(url.searchParams.get("cliente"), "1");
+  assert.equal(url.searchParams.get("conversationId"), `wa_${from}`);
+  assert.equal(url.searchParams.get("sambahConversationId"), sambahConversationId);
+  assert.equal(url.searchParams.get("phone"), from);
+  assert.equal(url.searchParams.get("origin"), "WHATSAPP_SAMBAH");
+  assert.equal(url.searchParams.get("unit"), "XERIFFE_OBIRICI");
+  assert.equal(cardapio.state.serviceState, "AGUARDANDO_PEDIDO_MESA");
+  assert.equal(cardapio.state.activeFlow, null);
+  assert.equal(cardapio.state.mesaOrderId, null);
+  assert.equal(cardapio.state.flowData.order, undefined);
+  assert.equal(cardapio.state.cart, undefined);
+  assert.equal(cardapio.actions.some((action) => /order|precomanda|draft/i.test(action.type) && action.type !== "await_mesa_order"), false);
+
+  const blocked = await engine.processor.handleIncoming({
+    messageId: "wamid-motor-1-blocked",
+    from,
+    text: "quero dois burgers, uma bebida e complemento"
+  });
+  assert.equal(blocked.source, "waitingMesaOrder");
+  assert.equal(blocked.replies.length, 0);
+  assert.equal(blocked.state.serviceState, "AGUARDANDO_PEDIDO_MESA");
+  assert.equal(blocked.state.activeFlow, null);
+  assert.equal(blocked.state.flowData.order, undefined);
+  assert.equal(engine.outboxRepository.list().length, 0);
+
+  const received = await markWhatsAppV2MesaOrderReceived(engine.conversationRepository, {
+    conversationId: `wa_${from}`,
+    sambahConversationId,
+    phone: from,
+    mesaOrderId: "mesa-order-motor-1",
+    status: "finalizado"
+  });
+  assert.equal(received.ok, true);
+  assert.equal(received.state.serviceState, "PEDIDO_MESA_RECEBIDO");
+  assert.equal(received.state.mesaOrderId, "mesa-order-motor-1");
+  assert.equal(received.state.activeMenu, "payment_main_menu");
+  assert.equal((await engine.conversationRepository.get(from)).mesaOrderId, "mesa-order-motor-1");
+});
+
+test("Motor 1 exige correlacao do Mesa, e Atendimento Humano permanece homologado", async () => {
+  const engine = createLabEngine({ observeOnly: true });
+  const from = "5551000000202";
+  const sambahConversationId = "conversation-central-motor-1-human";
+  await engine.processor.handleIncoming({ messageId: "wamid-motor-1-h-portal", from, sambahConversationId, text: "quero pedir" });
+  await engine.processor.handleIncoming({ messageId: "wamid-motor-1-h-units", from, text: "portal.order" });
+  await engine.processor.handleIncoming({ messageId: "wamid-motor-1-h-xeriffe", from, text: "order.xeriffe" });
+  await engine.processor.handleIncoming({ messageId: "wamid-motor-1-h-link", from, text: "xeriffe.menu" });
+
+  const mismatch = await markWhatsAppV2MesaOrderReceived(engine.conversationRepository, {
+    conversationId: `wa_${from}`,
+    sambahConversationId: "outra-conversa",
+    phone: from,
+    mesaOrderId: "mesa-order-rejeitado",
+    status: "finalizado"
+  });
+  assert.equal(mismatch.ok, false);
+  assert.equal(mismatch.error, "mesa_correlation_mismatch");
+  assert.equal((await engine.conversationRepository.get(from)).serviceState, "AGUARDANDO_PEDIDO_MESA");
+
+  const human = await engine.processor.handleIncoming({ messageId: "wamid-motor-1-h-human", from, text: "humano" });
+  assert.equal(human.state.mode, "human");
+  assert.equal(human.state.serviceState, "HUMANO");
+  assert.equal(human.actions[0].type, "notify_operator");
 });
 
 test("Portal Insano Food Truck exibe submenu oficial e catalogo por botao URL", async () => {
@@ -317,7 +421,7 @@ test("Portal Insano preserva area nos menus Foodtruck, Xeriffe, Granja e Tecnolo
   const engine = createLabEngine({ observeOnly: true });
   const flows = [
     ["PORTAL_INSANO_FOODTRUCK", "INSANO_EVENTO", "foodtruck_main_menu", "insano_food_truck"],
-    ["portal.xeriffe", "1", "xeriffe_catalog_menu", "xeriffe_obirici"],
+    ["portal.xeriffe", "xeriffe.menu", "xeriffe_main_menu", "xeriffe_obirici"],
     ["portal.granja", "1", "granja_main_menu", "granja_aguas_da_lagoa"],
     ["portal.tecnologia", "11", "technology_main_menu", "desenvolvimento_tecnologias"]
   ];
@@ -409,15 +513,17 @@ test("Portal Insano texto de pagamento nunca confirma pagamento", async () => {
   assert.equal(second.state.mode, "bot");
 });
 
-test("Portal Insano integracao desabilitada nao e chamada", async () => {
+test("Portal Insano Xeriffe chama somente o link do Mesa e nao integracao de pedido", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000600";
   await engine.processor.handleIncoming({ messageId: "wamid-int-1", from, text: "oi" });
   await engine.processor.handleIncoming({ messageId: "wamid-int-2", from, text: "portal.xeriffe" });
-  const result = await engine.processor.handleIncoming({ messageId: "wamid-int-3", from, text: "3" });
+  const result = await engine.processor.handleIncoming({ messageId: "wamid-int-3", from, text: "xeriffe.menu" });
 
-  assert.equal(result.source, "integrationGuard");
+  assert.equal(result.source, "xeriffe.menu");
   assert.equal(result.state.areaId, "xeriffe_obirici");
+  assert.equal(result.state.serviceState, "AGUARDANDO_PEDIDO_MESA");
+  assert.equal(result.replies[0].type, "url_button");
   assert.equal(engine.operationLog.includes("mesa_do_xeriffe"), false);
 });
 

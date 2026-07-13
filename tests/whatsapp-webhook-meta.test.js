@@ -614,7 +614,7 @@ test("POST /webhook/whatsapp V2 operacional com sender habilitado chama provider
     assert.equal(providerCalls[0].phoneNumberId, "phone-id-from-webhook");
     assert.match(providerCalls[0].message.text, /^Portal Insano\nEscolha uma area para continuar:/);
     assert.doesNotMatch(providerCalls[0].message.text, /1\. Insano Food Truck/);
-    assert.equal(providerCalls[0].message.menu.options[0].id, "PORTAL_INSANO_FOODTRUCK");
+    assert.equal(providerCalls[0].message.menu.options[0].id, "portal.order");
     const messages = JSON.parse(await readFile(messagesFile, "utf8"));
     assert.equal(messages.find((message) => message.direction === "out").providerMessageId, "wamid-provider-v2");
     const conversations = JSON.parse(await readFile(conversationsFile, "utf8"));
@@ -881,7 +881,7 @@ test("WhatsApp V2 operacional final: idempotencia, HUMANO, manual, status e auto
     assert.equal(providerCalls[0].input.message.type, "menu");
     assert.equal(providerCalls[0].input.message.text, "Portal Insano\nEscolha uma area para continuar:");
     assert.doesNotMatch(providerCalls[0].input.message.text, /1\. Insano Food Truck/);
-    assert.equal(providerCalls[0].input.message.menu.options[0].id, "PORTAL_INSANO_FOODTRUCK");
+    assert.equal(providerCalls[0].input.message.menu.options[0].id, "portal.order");
     assert.equal(sentBody.outboundCommand.recipient, "555180413745");
     assert.equal(sentBody.outboundCommand.interactive.type, "menu");
     assert.equal(sentBody.outboundCommand.correlationId, "wa-v2-reply:wamid-final-dup");
@@ -1046,6 +1046,81 @@ test("POST /webhook/whatsapp processa mensagens e statuses sem transformar statu
   }
 });
 
+test("Motor 1 smoke HTTP: Meta conduz ao Mesa, bloqueia pedido WhatsApp e aceita retorno correlacionado", async () => {
+  const previousV2 = process.env.WHATSAPP_V2_ENABLED;
+  const previousSend = process.env.WHATSAPP_SEND_ENABLED;
+  const previousAi = process.env.WHATSAPP_AI_ENABLED;
+  const previousAutoReply = process.env.WHATSAPP_AUTO_REPLY_ENABLED;
+  process.env.WHATSAPP_V2_ENABLED = "true";
+  process.env.WHATSAPP_SEND_ENABLED = "false";
+  process.env.WHATSAPP_AI_ENABLED = "false";
+  process.env.WHATSAPP_AUTO_REPLY_ENABLED = "true";
+  const from = "5551999999920";
+  const { server, base, v2StateFile, draftsFile, precomandasFile, mesaQueueFile, cleanup } = await createTestServer();
+  const sendInbound = async (id, text) => {
+    const response = await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(metaPayload({ from, id, type: "text", text: { body: text } }))
+    });
+    return { response, body: await response.json() };
+  };
+  try {
+    const portal = await sendInbound("wamid-motor-http-1", "quero pedir");
+    assert.equal(portal.response.status, 200);
+    assert.equal(portal.body.outboundCommand.interactive.menu.id, "portal_main_menu");
+
+    const units = await sendInbound("wamid-motor-http-2", "portal.order");
+    assert.equal(units.body.outboundCommand.interactive.menu.id, "order_units_menu");
+    const xeriffe = await sendInbound("wamid-motor-http-3", "order.xeriffe");
+    assert.equal(xeriffe.body.outboundCommand.interactive.menu.options[0].id, "xeriffe.menu");
+    const cardapio = await sendInbound("wamid-motor-http-4", "xeriffe.menu");
+    const cardapioUrl = new URL(cardapio.body.outboundCommand.interactive.url);
+    assert.equal(cardapioUrl.pathname, "/");
+    assert.equal(cardapioUrl.searchParams.get("origin"), "WHATSAPP_SAMBAH");
+    assert.equal(cardapioUrl.searchParams.get("unit"), "XERIFFE_OBIRICI");
+
+    const storedWaiting = JSON.parse(await readFile(v2StateFile, "utf8"));
+    const waitingState = storedWaiting.states[from];
+    assert.equal(waitingState.serviceState, "AGUARDANDO_PEDIDO_MESA");
+    assert.equal(cardapioUrl.searchParams.get("sambahConversationId"), waitingState.sambahConversationId);
+
+    const blocked = await sendInbound("wamid-motor-http-5", "quero pizza, bebida e complemento");
+    assert.equal(blocked.body.automaticReplyCreated, false);
+    assert.equal(blocked.body.reason, "no_reply_created");
+    assert.deepEqual(await readJsonArrayOrEmpty(draftsFile), []);
+    assert.deepEqual(await readJsonArrayOrEmpty(precomandasFile), []);
+    assert.deepEqual(await readJsonArrayOrEmpty(mesaQueueFile), []);
+
+    const mesaReturn = await fetch(`${base}/api/mesa/whatsapp/order-completed`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        conversationId: cardapioUrl.searchParams.get("conversationId"),
+        sambahConversationId: cardapioUrl.searchParams.get("sambahConversationId"),
+        phone: cardapioUrl.searchParams.get("phone"),
+        mesaOrderId: "mesa-order-http-motor-1",
+        status: "finalizado"
+      })
+    });
+    const mesaReturnBody = await mesaReturn.json();
+    assert.equal(mesaReturn.status, 200);
+    assert.equal(mesaReturnBody.serviceState, "PEDIDO_MESA_RECEBIDO");
+    assert.equal(mesaReturnBody.mesaOrderId, "mesa-order-http-motor-1");
+    assert.equal(Object.hasOwn(mesaReturnBody, "state"), false);
+    const storedReceived = JSON.parse(await readFile(v2StateFile, "utf8"));
+    assert.equal(storedReceived.states[from].serviceState, "PEDIDO_MESA_RECEBIDO");
+    assert.equal(storedReceived.states[from].mesaOrderId, "mesa-order-http-motor-1");
+  } finally {
+    await close(server);
+    await cleanup();
+    restoreEnv("WHATSAPP_V2_ENABLED", previousV2);
+    restoreEnv("WHATSAPP_SEND_ENABLED", previousSend);
+    restoreEnv("WHATSAPP_AI_ENABLED", previousAi);
+    restoreEnv("WHATSAPP_AUTO_REPLY_ENABLED", previousAutoReply);
+  }
+});
+
 test("POST /webhook/site continua respondendo 202", async () => {
   const { server, base, cleanup } = await createTestServer();
   try {
@@ -1139,6 +1214,9 @@ async function createTestServer({ provider = new MockWhatsAppProvider({ logger: 
     auditFile: join(dir, "audit.json"),
     messagesFile: join(dir, "messages.json"),
     v2StateFile: join(dir, "whatsapp-v2-state.json"),
+    draftsFile: join(dir, "drafts.json"),
+    precomandasFile: join(dir, "precomandas.json"),
+    mesaQueueFile: join(dir, "queue.json"),
     conversationsFile,
     cleanup: async () => {
       restoreEnv("DATA_DIR", previousDataDir);
@@ -1267,4 +1345,14 @@ function close(server) {
 function restoreEnv(name, previous) {
   if (previous === undefined) delete process.env[name];
   else process.env[name] = previous;
+}
+
+async function readJsonArrayOrEmpty(filePath) {
+  try {
+    const parsed = JSON.parse(await readFile(filePath, "utf8"));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    if (error?.code === "ENOENT") return [];
+    throw error;
+  }
 }

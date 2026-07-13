@@ -66,7 +66,10 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
         normalized: messageResult?.normalized || null
       };
     }
-    const processed = await processWhatsAppV2(incoming, runtimeConfig, {
+    const processed = await processWhatsAppV2({
+      ...incoming,
+      sambahConversationId: conversationResult.conversa.id
+    }, runtimeConfig, {
       conversationRepository: v2Repository,
       reserved: reservation.reserved
     });
@@ -312,6 +315,7 @@ async function processWhatsAppV2(incoming = {}, runtimeConfig = getRuntimeConfig
   return engine.processor.handleIncoming({
     messageId: incoming.messageId || "",
     conversationId: incoming.telefone || incoming.from || incoming.phone || "",
+    sambahConversationId: incoming.sambahConversationId || "",
     from: incoming.telefone || incoming.from || incoming.phone || "",
     text: incoming.text || incoming.message || incoming.transcricao || "",
     phoneNumberIdReceived: incoming.phoneNumberIdReceived || "",

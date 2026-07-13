@@ -2,6 +2,8 @@ export function createWhatsAppV2State(conversationId, now = new Date().toISOStri
   return {
     schemaVersion: 2,
     conversationId,
+    sambahConversationId: null,
+    phone: conversationId,
     mode: "bot",
     areaId: null,
     activeMenu: "portal_main_menu",
@@ -11,6 +13,9 @@ export function createWhatsAppV2State(conversationId, now = new Date().toISOStri
     activeStep: null,
     flowData: {},
     serviceState: "AUTOMATICO",
+    mesaOrderId: null,
+    mesaLinkSentAt: null,
+    mesaOrderReceivedAt: null,
     awaitingInput: false,
     history: [],
     audit: [],

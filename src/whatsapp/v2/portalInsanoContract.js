@@ -1,6 +1,6 @@
 export const portalInsanoContract = {
   schema: "sambah.whatsapp.portal-insano",
-  version: "3.0.0",
+  version: "3.1.0",
   assistant: {
     name: "SamBah",
     role: "Assistente oficial de atendimento do Portal Insano"
@@ -25,11 +25,23 @@ export const portalInsanoContract = {
       body: "Escolha uma area para continuar:",
       strictInteractiveIds: true,
       options: [
-        option("PORTAL_INSANO_FOODTRUCK", 1, "Insano Food Truck", { type: "open_menu", target: "foodtruck_main_menu", areaId: "insano_food_truck" }),
-        option("portal.xeriffe", 2, "Xeriffe Obirici", { type: "open_menu", target: "xeriffe_main_menu", areaId: "xeriffe_obirici" }),
-        option("portal.granja", 3, "Granja Aguas da Lagoa", { type: "open_menu", target: "granja_main_menu", areaId: "granja_aguas_da_lagoa" }),
-        option("portal.tecnologia", 4, "Desenvolvimento de Tecnologias", { type: "open_menu", target: "technology_main_menu", areaId: "desenvolvimento_tecnologias" }),
-        option("portal.humano", 5, "Atendimento Humano", { type: "start_flow", target: "human_handoff" })
+        option("portal.order", 1, "Quero Pedir", { type: "open_menu", target: "order_units_menu", areaId: null }),
+        option("PORTAL_INSANO_FOODTRUCK", 2, "Preciso de Food Truck", { type: "open_menu", target: "foodtruck_main_menu", areaId: "insano_food_truck" }),
+        option("portal.corporate_event", 3, "Evento Corporativo", { type: "open_menu", target: "foodtruck_main_menu", areaId: "insano_food_truck" }),
+        option("portal.xeriffe", 4, "Conhecer o Xeriffe", { type: "open_menu", target: "xeriffe_main_menu", areaId: "xeriffe_obirici" }),
+        option("portal.humano", 5, "Atendimento Humano", { type: "start_flow", target: "human_handoff" }),
+        option("portal.granja", 6, "Granja Aguas da Lagoa", { type: "open_menu", target: "granja_main_menu", areaId: "granja_aguas_da_lagoa" }),
+        option("portal.tecnologia", 7, "Desenvolvimento de Tecnologias", { type: "open_menu", target: "technology_main_menu", areaId: "desenvolvimento_tecnologias" })
+      ]
+    },
+    order_units_menu: {
+      id: "order_units_menu",
+      title: "Quero Pedir",
+      body: "Escolha a operacao:",
+      strictInteractiveIds: true,
+      options: [
+        option("order.xeriffe", 1, "Xeriffe Obirici", { type: "open_menu", target: "xeriffe_main_menu", areaId: "xeriffe_obirici" }),
+        option("order.back", 2, "Voltar ao Portal Insano", { type: "open_menu", target: "portal_main_menu", areaId: null })
       ]
     },
     foodtruck_main_menu: {
@@ -50,33 +62,12 @@ export const portalInsanoContract = {
       id: "xeriffe_main_menu",
       title: "Xeriffe Obirici",
       body: "Escolha uma opcao:",
-      fallbackText: "1. Ver cardapio\n2. Fazer pedido\n3. Abrir Mesa do Xeriffe\n4. Acessar comanda\n5. Acompanhar pedido\n6. Pagamento\n7. Eventos do espaco\n8. Falar com atendente\n9. Voltar ao Portal Insano",
+      strictInteractiveIds: true,
+      fallbackText: "1. Ver Cardapio\n2. Atendimento Humano\n3. Voltar ao Portal Insano",
       options: [
-        option("xeriffe.menu", 1, "Ver cardapio", { type: "open_menu", target: "xeriffe_catalog_menu" }),
-        option("xeriffe.order", 2, "Fazer pedido", { type: "start_flow", target: "xeriffe_order" }),
-        option("xeriffe.mesa", 3, "Abrir Mesa do Xeriffe", { type: "open_authorized_link", target: "integration.mesa_do_xeriffe.customer_url" }),
-        option("xeriffe.command", 4, "Acessar comanda", { type: "start_flow", target: "xeriffe_command_access" }),
-        option("xeriffe.track_order", 5, "Acompanhar pedido", { type: "start_flow", target: "xeriffe_order_tracking" }),
-        option("xeriffe.payment", 6, "Pagamento", { type: "open_menu", target: "payment_main_menu" }),
-        option("xeriffe.events", 7, "Eventos do espaco", { type: "start_flow", target: "xeriffe_event_information" }),
-        option("xeriffe.human", 8, "Falar com atendente", { type: "start_flow", target: "human_handoff" }),
-        option("xeriffe.back", 9, "Voltar ao Portal Insano", { type: "open_menu", target: "portal_main_menu", areaId: null })
-      ]
-    },
-    xeriffe_catalog_menu: {
-      id: "xeriffe_catalog_menu",
-      title: "Cardapio Xeriffe Obirici",
-      body: "Escolha uma categoria:",
-      fallbackText: "1. Burgers\n2. Assados\n3. Pizzas\n4. Porcoes\n5. Espetinhos\n6. Bebidas\n7. Fazer pedido\n8. Voltar",
-      options: [
-        option("xeriffe.catalog.burgers", 1, "Burgers", { type: "show_catalog", target: "catalog.xeriffe.burgers" }),
-        option("xeriffe.catalog.assados", 2, "Assados", { type: "show_catalog", target: "catalog.xeriffe.assados" }),
-        option("xeriffe.catalog.pizzas", 3, "Pizzas", { type: "show_catalog", target: "catalog.xeriffe.pizzas" }),
-        option("xeriffe.catalog.porcoes", 4, "Porcoes", { type: "show_catalog", target: "catalog.xeriffe.porcoes" }),
-        option("xeriffe.catalog.espetinhos", 5, "Espetinhos", { type: "show_catalog", target: "catalog.xeriffe.espetinhos" }),
-        option("xeriffe.catalog.bebidas", 6, "Bebidas", { type: "show_catalog", target: "catalog.xeriffe.bebidas" }),
-        option("xeriffe.catalog.order", 7, "Fazer pedido", { type: "start_flow", target: "xeriffe_order" }),
-        option("xeriffe.catalog.back", 8, "Voltar", { type: "open_menu", target: "xeriffe_main_menu" })
+        option("xeriffe.menu", 1, "Ver Cardapio", { type: "open_authorized_link", target: "integration.mesa_do_xeriffe.customer_url" }),
+        option("xeriffe.human", 2, "Atendimento Humano", { type: "start_flow", target: "human_handoff" }),
+        option("xeriffe.back", 3, "Voltar ao Portal Insano", { type: "open_menu", target: "portal_main_menu", areaId: null })
       ]
     },
     granja_main_menu: {
@@ -132,7 +123,6 @@ export const portalInsanoContract = {
     }
   },
   flows: {
-    xeriffe_order: flow("xeriffe_order", "Me diz os itens do pedido para registrar como pre-atendimento.", "order.items"),
     xeriffe_command_access: flow("xeriffe_command_access", "Informe o numero da comanda ou telefone.", "command.reference"),
     xeriffe_order_tracking: flow("xeriffe_order_tracking", "Informe o numero do pedido ou telefone.", "order.reference"),
     xeriffe_event_information: flow("xeriffe_event_information", "Qual data ou tipo de evento tu quer consultar?", "event.interest"),
@@ -154,12 +144,6 @@ export const portalInsanoContract = {
     "catalog.foodtruck.pizzas": "Cardapio de pizzas para eventos requer validacao operacional. Vou encaminhar para atendimento se tu quiser seguir.",
     "catalog.foodtruck.boteco": "Comida de Boteco Insano requer catalogo operacional aprovado antes de confirmar itens.",
     "catalog.foodtruck.churrasco": "Churrasco para eventos requer catalogo operacional aprovado antes de confirmar itens.",
-    "catalog.xeriffe.burgers": "Burgers do Xeriffe requerem validacao operacional antes de confirmar pedido.",
-    "catalog.xeriffe.assados": "Assados do Xeriffe requerem validacao operacional antes de confirmar pedido.",
-    "catalog.xeriffe.pizzas": "Pizzas do Xeriffe requerem validacao operacional antes de confirmar pedido.",
-    "catalog.xeriffe.porcoes": "Porcoes do Xeriffe requerem validacao operacional antes de confirmar pedido.",
-    "catalog.xeriffe.espetinhos": "Espetinhos do Xeriffe requerem validacao operacional antes de confirmar pedido.",
-    "catalog.xeriffe.bebidas": "Bebidas do Xeriffe requerem validacao operacional antes de confirmar pedido.",
     "catalog.granja.animais": "Disponibilidade de animais precisa de confirmacao humana.",
     "catalog.granja.ovos": "Disponibilidade de ovos precisa de confirmacao humana.",
     "catalog.granja.hortifruti": "Hortifruti varia por safra e precisa de confirmacao.",
@@ -172,7 +156,7 @@ export const portalInsanoContract = {
       eventFormUrl: null,
       quoteFormUrl: null
     },
-    mesa_do_xeriffe: { enabled: false, customerUrl: null },
+    mesa_do_xeriffe: { enabled: true, customerUrl: null },
     sambah_pay: { enabled: false },
     meta_sender: { enabled: false, realSenderAllowed: false },
     ai: { enabled: false }

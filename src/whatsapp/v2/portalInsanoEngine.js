@@ -1,18 +1,23 @@
 import { response, responseWithReplies } from "./responseContract.js";
 import { portalInsanoContract } from "./portalInsanoContract.js";
 import { getRuntimeConfig } from "../../config.js";
+import { getMesaConfig } from "../../mesaIntegrationService.js";
 
 export function routePortalInsanoMessage({ state, message, contract = portalInsanoContract }) {
   const text = normalizeText(message.text);
   const routedState = normalizeNavigationState(normalizeLegacyFoodtruckState(state, contract), contract);
+  const command = routeNavigationCommand(text);
   if (routedState.mode === "human" || routedState.serviceState === "HUMANO") {
-    if (isWelcome(text) || routeNavigationCommand(text) === "inicio" || routeNavigationCommand(text) === "portal_voltar") {
+    if (isHumanReset(text) || command === "inicio" || command === "portal_voltar") {
       return openMenu(resetToPortal(routedState, contract), contract, contract.welcome.menuId, "humanResetToPortal", []);
     }
     return humanState(routedState);
   }
+  if (routedState.serviceState === "AGUARDANDO_PEDIDO_MESA") {
+    if (command === "humano") return startFlow(routedState, contract, "human_handoff", "humanCommand");
+    return waitingMesaState(routedState);
+  }
   if (isPaymentClaim(text)) return startFlow(routedState, contract, "payment_receipt_review", "paymentSafety");
-  const command = routeNavigationCommand(text);
   if (command) return handleNavigationCommand(routedState, contract, command);
   if (isWelcome(text)) return openMenu(resetToPortal(routedState, contract), contract, contract.welcome.menuId, "welcomeFlow", []);
   if (routedState.activeFlow) return handleActiveFlow(routedState, contract, text, message.text);
@@ -83,7 +88,7 @@ function executeAction(state, contract, action, source) {
   if (action.type === "start_flow") return startFlow(state, contract, action.target, source);
   if (action.type === "open_url_button") return openUrlButton(state, contract, action.target, source);
   if (action.type === "show_catalog") return showCatalog(state, contract, action.target, source);
-  if (action.type === "open_authorized_link") return integrationDisabled(state, source);
+  if (action.type === "open_authorized_link") return openMesaCardapioLink(state, source);
   return response("invalidAction", state, "Essa funcao ainda nao esta habilitada. Vou encaminhar para atendimento.", [{ type: "safe_handoff" }]);
 }
 
@@ -175,6 +180,48 @@ function openUrlButton(state, contract, target, source) {
       url
     }],
     [{ type: "catalog_url_button", source, url }]
+  );
+}
+
+function openMesaCardapioLink(state, source) {
+  const baseUrl = getMesaConfig().baseUrl;
+  let url;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    return response("missingMesaCustomerUrl", state, "CONFIGURACAO AUSENTE: link do Mesa do Xeriffe", [{ type: "missing_config", source }]);
+  }
+  const phone = String(state.phone || state.conversationId || "").replace(/\D/g, "");
+  const conversationId = phone ? `wa_${phone}` : String(state.conversationId || "");
+  const sambahConversationId = String(state.sambahConversationId || state.conversationId || "");
+  url.searchParams.set("cliente", "1");
+  url.searchParams.set("conversationId", conversationId);
+  url.searchParams.set("sambahConversationId", sambahConversationId);
+  url.searchParams.set("phone", phone || String(state.phone || state.conversationId || ""));
+  url.searchParams.set("origin", "WHATSAPP_SAMBAH");
+  url.searchParams.set("unit", "XERIFFE_OBIRICI");
+  const now = new Date().toISOString();
+  return responseWithReplies(
+    source,
+    {
+      ...state,
+      areaId: "xeriffe_obirici",
+      activeMenu: "xeriffe_main_menu",
+      activeFlow: null,
+      activeStep: null,
+      awaitingInput: false,
+      serviceState: "AGUARDANDO_PEDIDO_MESA",
+      mesaOrderId: null,
+      mesaLinkSentAt: now,
+      mesaOrderReceivedAt: null
+    },
+    [{
+      type: "url_button",
+      text: "Monte teu pedido no cardapio oficial do Mesa do Xeriffe. Quando concluir, o SamBah retoma esta conversa.",
+      buttonText: "VER CARDAPIO",
+      url: url.toString()
+    }],
+    [{ type: "mesa_cardapio_link", source, url: url.toString() }]
   );
 }
 
@@ -399,7 +446,7 @@ function routeNavigationCommand(text) {
   if (["portal_voltar", "voltar ao portal insano"].includes(text)) return "portal_voltar";
   if (["voltar", "retornar", "menu anterior"].includes(text)) return "voltar";
   if (["cancelar", "parar", "desistir"].includes(text)) return "cancelar";
-  if (["insano_humano", "humano", "atendente", "pessoa", "falar com alguem"].includes(text)) return "humano";
+  if (["insano_humano", "humano", "atendente", "atendimento humano", "pessoa", "falar com alguem"].includes(text)) return "humano";
   return null;
 }
 
@@ -407,11 +454,19 @@ function humanState(state) {
   return { handled: true, source: "humanState", nextState: state, replies: [], actions: [{ type: "notify_operator" }] };
 }
 
+function waitingMesaState(state) {
+  return { handled: true, source: "waitingMesaOrder", nextState: state, replies: [], actions: [{ type: "await_mesa_order" }] };
+}
+
 function resetToPortal(state, contract) {
   return { ...state, mode: "bot", serviceState: "AUTOMATICO", areaId: null, activeMenu: contract.welcome.menuId, navigationStack: ["PORTAL_INSANO"], activeFlow: null, activeStep: null, awaitingInput: false, menuStack: [], foodtruckSubstate: null };
 }
 
 function isWelcome(text) {
+  return ["oi", "ola", "olá", "menu", "buenas", "quero pedir", "quero fazer um pedido"].includes(text);
+}
+
+function isHumanReset(text) {
   return ["oi", "ola", "olá", "menu", "buenas"].includes(text);
 }
 
