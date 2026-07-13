@@ -264,3 +264,71 @@ test("formulario publico do Evento nao expoe shell operacional do SamBah", async
     await app.close();
   }
 });
+
+test("fluxo Orcamento usa formulario proprio e envia email sem cair no Evento", async () => {
+  const smtpCalls = [];
+  const app = await makeServer({
+    env: {
+      EVENT_SMTP_HOST: "smtp.test",
+      EVENT_SMTP_PORT: "587",
+      EVENT_SMTP_USER: "sambah@test.local",
+      EVENT_SMTP_PASSWORD: "secret-password",
+      EVENT_EMAIL_FROM: "sambah@test.local",
+      EVENT_EMAIL_TO: "chefnenogutterres@gmail.com"
+    },
+    smtpClient: async (message) => {
+      smtpCalls.push(message);
+      return "smtp-message-quote";
+    }
+  });
+  try {
+    const response = await fetch(`${app.base}/api/site/insano/orcamento`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(validPayload({ submissionId: "quote_form_test_1" }))
+    });
+    const body = await response.json();
+    assert.equal(response.status, 201);
+    assert.equal(body.ok, true);
+    assert.equal(body.confirmation.kind, "orcamento");
+    assert.equal(body.emailSend.ok, true);
+    assert.equal(body.emailAlert.status, "SENT");
+    assert.equal(smtpCalls.length, 1);
+    assert.equal(smtpCalls[0].to, "chefnenogutterres@gmail.com,kdoiegutterresgastronomia@gmail.com");
+    assert.match(smtpCalls[0].subject, /\[NOVO ORCAMENTO\] 25\/08\/2026 — Porto Alegre — 100 pessoas/);
+    assert.match(smtpCalls[0].body, /Nova solicitacao de orcamento recebida pelo SamBah/);
+    assert.match(smtpCalls[0].body, /WhatsApp - Portal Insano - Insano Food Truck - Orcamento/);
+
+    const leads = JSON.parse(await readFile(join(app.dir, "event-leads.json"), "utf8"));
+    assert.equal(leads.length, 1);
+    assert.equal(leads[0].id, "quote_form_test_1");
+    assert.equal(leads[0].formData.formType, "insano_food_truck_orcamento");
+    assert.equal(leads[0].origin, "WHATSAPP_PORTAL_INSANO_FOODTRUCK_ORCAMENTO");
+  } finally {
+    await app.close();
+  }
+});
+
+test("formulario publico do Orcamento nao expoe shell operacional do SamBah", async () => {
+  const app = await makeServer();
+  try {
+    const response = await fetch(`${app.base}/orcamento/insano?conversationId=wa_5551987654321&phone=5551987654321`);
+    const html = await response.text();
+    assert.equal(response.status, 200);
+    assert.match(html, /Solicitacao de orcamento - Insano Food Truck/);
+    assert.match(html, /platform\.js/);
+    assert.doesNotMatch(html, /renderSambahShell/);
+    assert.doesNotMatch(html, /admin\/assets\/sambah-shell/);
+    assert.doesNotMatch(html, /Abrir CRM/);
+
+    const script = await fetch(`${app.base}/platform.js`).then((item) => item.text());
+    assert.match(script, /Solicitacao de orcamento/);
+    assert.match(script, /ENVIAR ORCAMENTO/);
+    assert.match(script, /\/api\/site\/insano\/orcamento/);
+    assert.match(script, /VOLTAR AO WHATSAPP/);
+    assert.doesNotMatch(script, /Conferir dados/);
+    assert.doesNotMatch(script, /ATENDIMENTO HUMANO/);
+  } finally {
+    await app.close();
+  }
+});

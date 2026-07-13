@@ -7,6 +7,7 @@ export const API_BASES = {
 };
 
 export const EVENT_FORM_PUBLIC_URL = "https://sambah.onrender.com/evento/insano";
+export const QUOTE_FORM_PUBLIC_URL = "https://sambah.onrender.com/orcamento/insano";
 
 export const DEFAULT_CORS_ORIGINS = [
   "http://localhost:3000",
@@ -29,6 +30,7 @@ export function getRuntimeConfig(env = globalThis.process?.env || {}) {
     baseUrl: env.BASE_URL || API_BASES.local,
     publicBaseUrl: env.PUBLIC_BASE_URL || "https://insanofoodtruck.com.br",
     eventFormPublicUrl: env.EVENT_FORM_PUBLIC_URL || EVENT_FORM_PUBLIC_URL,
+    quoteFormPublicUrl: env.QUOTE_FORM_PUBLIC_URL || QUOTE_FORM_PUBLIC_URL,
     corsOrigins: parseList(env.CORS_ORIGINS, DEFAULT_CORS_ORIGINS),
     whatsappNumber: env.WHATSAPP_NUMBER || "5551980413745",
     insanoWhatsappNumber: env.INSANO_WHATSAPP_NUMBER || "",
@@ -111,6 +113,7 @@ export function getPublicConfig(env = globalThis.process?.env || {}) {
       insanoLead: "/api/site/insano/lead",
       insanoPedido: "/api/site/insano/pedido",
       insanoEvento: "/api/site/insano/evento",
+      insanoOrcamento: "/api/site/insano/orcamento",
       insanoWhatsapp: "/api/site/insano/whatsapp"
     }
   };

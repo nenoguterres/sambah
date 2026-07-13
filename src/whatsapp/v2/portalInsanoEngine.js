@@ -75,7 +75,7 @@ function executeAction(state, contract, action, source) {
       activeFlow: null,
       activeStep: null,
       awaitingInput: false,
-      foodtruckSubstate: action.clearFoodtruckSubstate || source === "INSANO_ORCAMENTO" ? null : state.foodtruckSubstate || null
+      foodtruckSubstate: action.clearFoodtruckSubstate ? null : state.foodtruckSubstate || null
     };
     const stack = isPortalReturn ? [] : [...(state.menuStack || []), state.activeMenu || contract.welcome.menuId];
     return openMenu({ ...nextState, navigationStack: isPortalReturn ? ["PORTAL_INSANO"] : nextState.navigationStack, menuStack: stack }, contract, action.target, source);
@@ -115,9 +115,26 @@ function openUrlButton(state, contract, target, source) {
   const baseUrl = resolveContractPath(contract, target);
   const url = buildUrlButtonTarget(baseUrl, target, state);
   if (!url) {
-    return response("missingCatalogUrl", state, "CONFIGURAÇÃO AUSENTE: integration.insano_food_truck.catalog_url", [{ type: "missing_config", source, target }]);
+    return response("missingCatalogUrl", state, "CONFIGURA\u00c7\u00c3O AUSENTE: link do Insano Food Truck", [{ type: "missing_config", source, target }]);
   }
-  if (target === "integration.insano_food_truck.event_form_url") {
+  const formTargets = {
+    "integration.insano_food_truck.event_form_url": {
+      screen: "INSANO_EVENTO",
+      substate: "evento",
+      text: "Evento \u2014 Insano Food Truck\n\nPreenche os dados do teu evento para nossa equipe verificar a agenda e responder nesta mesma conversa.",
+      buttonText: "PREENCHER SOLICITA\u00c7\u00c3O",
+      actionType: "event_form_url_button"
+    },
+    "integration.insano_food_truck.quote_form_url": {
+      screen: "INSANO_ORCAMENTO",
+      substate: "orcamento",
+      text: "Or\u00e7amento \u2014 Insano Food Truck\n\nPreenche os dados para nossa equipe preparar o or\u00e7amento e responder nesta mesma conversa.",
+      buttonText: "PREENCHER OR\u00c7AMENTO",
+      actionType: "quote_form_url_button"
+    }
+  };
+  const formTarget = formTargets[target];
+  if (formTarget) {
     return responseWithReplies(
       source,
       {
@@ -127,16 +144,16 @@ function openUrlButton(state, contract, target, source) {
         activeFlow: null,
         activeStep: null,
         awaitingInput: false,
-        navigationStack: pushNavigationScreen(state.navigationStack, "INSANO_EVENTO"),
-        foodtruckSubstate: { selectedAction: source, target: "evento" }
+        navigationStack: pushNavigationScreen(state.navigationStack, formTarget.screen),
+        foodtruckSubstate: { selectedAction: source, target: formTarget.substate }
       },
       [{
         type: "url_button",
-        text: "Evento — Insano Food Truck\n\nPreenche os dados do teu evento para nossa equipe verificar a agenda e responder nesta mesma conversa.",
-        buttonText: "PREENCHER SOLICITAÇÃO",
+        text: formTarget.text,
+        buttonText: formTarget.buttonText,
         url
       }],
-      [{ type: "event_form_url_button", source, url }]
+      [{ type: formTarget.actionType, source, url }]
     );
   }
   return responseWithReplies(
@@ -149,12 +166,12 @@ function openUrlButton(state, contract, target, source) {
       activeStep: null,
       awaitingInput: false,
       navigationStack: pushNavigationScreen(state.navigationStack, "INSANO_CATALOGO"),
-      foodtruckSubstate: { selectedAction: source, target: target === "integration.insano_food_truck.event_form_url" ? "evento" : "catalogo" }
+      foodtruckSubstate: { selectedAction: source, target: "catalogo" }
     },
     [{
       type: "url_button",
-      text: "Conheça o catálogo de produtos do Insano Food Truck.",
-      buttonText: "ABRIR CATÁLOGO",
+      text: "Conhe\u00e7a o cat\u00e1logo de produtos do Insano Food Truck.",
+      buttonText: "ABRIR CAT\u00c1LOGO",
       url
     }],
     [{ type: "catalog_url_button", source, url }]
@@ -236,6 +253,9 @@ function normalizeNavigationStack(state = {}) {
   if (state.foodtruckSubstate?.target === "evento" || state.foodtruckSubstate?.selectedAction === "INSANO_EVENTO") {
     return ["PORTAL_INSANO", "INSANO_FOODTRUCK", "INSANO_EVENTO"];
   }
+  if (state.foodtruckSubstate?.target === "orcamento" || state.foodtruckSubstate?.selectedAction === "INSANO_ORCAMENTO") {
+    return ["PORTAL_INSANO", "INSANO_FOODTRUCK", "INSANO_ORCAMENTO"];
+  }
   if (state.foodtruckSubstate?.target === "catalogo" || state.foodtruckSubstate?.selectedAction === "INSANO_CATALOGO") {
     return ["PORTAL_INSANO", "INSANO_FOODTRUCK", "INSANO_CATALOGO"];
   }
@@ -293,6 +313,7 @@ function isExternalPortalArea(state = {}) {
 function renderCurrentScreen(state, contract, source = "currentScreen") {
   const screen = currentNavigationScreen(state);
   if (screen === "INSANO_EVENTO") return openUrlButton(state, contract, "integration.insano_food_truck.event_form_url", source);
+  if (screen === "INSANO_ORCAMENTO") return openUrlButton(state, contract, "integration.insano_food_truck.quote_form_url", source);
   const menuId = menuIdForScreen(screen) || contract.welcome.menuId;
   return openMenu({ ...state, activeMenu: menuId }, contract, menuId, source, state.menuStack || []);
 }
@@ -328,16 +349,20 @@ function resolveContractPath(contract, target = "") {
   if (target === "integration.insano_food_truck.event_form_url") {
     return getRuntimeConfig().eventFormPublicUrl;
   }
+  if (target === "integration.insano_food_truck.quote_form_url") {
+    return getRuntimeConfig().quoteFormPublicUrl;
+  }
   const aliases = {
     "integration.insano_food_truck.catalog_url": "integrations.insano_food_truck.catalogUrl",
-    "integration.insano_food_truck.event_form_url": "integrations.insano_food_truck.eventFormUrl"
+    "integration.insano_food_truck.event_form_url": "integrations.insano_food_truck.eventFormUrl",
+    "integration.insano_food_truck.quote_form_url": "integrations.insano_food_truck.quoteFormUrl"
   };
   const path = aliases[target] || target;
   return path.split(".").reduce((value, key) => value?.[key], contract);
 }
 
 function buildUrlButtonTarget(baseUrl, target, state = {}) {
-  if (!baseUrl || target !== "integration.insano_food_truck.event_form_url") return baseUrl;
+  if (!baseUrl || !["integration.insano_food_truck.event_form_url", "integration.insano_food_truck.quote_form_url"].includes(target)) return baseUrl;
   const url = new URL(baseUrl);
   if (state.conversationId) {
     const phone = String(state.conversationId).replace(/\D/g, "");

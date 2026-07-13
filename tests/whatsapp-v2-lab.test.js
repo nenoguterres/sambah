@@ -212,8 +212,14 @@ test("Portal Insano Food Truck Evento abre formulario unico e Orcamento nao inic
   assert.equal(orcamento.state.activeMenu, "foodtruck_main_menu");
   assert.equal(orcamento.state.activeFlow, null);
   assert.equal(orcamento.state.awaitingInput, false);
-  assert.equal(orcamento.replies[0].type, "menu");
-  assert.equal(orcamento.replies[0].menu.options.length, 5);
+  assert.equal(orcamento.replies[0].type, "url_button");
+  assert.equal(orcamento.replies[0].buttonText, "PREENCHER ORÇAMENTO");
+  assert.match(orcamento.replies[0].text, /Orçamento — Insano Food Truck/);
+  assert.match(orcamento.replies[0].url, /^https:\/\/sambah\.onrender\.com\/orcamento\/insano/);
+  assert.match(orcamento.replies[0].url, /conversationId=wa_5551000000192/);
+  assert.match(orcamento.replies[0].url, /phone=5551000000192/);
+  assert.equal(orcamento.state.foodtruckSubstate.target, "orcamento");
+  assert.deepEqual(orcamento.state.navigationStack, ["PORTAL_INSANO", "INSANO_FOODTRUCK", "INSANO_ORCAMENTO"]);
   assertNoFoodtruckPlaceholder(orcamento.replies[0].text);
   assertNoNumberedMenu(orcamento.replies[0].text);
 });
@@ -386,8 +392,9 @@ test("Portal Insano Food Truck usa ids interativos sem trocar area por texto liv
   const quote = await engine.processor.handleIncoming({ messageId: "wamid-flow-4", from, text: "INSANO_ORCAMENTO" });
   assert.equal(quote.state.activeMenu, "foodtruck_main_menu");
   assert.equal(quote.state.activeFlow, null);
-  assert.equal(quote.state.foodtruckSubstate, null);
-  assert.equal(quote.replies[0].menu.options.length, 5);
+  assert.equal(quote.state.foodtruckSubstate.target, "orcamento");
+  assert.equal(quote.replies[0].type, "url_button");
+  assert.equal(quote.replies[0].buttonText, "PREENCHER ORÇAMENTO");
   assertNoFoodtruckPlaceholder(quote.replies[0].text);
 });
 

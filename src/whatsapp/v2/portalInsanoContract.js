@@ -40,7 +40,7 @@ export const portalInsanoContract = {
       strictInteractiveIds: true,
       options: [
         option("INSANO_EVENTO", 1, "Evento", { type: "open_url_button", target: "integration.insano_food_truck.event_form_url" }),
-        option("INSANO_ORCAMENTO", 2, "Orçamento", { type: "open_menu", target: "foodtruck_main_menu" }),
+        option("INSANO_ORCAMENTO", 2, "Orçamento", { type: "open_url_button", target: "integration.insano_food_truck.quote_form_url" }),
         option("INSANO_CATALOGO", 3, "Catálogo de produtos", { type: "open_url_button", target: "integration.insano_food_truck.catalog_url" }),
         option("INSANO_HUMANO", 4, "Atendimento Humano", { type: "start_flow", target: "human_handoff" }),
         option("PORTAL_VOLTAR", 5, "Voltar ao Portal Insano", { type: "open_menu", target: "portal_main_menu", areaId: null, clearFoodtruckSubstate: true })
@@ -169,7 +169,8 @@ export const portalInsanoContract = {
   integrations: {
     insano_food_truck: {
       catalogUrl: "https://www.insanofoodtruck.com.br/catalogo",
-      eventFormUrl: null
+      eventFormUrl: null,
+      quoteFormUrl: null
     },
     mesa_do_xeriffe: { enabled: false, customerUrl: null },
     sambah_pay: { enabled: false },

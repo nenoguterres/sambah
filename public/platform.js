@@ -20,7 +20,8 @@ render();
 
 function render() {
   if (page === "cardapio") return renderMenu(operation);
-  if (page === "evento") return renderInsanoEvent();
+  if (page === "evento") return renderInsanoRequest("evento");
+  if (page === "orcamento") return renderInsanoRequest("orcamento");
   if (page === "mesa") return renderTable(operation, table);
   if (page === "qrcodes") return renderQrcodes();
   if (page === "garcom") return renderWaiter();
@@ -31,6 +32,7 @@ function parseRoute(path) {
   const parts = path.split("/").filter(Boolean);
   if (parts[0] === "cardapio") return { page: "cardapio", operation: parts[1] || "insano", table: "" };
   if (parts[0] === "evento" && parts[1] === "insano") return { page: "evento", operation: "insano", table: "" };
+  if (parts[0] === "orcamento" && parts[1] === "insano") return { page: "orcamento", operation: "insano", table: "" };
   if (parts[0] === "mesa") return { page: "mesa", operation: parts[1] || "insano", table: parts[2] || "" };
   if (path === "/admin/qrcodes") return { page: "qrcodes", operation: "", table: "" };
   if (path === "/garcom") return { page: "garcom", operation: "", table: "" };
@@ -49,23 +51,25 @@ function renderMenu(op) {
   bindOrderForm();
 }
 
-function renderInsanoEvent() {
+function renderInsanoRequest(kind = "evento") {
+  const labels = insanoRequestLabels(kind);
   const params = new URLSearchParams(location.search);
   const phone = params.get("phone") || "";
   const conversationId = params.get("conversationId") || "";
-  const submissionId = eventSubmissionId(conversationId, phone);
-  if (localStorage.getItem(`insano:event-submitted:${submissionId}`)) {
-    app.innerHTML = eventSuccessMarkup();
+  const submissionId = insanoRequestSubmissionId(kind, conversationId, phone);
+  if (localStorage.getItem(`insano:${kind}-submitted:${submissionId}`)) {
+    app.innerHTML = requestSuccessMarkup(kind);
     return;
   }
   app.innerHTML = `
-    ${eventHero("Evento - Insano Food Truck", "Preenche os dados do teu evento para nossa equipe verificar a agenda e preparar o atendimento.")}
+    ${eventHero(labels.heroTitle, labels.heroSubtitle)}
     <section class="panel">
-      <h2>Solicitacao de evento</h2>
-      <p class="muted">Preenche as informacoes abaixo. Nossa equipe vai verificar a agenda e responder nesta mesma conversa do WhatsApp.</p>
+      <h2>${escapeHtml(labels.formTitle)}</h2>
+      <p class="muted">${escapeHtml(labels.formSubtitle)}</p>
       <form id="eventForm">
         <input name="conversationId" value="${escapeHtml(conversationId)}" hidden>
         <input name="submissionId" value="${escapeHtml(submissionId)}" hidden>
+        <input name="requestKind" value="${escapeHtml(kind)}" hidden>
         <input name="telefoneOriginal" value="${escapeHtml(phone)}" hidden>
         <div class="row">
           <label>Nome do contato<input name="nome" placeholder="Nome do contato" required></label>
@@ -88,13 +92,13 @@ function renderInsanoEvent() {
           <textarea name="observacoes" placeholder="Conta pra gente o que tu precisa saber ou deseja incluir na proposta."></textarea>
         </label>
         <div class="action-row">
-          <button class="primary" type="submit" data-event-action="send">ENVIAR SOLICITACAO</button>
+          <button class="primary" type="submit" data-event-action="send">${escapeHtml(labels.submitText)}</button>
         </div>
         <p id="eventResult" class="result" role="status"></p>
       </form>
     </section>
   `;
-  bindEventForm();
+  bindEventForm(kind);
 }
 
 function insanoActions() {
@@ -214,7 +218,7 @@ async function submitOrder(event) {
   form.dataset.lastOrder = order.id || "";
 }
 
-function bindEventForm() {
+function bindEventForm(kind = "evento") {
   const form = document.querySelector("#eventForm");
   form.querySelector("[name='terminoADefinir']")?.addEventListener("change", (event) => {
     const endInput = form.querySelector("[name='horarioTermino']");
@@ -223,12 +227,14 @@ function bindEventForm() {
   });
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
-    await submitEventRequest(form);
+    await submitEventRequest(form, kind);
   });
 }
 
-async function submitEventRequest(form) {
+async function submitEventRequest(form, fallbackKind = "evento") {
   const data = Object.fromEntries(new FormData(form).entries());
+  const kind = data.requestKind || fallbackKind;
+  const labels = insanoRequestLabels(kind);
   const result = document.querySelector("#eventResult");
   const validation = validateEventFormData(data);
   if (!validation.ok) {
@@ -256,9 +262,11 @@ async function submitEventRequest(form) {
     horarioTermino: data.terminoADefinir ? "a definir" : data.horarioTermino,
     observacoes: data.observacoes,
     page: location.pathname,
-    source: "WhatsApp - Portal Insano - Insano Food Truck - Evento"
+    formType: kind,
+    kind,
+    source: labels.source
   };
-  const body = await postJson("/api/site/insano/evento", payload);
+  const body = await postJson(kind === "orcamento" ? "/api/site/insano/orcamento" : "/api/site/insano/evento", payload);
   if (!body.ok) {
     sendButton.disabled = false;
     result.textContent = body.error || "Nao foi possivel enviar a solicitacao.";
@@ -269,8 +277,8 @@ async function submitEventRequest(form) {
     result.innerHTML = emailFailureMarkup();
     return;
   }
-  localStorage.setItem(`insano:event-submitted:${data.submissionId}`, body.id || "sent");
-  app.innerHTML = eventSuccessMarkup();
+  localStorage.setItem(`insano:${kind}-submitted:${data.submissionId}`, body.id || "sent");
+  app.innerHTML = requestSuccessMarkup(kind);
 }
 
 function validateEventFormData(data = {}) {
@@ -286,13 +294,14 @@ function validateEventFormData(data = {}) {
   return { ok: true };
 }
 
-function eventSuccessMarkup() {
+function requestSuccessMarkup(kind = "evento") {
+  const labels = insanoRequestLabels(kind);
   return `
-    ${eventHero("Solicitacao enviada", "Recebemos as informacoes do teu evento.")}
+    ${eventHero("Solicitacao enviada", labels.successSubtitle)}
     <section class="panel">
       <h2>Solicitacao enviada</h2>
-      <p>Recebemos as informacoes do teu evento.</p>
-      <p>Nossa equipe vai verificar a agenda e responder na mesma conversa do WhatsApp.</p>
+      <p>${escapeHtml(labels.successText)}</p>
+      <p>${escapeHtml(labels.nextText)}</p>
       <div class="action-row">
         <a class="wa-link" href="${whatsappLink("Voltar ao Insano Food Truck")}" data-whatsapp-url>VOLTAR AO WHATSAPP</a>
       </div>
@@ -313,12 +322,40 @@ function whatsappLink(text = "") {
   return `${INSANO_WHATSAPP_URL}?text=${encodeURIComponent(text)}`;
 }
 
-function eventSubmissionId(conversationId = "", phone = "") {
-  const key = `${conversationId || "sem-conversa"}:${phone || "sem-telefone"}`;
-  const existing = sessionStorage.getItem(`insano:event-submission:${key}`);
+function insanoRequestLabels(kind = "evento") {
+  if (kind === "orcamento") {
+    return {
+      heroTitle: "Orcamento - Insano Food Truck",
+      heroSubtitle: "Preenche os dados para nossa equipe preparar o orcamento e continuar o atendimento.",
+      formTitle: "Solicitacao de orcamento",
+      formSubtitle: "Preenche as informacoes abaixo. Nossa equipe vai preparar o orcamento e responder nesta mesma conversa do WhatsApp.",
+      submitText: "ENVIAR ORCAMENTO",
+      source: "WhatsApp - Portal Insano - Insano Food Truck - Orcamento",
+      successSubtitle: "Recebemos as informacoes do teu orcamento.",
+      successText: "Recebemos as informacoes do teu orcamento.",
+      nextText: "Nossa equipe vai preparar o orcamento e responder na mesma conversa do WhatsApp."
+    };
+  }
+  return {
+    heroTitle: "Evento - Insano Food Truck",
+    heroSubtitle: "Preenche os dados do teu evento para nossa equipe verificar a agenda e preparar o atendimento.",
+    formTitle: "Solicitacao de evento",
+    formSubtitle: "Preenche as informacoes abaixo. Nossa equipe vai verificar a agenda e responder nesta mesma conversa do WhatsApp.",
+    submitText: "ENVIAR SOLICITACAO",
+    source: "WhatsApp - Portal Insano - Insano Food Truck - Evento",
+    successSubtitle: "Recebemos as informacoes do teu evento.",
+    successText: "Recebemos as informacoes do teu evento.",
+    nextText: "Nossa equipe vai verificar a agenda e responder na mesma conversa do WhatsApp."
+  };
+}
+
+function insanoRequestSubmissionId(kind = "evento", conversationId = "", phone = "") {
+  const key = `${kind}:${conversationId || "sem-conversa"}:${phone || "sem-telefone"}`;
+  const existing = sessionStorage.getItem(`insano:${kind}-submission:${key}`);
   if (existing) return existing;
-  const generated = `event_form_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-  sessionStorage.setItem(`insano:event-submission:${key}`, generated);
+  const prefix = kind === "orcamento" ? "quote_form" : "event_form";
+  const generated = `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  sessionStorage.setItem(`insano:${kind}-submission:${key}`, generated);
   return generated;
 }
 

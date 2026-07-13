@@ -595,6 +595,10 @@ export function createApp({
         return serveStatic(res, "event-insano.html");
       }
 
+      if (req.method === "GET" && url.pathname === "/orcamento/insano") {
+        return serveStatic(res, "quote-insano.html");
+      }
+
       if (
         req.method === "GET"
         && (
@@ -1085,6 +1089,30 @@ export function createApp({
           status: "info",
           source: "insanofoodtruck.com.br",
           message: "Orcamento de evento Insano salvo no CRM SamBah",
+          context: { id: result.id, operation: result.operation, pipeline: result.pipeline },
+          dedupeKey: result.id
+        });
+        return sendJson(res, 201, result);
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/site/insano/orcamento") {
+        const body = await readJson(req, { requireBody: true });
+        const result = await createInsanoFoodTruckEventRequest({
+          crmService,
+          eventService,
+          eventEmailAlertService,
+          whatsappConversationService,
+          whatsappProvider: appWhatsappProvider,
+          runtimeConfig: appRuntimeConfig || getRuntimeConfig(),
+          requestKind: "orcamento",
+          body
+        });
+        if (!result.ok) return sendJson(res, result.statusCode || 400, result);
+        await safeAuditRecord(auditService, {
+          type: "insano_site_quote_created",
+          status: "info",
+          source: "insanofoodtruck.com.br",
+          message: "Orcamento Insano salvo no CRM SamBah",
           context: { id: result.id, operation: result.operation, pipeline: result.pipeline },
           dedupeKey: result.id
         });
@@ -2065,8 +2093,11 @@ async function createInsanoFoodTruckEventRequest({
   whatsappConversationService,
   whatsappProvider,
   runtimeConfig = getRuntimeConfig(),
+  requestKind = "evento",
   body = {}
 } = {}) {
+  const kind = requestKind === "orcamento" ? "orcamento" : "evento";
+  const labels = insanoRequestKindLabels(kind);
   const payload = normalizeInsanoEventPayload(body);
   const validation = validateInsanoEventPayload(payload);
   if (!validation.ok) return { ok: false, statusCode: 400, error: "invalid_event_request", errors: validation.errors };
@@ -2077,8 +2108,8 @@ async function createInsanoFoodTruckEventRequest({
     id: eventRequestId,
     eventRequestId,
     externalId: eventRequestId,
-    source: "WHATSAPP_PORTAL_INSANO_FOODTRUCK_EVENTO",
-    origin: "WHATSAPP_PORTAL_INSANO_FOODTRUCK_EVENTO",
+    source: labels.origin,
+    origin: labels.origin,
     status: "AGUARDANDO_ANALISE",
     conversationId,
     telefoneOriginal: payload.originalPhone,
@@ -2087,9 +2118,10 @@ async function createInsanoFoodTruckEventRequest({
     phone: payload.phone,
     name: payload.name,
     submittedAt: payload.submittedAt,
-    formType: "insano_food_truck_evento",
+    formType: labels.formType,
     formData: {
       conversationId,
+      formType: labels.formType,
       originalPhone: payload.originalPhone,
       contactPhone: payload.phone,
       name: payload.name,
@@ -2102,7 +2134,7 @@ async function createInsanoFoodTruckEventRequest({
       endsAt: payload.endsAt,
       endTimeUndefined: payload.endTimeUndefined,
       message: payload.notes,
-      origin: "WHATSAPP_PORTAL_INSANO_FOODTRUCK_EVENTO"
+      origin: labels.origin
     },
     event: {
       type: "food_truck_event",
@@ -2123,7 +2155,8 @@ async function createInsanoFoodTruckEventRequest({
     leadId: eventLead.lead.id,
     eventRequestId: eventLead.lead.id,
     conversationId,
-    conversationUrl
+    conversationUrl,
+    kind
   }));
   const emailSend = await eventEmailAlertService.sendAlert(eventLead.lead.id);
 
@@ -2134,8 +2167,8 @@ async function createInsanoFoodTruckEventRequest({
       operation: "Insano",
       status: "AGUARDANDO_ANALISE",
       whatsappUrl: "",
-      whatsappMessage: buildInsanoEventWhatsappReturn(payload),
-      confirmation: buildInsanoEventConfirmation(),
+      whatsappMessage: buildInsanoEventWhatsappReturn(payload, kind),
+      confirmation: buildInsanoEventConfirmation(kind),
       lead: eventLead.lead,
       duplicate: true,
       emailAlert: {
@@ -2166,19 +2199,19 @@ async function createInsanoFoodTruckEventRequest({
       observacoes: payload.notes,
       message: payload.notes,
       pipeline: "food_truck_evento",
-      tipo: "evento"
-    }, { pipeline: "food_truck_evento", tipo: "evento" }));
+      tipo: kind
+    }, { pipeline: "food_truck_evento", tipo: kind }));
   } catch (error) {
     crmResult = { whatsappUrl: "", lead: null, evento: null, error: sanitizeEventSendError(error) };
   }
 
   let conversation = null;
   try {
-    conversation = await ensureEventConversation(whatsappConversationService, payload, conversationId);
+    conversation = await ensureEventConversation(whatsappConversationService, payload, conversationId, kind);
   } catch {
     conversation = null;
   }
-  const internalSummary = buildInsanoEventInternalSummary(payload);
+  const internalSummary = buildInsanoEventInternalSummary(payload, kind);
   if (conversationId && whatsappConversationService?.recordOutgoing) {
     await whatsappConversationService.recordOutgoing(conversationId, {
       text: internalSummary,
@@ -2187,7 +2220,7 @@ async function createInsanoFoodTruckEventRequest({
       correlationId: `insano-event-summary:${eventLead.lead.id}`
     }).catch(() => null);
   }
-  const whatsappReturn = buildInsanoEventWhatsappReturn(payload);
+  const whatsappReturn = buildInsanoEventWhatsappReturn(payload, kind);
   const interactiveReturn = {
     type: "menu",
     text: whatsappReturn,
@@ -2221,7 +2254,7 @@ async function createInsanoFoodTruckEventRequest({
     status: "AGUARDANDO_ANALISE",
     whatsappUrl: crmResult.whatsappUrl,
     whatsappMessage: whatsappReturn,
-    confirmation: buildInsanoEventConfirmation(),
+    confirmation: buildInsanoEventConfirmation(kind),
     lead: eventLead.lead,
     crm: { lead: crmResult.lead, evento: crmResult.evento },
     emailAlert: {
@@ -2897,7 +2930,8 @@ function normalizeEventConversationId(conversationId = "", phone = "") {
   return digits ? `wa_${digits}` : clean;
 }
 
-async function ensureEventConversation(whatsappConversationService, payload = {}, conversationId = "") {
+async function ensureEventConversation(whatsappConversationService, payload = {}, conversationId = "", kind = "evento") {
+  const labels = insanoRequestKindLabels(kind);
   if (!whatsappConversationService || !payload.originalPhone) return null;
   const existing = conversationId ? await whatsappConversationService.get?.(conversationId) : null;
   if (existing?.ok) return existing;
@@ -2905,7 +2939,7 @@ async function ensureEventConversation(whatsappConversationService, payload = {}
     from: payload.originalPhone,
     telefone: payload.originalPhone,
     nome: payload.name || "Cliente WhatsApp",
-    text: "Solicitacao de evento enviada pelo formulario do Insano Food Truck.",
+    text: `${labels.internalTitle} enviada pelo formulario do Insano Food Truck.`,
     messageId: `insano-event-form-${crypto.randomUUID()}`
   });
 }
@@ -2939,21 +2973,50 @@ function sanitizeEventSendError(error = "") {
     .slice(0, 300);
 }
 
-function buildInsanoEventWhatsappReturn(payload = {}) {
+function insanoRequestKindLabels(kind = "evento") {
+  if (kind === "orcamento") {
+    return {
+      origin: "WHATSAPP_PORTAL_INSANO_FOODTRUCK_ORCAMENTO",
+      formType: "insano_food_truck_orcamento",
+      subjectPrefix: "[NOVO ORCAMENTO]",
+      internalTitle: "Nova solicitacao de orcamento",
+      receivedText: "Recebemos tua solicitacao de orcamento.",
+      teamAction: "Nossa equipe vai preparar o orcamento e responder nesta mesma conversa.",
+      emailOpening: "Nova solicitacao de orcamento recebida pelo SamBah",
+      emailOrigin: "WhatsApp - Portal Insano - Insano Food Truck - Orcamento",
+      confirmationText: "Recebemos as informacoes do teu orcamento. Nossa equipe vai preparar o orcamento e responder na mesma conversa do WhatsApp."
+    };
+  }
+  return {
+    origin: "WHATSAPP_PORTAL_INSANO_FOODTRUCK_EVENTO",
+    formType: "insano_food_truck_evento",
+    subjectPrefix: "[NOVO EVENTO]",
+    internalTitle: "Nova solicitacao de evento",
+    receivedText: "Recebemos tua solicitacao de evento.",
+    teamAction: "Nossa equipe vai verificar a agenda e responder nesta mesma conversa.",
+    emailOpening: "Nova solicitacao de evento recebida pelo SamBah",
+    emailOrigin: "WhatsApp - Portal Insano - Insano Food Truck - Evento",
+    confirmationText: "Recebemos as informacoes do teu evento. Nossa equipe vai verificar a agenda e responder na mesma conversa do WhatsApp."
+  };
+}
+
+function buildInsanoEventWhatsappReturn(payload = {}, kind = "evento") {
+  const labels = insanoRequestKindLabels(kind);
   return [
-    "Recebemos tua solicitacao de evento.",
+    labels.receivedText,
     "",
     `Data: ${formatBrazilianDate(payload.date)}`,
     `Cidade: ${payload.city || ""}`,
     `Publico previsto: ${payload.people || ""} pessoas`,
     "",
-    "Nossa equipe vai verificar a agenda e responder nesta mesma conversa."
+    labels.teamAction
   ].join("\n");
 }
 
-function buildInsanoEventInternalSummary(payload = {}) {
+function buildInsanoEventInternalSummary(payload = {}, kind = "evento") {
+  const labels = insanoRequestKindLabels(kind);
   return [
-    "Nova solicitacao de evento",
+    labels.internalTitle,
     "",
     `Nome: ${payload.name}`,
     `Data: ${formatBrazilianDate(payload.date)}`,
@@ -2968,23 +3031,25 @@ function buildInsanoEventInternalSummary(payload = {}) {
   ].join("\n");
 }
 
-function buildInsanoEventConfirmation() {
+function buildInsanoEventConfirmation(kind = "evento") {
+  const labels = insanoRequestKindLabels(kind);
   return {
     title: "Solicitacao enviada",
-    text: "Recebemos as informacoes do teu evento. Nossa equipe vai verificar a agenda e responder na mesma conversa do WhatsApp.",
+    text: labels.confirmationText,
     status: "AGUARDANDO_ANALISE",
-    kind: "evento"
+    kind
   };
 }
 
-function buildInsanoEventEmailAlert({ payload = {}, leadId = "", eventRequestId = "", conversationId = "", conversationUrl = "" } = {}) {
+function buildInsanoEventEmailAlert({ payload = {}, leadId = "", eventRequestId = "", conversationId = "", conversationUrl = "", kind = "evento" } = {}) {
+  const labels = insanoRequestKindLabels(kind);
   const date = formatBrazilianDate(payload.date);
   const city = payload.city || "";
   const people = payload.people || "";
-  const subject = `[NOVO EVENTO] ${date} — ${city} — ${people} pessoas`;
+  const subject = `${labels.subjectPrefix} ${date} \u2014 ${city} \u2014 ${people} pessoas`;
   const endTime = payload.endTimeUndefined ? "A definir" : payload.endsAt;
   const body = [
-    "Nova solicitacao de evento recebida pelo SamBah",
+    labels.emailOpening,
     "",
     "Nome:",
     payload.name || "",
@@ -3014,7 +3079,7 @@ function buildInsanoEventEmailAlert({ payload = {}, leadId = "", eventRequestId 
     payload.notes || "Sem observacoes",
     "",
     "Origem:",
-    "WhatsApp — Portal Insano — Insano Food Truck — Evento",
+    labels.emailOrigin,
     "",
     "Status:",
     "Aguardando analise da equipe",
