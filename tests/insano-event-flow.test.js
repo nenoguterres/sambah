@@ -358,3 +358,27 @@ test("formulario publico do Orcamento nao expoe shell operacional do SamBah", as
     await app.close();
   }
 });
+
+test("catalogo publico do Insano lista produtos e nao expoe shell operacional", async () => {
+  const app = await makeServer();
+  try {
+    const response = await fetch(`${app.base}/catalogo/insano`);
+    const html = await response.text();
+    assert.equal(response.status, 200);
+    assert.match(html, /platform\.js/);
+    assert.doesNotMatch(html, /renderSambahShell/);
+    assert.doesNotMatch(html, /admin\/assets\/sambah-shell/);
+    assert.doesNotMatch(html, /Abrir CRM/);
+
+    const script = await fetch(`${app.base}/platform.js`).then((item) => item.text());
+    assert.match(script, /Catalogo de produtos - Insano Food Truck/);
+    assert.match(script, /Hamburguer/);
+    assert.match(script, /Pizzas/);
+    assert.match(script, /Churrasquinho/);
+    assert.match(script, /Porcoes de buteco/);
+    assert.match(script, /Joelho de Porco/);
+    assert.match(script, /VOLTAR AO WHATSAPP/);
+  } finally {
+    await app.close();
+  }
+});

@@ -168,7 +168,7 @@ export const portalInsanoContract = {
   },
   integrations: {
     insano_food_truck: {
-      catalogUrl: "https://www.insanofoodtruck.com.br/catalogo",
+      catalogUrl: "https://sambah.onrender.com/catalogo/insano",
       eventFormUrl: null,
       quoteFormUrl: null
     },

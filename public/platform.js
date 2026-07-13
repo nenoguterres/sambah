@@ -3,6 +3,14 @@ const PRODUCTS = {
   xeriffe: ["Pedido rapido Buteco Xeriffe", "Festa Xeriffe", "Porcoes", "Bebidas", "Evento"]
 };
 
+const INSANO_CATALOG_PRODUCTS = [
+  { name: "Hamburguer", description: "Food truck de hamburguer para eventos e grupos." },
+  { name: "Pizzas", description: "Pizzas para eventos, confraternizacoes e festas." },
+  { name: "Churrasquinho", description: "Espetinhos e churrasquinho para atendimento em evento." },
+  { name: "Porcoes de buteco", description: "Porcoes para eventos no estilo boteco Insano." },
+  { name: "Joelho de Porco", description: "Joelho de porco para eventos sob consulta." }
+];
+
 const OPERATION = {
   insano: "Insano",
   xeriffe: "Buteco Xeriffe"
@@ -22,6 +30,7 @@ function render() {
   if (page === "cardapio") return renderMenu(operation);
   if (page === "evento") return renderInsanoRequest("evento");
   if (page === "orcamento") return renderInsanoRequest("orcamento");
+  if (page === "catalogo-insano") return renderInsanoCatalog();
   if (page === "mesa") return renderTable(operation, table);
   if (page === "qrcodes") return renderQrcodes();
   if (page === "garcom") return renderWaiter();
@@ -33,6 +42,7 @@ function parseRoute(path) {
   if (parts[0] === "cardapio") return { page: "cardapio", operation: parts[1] || "insano", table: "" };
   if (parts[0] === "evento" && parts[1] === "insano") return { page: "evento", operation: "insano", table: "" };
   if (parts[0] === "orcamento" && parts[1] === "insano") return { page: "orcamento", operation: "insano", table: "" };
+  if (parts[0] === "catalogo" && parts[1] === "insano") return { page: "catalogo-insano", operation: "insano", table: "" };
   if (parts[0] === "mesa") return { page: "mesa", operation: parts[1] || "insano", table: parts[2] || "" };
   if (path === "/admin/qrcodes") return { page: "qrcodes", operation: "", table: "" };
   if (path === "/garcom") return { page: "garcom", operation: "", table: "" };
@@ -99,6 +109,25 @@ function renderInsanoRequest(kind = "evento") {
     </section>
   `;
   bindEventForm(kind);
+}
+
+function renderInsanoCatalog() {
+  app.innerHTML = `
+    ${eventHero("Catalogo de produtos - Insano Food Truck", "Escolhe os produtos que combinam com teu evento e volta ao WhatsApp para seguir o atendimento.")}
+    <section class="panel">
+      <h2>Produtos para eventos</h2>
+      <p class="muted">Consulta rapida dos produtos disponiveis para orcamento.</p>
+      <div class="grid">${INSANO_CATALOG_PRODUCTS.map((item) => `
+        <article class="card">
+          <strong>${escapeHtml(item.name)}</strong>
+          <span class="muted">${escapeHtml(item.description)}</span>
+        </article>
+      `).join("")}</div>
+      <div class="action-row">
+        <a class="wa-link" href="${whatsappLink("Voltar ao Insano Food Truck")}" data-whatsapp-url>VOLTAR AO WHATSAPP</a>
+      </div>
+    </section>
+  `;
 }
 
 function insanoActions() {

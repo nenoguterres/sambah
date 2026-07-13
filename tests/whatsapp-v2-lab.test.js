@@ -152,7 +152,7 @@ test("Portal Insano Food Truck exibe submenu oficial e catalogo por botao URL", 
   assert.equal(catalog.replies[0].type, "url_button");
   assert.equal(catalog.replies[0].buttonText, "ABRIR CATÁLOGO");
   assert.equal(catalog.replies[0].text, "Conheça o catálogo de produtos do Insano Food Truck.");
-  assert.equal(catalog.replies[0].url, "https://www.insanofoodtruck.com.br/catalogo");
+  assert.equal(catalog.replies[0].url, "https://sambah.onrender.com/catalogo/insano");
   assert.equal(catalog.state.foodtruckSubstate.selectedAction, "INSANO_CATALOGO");
   assert.deepEqual(catalog.state.navigationStack, ["PORTAL_INSANO", "INSANO_FOODTRUCK", "INSANO_CATALOGO"]);
 });

@@ -599,6 +599,10 @@ export function createApp({
         return serveStatic(res, "quote-insano.html");
       }
 
+      if (req.method === "GET" && url.pathname === "/catalogo/insano") {
+        return serveStatic(res, "catalog-insano.html");
+      }
+
       if (
         req.method === "GET"
         && (
