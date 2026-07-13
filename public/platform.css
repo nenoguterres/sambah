@@ -144,6 +144,23 @@ button.primary,
   font-size: 18px;
 }
 
+.catalog-image {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 7px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  background: #12160f;
+}
+
+.catalog-image.placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--gold);
+  font-size: 42px;
+  font-weight: 900;
+}
+
 .panel {
   padding: 14px;
   margin: 14px 0;

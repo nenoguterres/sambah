@@ -372,12 +372,32 @@ test("catalogo publico do Insano lista produtos e nao expoe shell operacional", 
 
     const script = await fetch(`${app.base}/platform.js`).then((item) => item.text());
     assert.match(script, /Catalogo de produtos - Insano Food Truck/);
+    assert.match(script, /\/api\/insano\/catalogo/);
     assert.match(script, /Hamburguer/);
     assert.match(script, /Pizzas/);
     assert.match(script, /Churrasquinho/);
     assert.match(script, /Porcoes de buteco/);
     assert.match(script, /Joelho de Porco/);
     assert.match(script, /VOLTAR AO WHATSAPP/);
+  } finally {
+    await app.close();
+  }
+});
+
+test("catalogo Insano tem API publica e area admin protegida", async () => {
+  const app = await makeServer();
+  try {
+    const publicResponse = await fetch(`${app.base}/api/insano/catalogo`);
+    const publicBody = await publicResponse.json();
+    assert.equal(publicResponse.status, 200);
+    assert.equal(publicBody.ok, true);
+    assert.ok(publicBody.items.some((item) => item.name === "Hamburguer"));
+
+    const adminPage = await fetch(`${app.base}/admin/insano-catalogo`, { redirect: "manual" });
+    assert.equal(adminPage.status, 302);
+
+    const adminApi = await fetch(`${app.base}/api/admin/insano/catalogo`);
+    assert.equal(adminApi.status, 401);
   } finally {
     await app.close();
   }

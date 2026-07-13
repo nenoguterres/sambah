@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Catalogo Insano</title>
+    <link rel="icon" href="/admin/assets/favicon.png" type="image/png">
+    <link rel="stylesheet" href="/admin/assets/sambah-shell.css">
+    <link rel="stylesheet" href="/insano-catalog-admin.css">
+  </head>
+  <body>
+    <main class="catalog-admin">
+      <header class="topbar">
+        <a class="brand" href="/admin">
+          <img src="/admin/assets/brand/logo-sambah-oficial.png" alt="SamBah">
+          <span>Catalogo Insano</span>
+        </a>
+        <nav class="top-links">
+          <a href="/catalogo/insano" target="_blank" rel="noopener">Ver catalogo</a>
+          <a href="/admin">Admin</a>
+          <button data-auth-logout type="button">Sair</button>
+        </nav>
+      </header>
+
+      <section class="panel">
+        <p class="eyebrow">Insano Food Truck</p>
+        <h1>Produtos do catalogo</h1>
+        <p>Edite nome, descricao e URL da foto. Salvar aqui atualiza a vitrine publica do WhatsApp.</p>
+        <span id="catalogStatus" class="status-pill">Carregando catalogo</span>
+      </section>
+
+      <form id="catalogForm" class="products-panel">
+        <div id="productsList" class="products-list"></div>
+        <div class="actions">
+          <button type="button" id="addProduct">Adicionar produto</button>
+          <button class="primary" type="submit">Salvar catalogo</button>
+        </div>
+      </form>
+    </main>
+    <script src="/admin/assets/sambah-shell.js"></script>
+    <script>renderSambahShell("admin");</script>
+    <script src="/auth-ui.js"></script>
+    <script src="/insano-catalog-admin.js"></script>
+  </body>
+</html>

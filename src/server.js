@@ -9,6 +9,7 @@ import { CallCenterService } from "./callCenterService.js";
 import { CrmService } from "./crmService.js";
 import { EventScheduleService } from "./eventScheduleService.js";
 import { EventEmailAlertService } from "./eventEmailAlertService.js";
+import { InsanoCatalogService } from "./insanoCatalogService.js";
 import { InsanoWorkhubController } from "./insanoWorkhubController.js";
 import { InsanoWorkhubService } from "./insanoWorkhubService.js";
 import { buildMesaOrder, MesaIntegrationService } from "./mesaIntegrationService.js";
@@ -52,6 +53,7 @@ const whatsappConversations = new WhatsAppConversationService({
 const drafts = new OrderDraftService({ draftsFile: dataFile("order-drafts.json"), rulesFile: dataFile("sambah-menu-rules.json") });
 const events = new EventScheduleService({ leadsFile: dataFile("event-leads.json"), servicesFile: dataFile("insano-services.json") });
 const eventEmailAlerts = new EventEmailAlertService({ filePath: dataFile("event-email-alerts.json") });
+const insanoCatalog = new InsanoCatalogService({ filePath: dataFile("insano-catalog.json") });
 const tracking = new OrderTrackingService({ filePath: dataFile("order-tracking.json") });
 const callCenter = new CallCenterService({
   operatorsFile: dataFile("call-center-operators.json"),
@@ -115,6 +117,7 @@ export function createApp({
   draftService = drafts,
   eventService = events,
   eventEmailAlertService = eventEmailAlerts,
+  insanoCatalogService = insanoCatalog,
   trackingService = tracking,
   perolaRouteModule = perolaRoutes,
   workhubController = insanoWorkhubController,
@@ -587,6 +590,11 @@ export function createApp({
         return serveStatic(res, "sambah-messaging.html");
       }
 
+      if (req.method === "GET" && url.pathname === "/admin/insano-catalogo") {
+        if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
+        return serveStatic(res, "insano-catalog-admin.html");
+      }
+
       if (req.method === "GET" && ["/crm", "/clientes", "/leads", "/atendimentos", "/eventos", "/precomandas"].includes(url.pathname)) {
         return serveStatic(res, "crm.html");
       }
@@ -632,7 +640,7 @@ export function createApp({
         return serveStatic(res, "insano-workhub.js");
       }
 
-      if (req.method === "GET" && ["/site.css", "/site.js", "/crm.css", "/crm.js", "/conteudo.css", "/platform.css", "/platform.js", "/oportunidades.css", "/oportunidades.js", "/conversas.css", "/conversas.js", "/portal.css", "/portal.js", "/perola.css", "/perola.js", "/voice-pay.css", "/voice-pay.js", "/sambah-ecosystem.css", "/sambah-central.js", "/sambah-pay.js", "/sambah-autoserve.js", "/sambah-devices.js", "/sambah-locker.js", "/sambah-weight.js", "/sambah-events.js", "/sambah-observability.js", "/sambah-security.js", "/sambah-lgpd.js", "/sambah-database.js", "/sambah-messaging.js", "/sambah-shell.css", "/sambah-shell.js", "/admin-permissoes.css", "/admin-permissoes.js", "/admin-usuarios.css", "/admin-usuarios.js", "/admin-auditoria.css", "/admin-auditoria.js", "/login.css", "/login.js", "/auth-ui.js"].includes(url.pathname)) {
+      if (req.method === "GET" && ["/site.css", "/site.js", "/crm.css", "/crm.js", "/conteudo.css", "/platform.css", "/platform.js", "/oportunidades.css", "/oportunidades.js", "/conversas.css", "/conversas.js", "/portal.css", "/portal.js", "/perola.css", "/perola.js", "/voice-pay.css", "/voice-pay.js", "/sambah-ecosystem.css", "/sambah-central.js", "/sambah-pay.js", "/sambah-autoserve.js", "/sambah-devices.js", "/sambah-locker.js", "/sambah-weight.js", "/sambah-events.js", "/sambah-observability.js", "/sambah-security.js", "/sambah-lgpd.js", "/sambah-database.js", "/sambah-messaging.js", "/sambah-shell.css", "/sambah-shell.js", "/admin-permissoes.css", "/admin-permissoes.js", "/admin-usuarios.css", "/admin-usuarios.js", "/admin-auditoria.css", "/admin-auditoria.js", "/insano-catalog-admin.css", "/insano-catalog-admin.js", "/login.css", "/login.js", "/auth-ui.js"].includes(url.pathname)) {
         return serveStatic(res, url.pathname.slice(1));
       }
 
@@ -1033,6 +1041,32 @@ export function createApp({
 
       if (req.method === "GET" && url.pathname === "/api/site/cardapio") {
         return sendJson(res, 200, getInsanoSiteCardapio());
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/insano/catalogo") {
+        return sendJson(res, 200, await insanoCatalogService.list());
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/admin/insano/catalogo") {
+        const adminCheck = requireAdminUser(req, activeAuthMode);
+        if (!adminCheck.ok) return sendJson(res, adminCheck.statusCode, { ok: false, error: adminCheck.error });
+        return sendJson(res, 200, await insanoCatalogService.adminList());
+      }
+
+      if (req.method === "PUT" && url.pathname === "/api/admin/insano/catalogo") {
+        const adminCheck = requireAdminUser(req, activeAuthMode);
+        if (!adminCheck.ok) return sendJson(res, adminCheck.statusCode, { ok: false, error: adminCheck.error });
+        const body = await readJson(req, { requireBody: true });
+        const result = await insanoCatalogService.saveItems(body.items || []);
+        if (!result.ok) return sendJson(res, 400, result);
+        await safeAuditRecord(auditService, {
+          type: "insano_catalog_updated",
+          status: "info",
+          source: "admin",
+          message: "Catalogo Insano atualizado",
+          context: { total: result.items.length, username: safeAuditUsername(req.sambahUser?.username || "mock") }
+        });
+        return sendJson(res, 200, result);
       }
       if (req.method === "POST" && url.pathname === "/api/site/lead") {
         const body = await readJson(req, { requireBody: true });
@@ -3555,7 +3589,7 @@ function sendJson(res, statusCode, payload) {
 
 function corsHeaders(origin = "") {
   const headers = {
-    "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS",
+    "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
     "access-control-allow-headers": "content-type"
   };
   headers["access-control-allow-origin"] = origin && isAllowedCorsOrigin(origin) ? origin : "*";

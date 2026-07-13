@@ -111,14 +111,16 @@ function renderInsanoRequest(kind = "evento") {
   bindEventForm(kind);
 }
 
-function renderInsanoCatalog() {
+async function renderInsanoCatalog() {
+  const products = await loadInsanoCatalogProducts();
   app.innerHTML = `
     ${eventHero("Catalogo de produtos - Insano Food Truck", "Escolhe os produtos que combinam com teu evento e volta ao WhatsApp para seguir o atendimento.")}
     <section class="panel">
       <h2>Produtos para eventos</h2>
       <p class="muted">Consulta rapida dos produtos disponiveis para orcamento.</p>
-      <div class="grid">${INSANO_CATALOG_PRODUCTS.map((item) => `
-        <article class="card">
+      <div class="grid">${products.map((item) => `
+        <article class="card catalog-card">
+          ${item.imageUrl ? `<img class="catalog-image" src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.name)}" loading="lazy">` : `<div class="catalog-image placeholder">${escapeHtml(item.name.slice(0, 1))}</div>`}
           <strong>${escapeHtml(item.name)}</strong>
           <span class="muted">${escapeHtml(item.description)}</span>
         </article>
@@ -128,6 +130,17 @@ function renderInsanoCatalog() {
       </div>
     </section>
   `;
+}
+
+async function loadInsanoCatalogProducts() {
+  try {
+    const response = await fetch("/api/insano/catalogo");
+    const body = await response.json();
+    if (response.ok && body.ok && Array.isArray(body.items) && body.items.length) return body.items;
+  } catch {
+    return INSANO_CATALOG_PRODUCTS;
+  }
+  return INSANO_CATALOG_PRODUCTS;
 }
 
 function insanoActions() {
