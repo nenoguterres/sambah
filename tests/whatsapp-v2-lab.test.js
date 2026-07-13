@@ -132,7 +132,7 @@ test("Portal Insano menu principal roteia cada botao sem chamar IA", async () =>
   assertNoNumberedMenu(numeric.replies[0].text);
 });
 
-test("Motor 1 conduz Quero Pedir ao Mesa sem pedido ou pre-comanda no WhatsApp", async () => {
+test("Motor 1 preserva Portal Insano e conduz Xeriffe ao Mesa sem pedido no WhatsApp", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000201";
   const sambahConversationId = "conversation-central-motor-1";
@@ -145,19 +145,15 @@ test("Motor 1 conduz Quero Pedir ao Mesa sem pedido ou pre-comanda no WhatsApp",
   });
   assert.equal(portal.replies[0].type, "menu");
   assert.equal(portal.replies[0].menu.id, "portal_main_menu");
-  assert.deepEqual(portal.replies[0].menu.options.slice(0, 5).map((item) => item.title), [
-    "Quero Pedir",
-    "Preciso de Food Truck",
-    "Evento Corporativo",
-    "Conhecer o Xeriffe",
+  assert.deepEqual(portal.replies[0].menu.options.map((item) => item.title), [
+    "Insano Food Truck",
+    "Xeriffe Obirici",
+    "Granja Aguas da Lagoa",
+    "Desenvolvimento de Tecnologias",
     "Atendimento Humano"
   ]);
 
-  const units = await engine.processor.handleIncoming({ messageId: "wamid-motor-1-units", from, text: "portal.order" });
-  assert.equal(units.state.activeMenu, "order_units_menu");
-  assert.equal(units.replies[0].menu.options[0].id, "order.xeriffe");
-
-  const xeriffe = await engine.processor.handleIncoming({ messageId: "wamid-motor-1-xeriffe", from, text: "order.xeriffe" });
+  const xeriffe = await engine.processor.handleIncoming({ messageId: "wamid-motor-1-xeriffe", from, text: "portal.xeriffe" });
   assert.equal(xeriffe.state.areaId, "xeriffe_obirici");
   assert.deepEqual(xeriffe.replies[0].menu.options.map((item) => item.id), ["xeriffe.menu", "xeriffe.human", "xeriffe.back"]);
 
@@ -210,8 +206,7 @@ test("Motor 1 exige correlacao do Mesa, e Atendimento Humano permanece homologad
   const from = "5551000000202";
   const sambahConversationId = "conversation-central-motor-1-human";
   await engine.processor.handleIncoming({ messageId: "wamid-motor-1-h-portal", from, sambahConversationId, text: "quero pedir" });
-  await engine.processor.handleIncoming({ messageId: "wamid-motor-1-h-units", from, text: "portal.order" });
-  await engine.processor.handleIncoming({ messageId: "wamid-motor-1-h-xeriffe", from, text: "order.xeriffe" });
+  await engine.processor.handleIncoming({ messageId: "wamid-motor-1-h-xeriffe", from, text: "portal.xeriffe" });
   await engine.processor.handleIncoming({ messageId: "wamid-motor-1-h-link", from, text: "xeriffe.menu" });
 
   const mismatch = await markWhatsAppV2MesaOrderReceived(engine.conversationRepository, {

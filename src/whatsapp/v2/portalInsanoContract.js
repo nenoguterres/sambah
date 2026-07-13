@@ -25,23 +25,11 @@ export const portalInsanoContract = {
       body: "Escolha uma area para continuar:",
       strictInteractiveIds: true,
       options: [
-        option("portal.order", 1, "Quero Pedir", { type: "open_menu", target: "order_units_menu", areaId: null }),
-        option("PORTAL_INSANO_FOODTRUCK", 2, "Preciso de Food Truck", { type: "open_menu", target: "foodtruck_main_menu", areaId: "insano_food_truck" }),
-        option("portal.corporate_event", 3, "Evento Corporativo", { type: "open_menu", target: "foodtruck_main_menu", areaId: "insano_food_truck" }),
-        option("portal.xeriffe", 4, "Conhecer o Xeriffe", { type: "open_menu", target: "xeriffe_main_menu", areaId: "xeriffe_obirici" }),
-        option("portal.humano", 5, "Atendimento Humano", { type: "start_flow", target: "human_handoff" }),
-        option("portal.granja", 6, "Granja Aguas da Lagoa", { type: "open_menu", target: "granja_main_menu", areaId: "granja_aguas_da_lagoa" }),
-        option("portal.tecnologia", 7, "Desenvolvimento de Tecnologias", { type: "open_menu", target: "technology_main_menu", areaId: "desenvolvimento_tecnologias" })
-      ]
-    },
-    order_units_menu: {
-      id: "order_units_menu",
-      title: "Quero Pedir",
-      body: "Escolha a operacao:",
-      strictInteractiveIds: true,
-      options: [
-        option("order.xeriffe", 1, "Xeriffe Obirici", { type: "open_menu", target: "xeriffe_main_menu", areaId: "xeriffe_obirici" }),
-        option("order.back", 2, "Voltar ao Portal Insano", { type: "open_menu", target: "portal_main_menu", areaId: null })
+        option("PORTAL_INSANO_FOODTRUCK", 1, "Insano Food Truck", { type: "open_menu", target: "foodtruck_main_menu", areaId: "insano_food_truck" }),
+        option("portal.xeriffe", 2, "Xeriffe Obirici", { type: "open_menu", target: "xeriffe_main_menu", areaId: "xeriffe_obirici" }),
+        option("portal.granja", 3, "Granja Aguas da Lagoa", { type: "open_menu", target: "granja_main_menu", areaId: "granja_aguas_da_lagoa" }),
+        option("portal.tecnologia", 4, "Desenvolvimento de Tecnologias", { type: "open_menu", target: "technology_main_menu", areaId: "desenvolvimento_tecnologias" }),
+        option("portal.humano", 5, "Atendimento Humano", { type: "start_flow", target: "human_handoff" })
       ]
     },
     foodtruck_main_menu: {
