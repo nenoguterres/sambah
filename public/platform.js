@@ -266,7 +266,7 @@ async function submitEventRequest(form) {
   }
   if (body.emailSend && body.emailSend.ok !== true) {
     sendButton.disabled = false;
-    result.textContent = "Nao foi possivel enviar o email da solicitacao. Tenta novamente em alguns instantes.";
+    result.innerHTML = emailFailureMarkup();
     return;
   }
   localStorage.setItem(`insano:event-submitted:${data.submissionId}`, body.id || "sent");
@@ -295,9 +295,17 @@ function eventSuccessMarkup() {
       <p>Nossa equipe vai verificar a agenda e responder na mesma conversa do WhatsApp.</p>
       <div class="action-row">
         <a class="wa-link" href="${whatsappLink("Voltar ao Insano Food Truck")}" data-whatsapp-url>VOLTAR AO WHATSAPP</a>
-        <a class="wa-link" href="${whatsappLink("Atendimento Humano Insano Food Truck")}" data-whatsapp-url>ATENDIMENTO HUMANO</a>
       </div>
     </section>
+  `;
+}
+
+function emailFailureMarkup() {
+  return `
+    <span>Nao foi possivel enviar o email da solicitacao. Volta ao WhatsApp para continuar o atendimento.</span>
+    <span class="action-row inline-actions">
+      <a class="wa-link" href="${whatsappLink("Voltar ao Insano Food Truck")}" data-whatsapp-url>VOLTAR AO WHATSAPP</a>
+    </span>
   `;
 }
 
