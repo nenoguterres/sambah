@@ -4,6 +4,10 @@ const state = {
   filter: "all",
   query: "",
   activeRole: "",
+  activeUser: "",
+  humanAlertsReady: false,
+  humanAlertKeys: new Set(),
+  humanAlertQueue: [],
   whatsappStatus: null
 };
 
@@ -12,6 +16,7 @@ const chatEl = document.querySelector("#chatPane");
 const searchInput = document.querySelector("#searchInput");
 const refreshButton = document.querySelector("#refreshButton");
 const connectionStatusEl = document.querySelector("#connectionStatus");
+const humanAlertPanelEl = document.querySelector("#humanAlertPanel");
 
 refreshButton?.addEventListener("click", refreshInbox);
 searchInput?.addEventListener("input", (event) => {
@@ -46,8 +51,11 @@ async function loadActiveUser() {
     if (!response.ok) return;
     const data = await response.json();
     state.activeRole = data.user?.role || "";
+    state.activeUser = data.user?.username || data.user?.displayName || "";
+    restoreHumanAlertKeys();
   } catch {
     state.activeRole = "";
+    state.activeUser = "";
   }
 }
 
@@ -58,9 +66,11 @@ async function loadConversas() {
     const data = await response.json();
     if (!data.ok) throw new Error(data.error || "Erro ao carregar conversas");
     state.items = data.items || [];
+    processHumanAlerts(state.items);
     const requestedId = new URLSearchParams(location.search).get("conversationId") || "";
     if (!state.selectedId && requestedId) state.selectedId = requestedId;
     if (!state.selectedId && state.items[0]) state.selectedId = state.items[0].id;
+    renderHumanAlertPanel();
     renderList();
     if (state.selectedId) await openConversation(state.selectedId, { silent: true });
   } catch (error) {
@@ -103,6 +113,34 @@ function renderConnectionStatus() {
   `;
 }
 
+function renderHumanAlertPanel() {
+  if (!humanAlertPanelEl) return;
+  const humanItems = state.items.filter((item) => item.status === "humano");
+  if (!humanItems.length && !state.humanAlertQueue.length) {
+    humanAlertPanelEl.innerHTML = "";
+    return;
+  }
+  const latest = state.humanAlertQueue.at(-1);
+  const notificationAllowed = typeof Notification !== "undefined" && Notification.permission === "granted";
+  const notificationBlocked = typeof Notification !== "undefined" && Notification.permission === "denied";
+  humanAlertPanelEl.innerHTML = `
+    <div>
+      <strong>${humanItems.length} atendimento${humanItems.length === 1 ? "" : "s"} humano${humanItems.length === 1 ? "" : "s"} aberto${humanItems.length === 1 ? "" : "s"}</strong>
+      <span>${escapeHtml(latest ? `Novo chamado: ${latest.nome || latest.telefone || latest.id}` : "Monitorando chamados humanos em tempo real.")}</span>
+    </div>
+    <div class="human-alert-actions">
+      <button type="button" data-human-filter>Ver humanos</button>
+      ${!notificationAllowed && !notificationBlocked ? `<button type="button" data-enable-human-alerts>Ativar avisos</button>` : ""}
+    </div>
+  `;
+  humanAlertPanelEl.querySelector("[data-human-filter]")?.addEventListener("click", () => {
+    state.filter = "human";
+    document.querySelectorAll("[data-filter]").forEach((item) => item.classList.toggle("active", item.dataset.filter === "human"));
+    renderList();
+  });
+  humanAlertPanelEl.querySelector("[data-enable-human-alerts]")?.addEventListener("click", enableHumanNotifications);
+}
+
 function renderList() {
   const items = state.items.filter(matchesFilter).filter(matchesSearch);
   if (!items.length) {
@@ -111,9 +149,10 @@ function renderList() {
   }
   listEl.innerHTML = items.map((item) => {
     const selected = item.id === state.selectedId ? " selected" : "";
+    const humanOpen = item.status === "humano" ? " human-open" : "";
     const initials = initialsFor(item.nome || item.telefone || "WA");
     return `
-      <button class="conversation-item${selected}" type="button" data-id="${escapeAttr(item.id)}">
+      <button class="conversation-item${selected}${humanOpen}" type="button" data-id="${escapeAttr(item.id)}">
         <span class="avatar">${escapeHtml(initials)}</span>
         <span class="conversation-main">
           <span class="conversation-top">
@@ -150,6 +189,9 @@ async function openConversation(id, { silent = false } = {}) {
 
 function renderChat(conversa) {
   const messages = conversa.mensagens || [];
+  const humanNotice = conversa.status === "humano"
+    ? `<div class="human-chat-notice"><strong>Atendimento humano ativo</strong><span>O bot esta quieto. Responde por aqui para continuar na mesma conversa do WhatsApp.</span></div>`
+    : "";
   chatEl.innerHTML = `
     <header class="chat-header">
       <span class="avatar large">${escapeHtml(initialsFor(conversa.nome || conversa.telefone || "WA"))}</span>
@@ -164,6 +206,7 @@ function renderChat(conversa) {
         ${state.activeRole === "ADMIN" ? `<button class="danger-action" type="button" data-action="delete-conversation">Excluir conversa</button>` : ""}
       </div>
     </header>
+    ${humanNotice}
 
     <section class="message-list" id="messageList">
       ${messages.map(renderMessage).join("") || `<div class="day-marker">Sem histórico ainda</div>`}
@@ -195,6 +238,118 @@ function renderChat(conversa) {
     sendReply(conversa.id);
   });
   chatEl.querySelector("#sendReply")?.addEventListener("click", () => sendReply(conversa.id));
+}
+
+function processHumanAlerts(items = []) {
+  const openHumanItems = items.filter((item) => item.status === "humano");
+  const currentKeys = openHumanItems.map(humanAlertKey).filter(Boolean);
+  if (!state.humanAlertsReady) {
+    currentKeys.forEach((key) => state.humanAlertKeys.add(key));
+    state.humanAlertsReady = true;
+    persistHumanAlertKeys();
+    return;
+  }
+  const newAlerts = [];
+  for (const item of openHumanItems) {
+    const key = humanAlertKey(item);
+    if (!key || state.humanAlertKeys.has(key)) continue;
+    state.humanAlertKeys.add(key);
+    newAlerts.push(item);
+  }
+  if (!newAlerts.length) {
+    persistHumanAlertKeys();
+    return;
+  }
+  state.humanAlertQueue = [...state.humanAlertQueue, ...newAlerts].slice(-5);
+  persistHumanAlertKeys();
+  for (const item of newAlerts) notifyHumanMonitor(item);
+}
+
+function humanAlertKey(item = {}) {
+  if (item.status !== "humano") return "";
+  const messages = Array.isArray(item.mensagens) ? item.mensagens : [];
+  const inbound = [...messages].reverse().find((message) => message.direction === "in");
+  const marker = inbound?.id || inbound?.createdAt || inbound?.text || item.updatedAt || item.ultimaInteracao || "humano";
+  return `${item.id || item.telefone || "wa"}:${marker}`;
+}
+
+function restoreHumanAlertKeys() {
+  try {
+    const storageKey = humanAlertStorageKey();
+    const raw = sessionStorage.getItem(storageKey);
+    const parsed = raw ? JSON.parse(raw) : [];
+    state.humanAlertKeys = new Set(Array.isArray(parsed) ? parsed.filter(Boolean) : []);
+  } catch {
+    state.humanAlertKeys = new Set();
+  }
+}
+
+function persistHumanAlertKeys() {
+  try {
+    sessionStorage.setItem(humanAlertStorageKey(), JSON.stringify([...state.humanAlertKeys].slice(-200)));
+  } catch {
+    // O alerta continua funcionando mesmo sem sessionStorage.
+  }
+}
+
+function humanAlertStorageKey() {
+  return `sambah-human-alerts:${state.activeUser || "local"}`;
+}
+
+function notifyHumanMonitor(item = {}) {
+  playHumanAlertSound();
+  showHumanBrowserNotification(item);
+  if (state.filter !== "human") {
+    humanAlertPanelEl?.classList.add("pulse");
+    setTimeout(() => humanAlertPanelEl?.classList.remove("pulse"), 1800);
+  }
+}
+
+async function enableHumanNotifications() {
+  playHumanAlertSound();
+  if (typeof Notification !== "undefined" && Notification.permission === "default") {
+    await Notification.requestPermission();
+  }
+  renderHumanAlertPanel();
+}
+
+function showHumanBrowserNotification(item = {}) {
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  const title = "SamBah: atendimento humano";
+  const body = `${item.nome || "Cliente WhatsApp"} precisa de atendimento humano.`;
+  try {
+    const notification = new Notification(title, { body, tag: `sambah-human-${item.id || item.telefone || "wa"}` });
+    notification.onclick = () => {
+      window.focus();
+      if (item.id) openConversation(item.id);
+    };
+  } catch {
+    // Navegadores podem bloquear notificacoes sem permissao do sistema.
+  }
+}
+
+function playHumanAlertSound() {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    const context = new AudioContext();
+    const gain = context.createGain();
+    gain.gain.setValueAtTime(0.0001, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.16, context.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.34);
+    gain.connect(context.destination);
+    [660, 880].forEach((frequency, index) => {
+      const oscillator = context.createOscillator();
+      oscillator.type = "sine";
+      oscillator.frequency.value = frequency;
+      oscillator.connect(gain);
+      oscillator.start(context.currentTime + index * 0.12);
+      oscillator.stop(context.currentTime + 0.16 + index * 0.12);
+    });
+    setTimeout(() => context.close(), 520);
+  } catch {
+    // Sem som se o navegador bloquear audio automatico.
+  }
 }
 
 function scrollMessagesToBottom() {
