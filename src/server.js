@@ -14,6 +14,7 @@ import { InsanoWorkhubController } from "./insanoWorkhubController.js";
 import { InsanoWorkhubService } from "./insanoWorkhubService.js";
 import { buildMesaOrder, MesaIntegrationService } from "./mesaIntegrationService.js";
 import { MenuSyncService } from "./menuSyncService.js";
+import { buildConfirmedCustomerOrder, matchesCustomerOrderToken, sanitizePublicMesaMenu } from "./publicMesaOrderService.js";
 import { OrderDraftService } from "./orderDraftService.js";
 import { OrderTrackingService } from "./orderTrackingService.js";
 import { PerolaService } from "./perolaService.js";
@@ -612,16 +613,44 @@ export function createApp({
         return serveStatic(res, "catalog-insano.html");
       }
 
+      if (req.method === "GET" && url.pathname === "/cardapio/xeriffe") {
+        setPublicCardapioHeaders(res);
+        return serveStatic(res, "mesa-cardapio.html");
+      }
+
+      if (req.method === "GET" && ["/mesa-cardapio.css", "/mesa-cardapio.js"].includes(url.pathname)) {
+        setPublicCardapioHeaders(res);
+        return serveStatic(res, url.pathname.slice(1));
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/mesa/cardapio-publico") {
+        setPublicCardapioHeaders(res);
+        return sendJson(res, 200, sanitizePublicMesaMenu(await menuService.getMenuCache()));
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/mesa/comanda-cliente") {
+        setPublicCardapioHeaders(res);
+        const repository = whatsappV2ConversationRepository || createWhatsAppV2StateRepository(appRuntimeConfig || getRuntimeConfig());
+        const result = await confirmPublicMesaCustomerOrder({
+          body: await readJson(req, { requireBody: true }),
+          repository,
+          menuService,
+          paymentService: sambahPayModule.services.coreService
+        });
+        return sendJson(res, result.statusCode || (result.ok ? 201 : 400), result);
+      }
+
       if (
         req.method === "GET"
         && (
           url.pathname === "/admin/qrcodes"
           || url.pathname === "/garcom"
           || url.pathname === "/cozinha"
-          || /^\/cardapio\/(insano|xeriffe)$/.test(url.pathname)
+          || url.pathname === "/cardapio/insano"
           || /^\/mesa\/(insano|xeriffe)\/\d+$/.test(url.pathname)
         )
       ) {
+        if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
         return serveStatic(res, "platform.html");
       }
 
@@ -1527,6 +1556,60 @@ function createWhatsAppV2StateRepository(config = getRuntimeConfig()) {
   return new FileWhatsAppV2ConversationRepository({
     filePath: join(config.dataDir || "data", "whatsapp-v2-state.json")
   });
+}
+
+export async function confirmPublicMesaCustomerOrder({ body = {}, repository, menuService, paymentService } = {}) {
+  const phone = String(body.phone || "").replace(/\D/g, "");
+  const conversationId = String(body.conversationId || "").trim();
+  const sambahConversationId = String(body.sambahConversationId || "").trim();
+  const token = String(body.token || "");
+  if (!phone || conversationId !== `wa_${phone}` || !sambahConversationId || body.origin !== "WHATSAPP_SAMBAH" || body.unit !== "XERIFFE_OBIRICI" || !token) {
+    return { ok: false, statusCode: 400, error: "invalid_customer_order_correlation" };
+  }
+  const state = await repository.get(phone);
+  if (
+    state.serviceState !== "AGUARDANDO_COMANDA_MESA"
+    || String(state.sambahConversationId || state.conversationId || "") !== sambahConversationId
+    || !matchesCustomerOrderToken(token, state.customerOrderTokenHash)
+  ) {
+    return { ok: false, statusCode: 409, error: "customer_order_session_invalid" };
+  }
+  const confirmed = buildConfirmedCustomerOrder(await menuService.getMenuCache(), body.items);
+  if (!confirmed.ok) return { ...confirmed, statusCode: 400 };
+  const paymentResult = await paymentService.createPayment({
+    amount: confirmed.order.total,
+    method: "sambah_pay_pending",
+    status: "pending",
+    confirmed: false,
+    customer_id: phone,
+    channel: "xeriffe_public_cardapio",
+    source: "homologation_customer_order",
+    metadata: { conversationId, sambahConversationId, unit: "XERIFFE_OBIRICI", productionReleaseAllowed: false }
+  });
+  if (!paymentResult?.ok || paymentResult.payment?.status !== "pending") {
+    return { ok: false, statusCode: 503, error: "pending_payment_not_created" };
+  }
+  const transition = await repository.confirmCustomerOrder({
+    phone,
+    conversationId,
+    sambahConversationId,
+    order: confirmed.order,
+    paymentId: paymentResult.payment.id
+  });
+  if (!transition?.ok) return transition || { ok: false, statusCode: 409, error: "customer_order_not_confirmed" };
+  return {
+    ok: true,
+    statusCode: 201,
+    order: confirmed.order,
+    payment: {
+      id: paymentResult.payment.id,
+      status: "pending",
+      confirmed: false,
+      productionReleased: false
+    },
+    serviceState: transition.state.serviceState,
+    whatsappUrl: `https://wa.me/${phone}`
+  };
 }
 
 export async function markWhatsAppV2MesaOrderReceived(repository, body = {}) {
@@ -3564,6 +3647,14 @@ async function serveStatic(res, fileName) {
     }
     throw error;
   }
+}
+
+function setPublicCardapioHeaders(res) {
+  res.setHeader("cache-control", "no-store");
+  res.setHeader("referrer-policy", "no-referrer");
+  res.setHeader("x-content-type-options", "nosniff");
+  res.setHeader("x-frame-options", "DENY");
+  res.setHeader("content-security-policy", "default-src 'self'; img-src 'self' https: data:; style-src 'self'; script-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
 }
 
 function sendHtml(res, statusCode, html) {

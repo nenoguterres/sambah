@@ -282,7 +282,7 @@ test("plataformas externas, cardapios, mesa, garcom e cozinha respondem", async 
   const whatsappConversationService = new WhatsAppConversationService({ filePath: join(dir, "whatsapp-conversas.json") });
   const trackingService = new OrderTrackingService({ filePath: join(dir, "tracking.json") });
   const crmService = new CrmService({ files: crmFiles(dir), whatsappNumber: "5551980413745" });
-  const server = createApp({ auditService, menuService, draftService, mesaService, eventService, eventEmailAlertService, whatsappConversationService, trackingService, crmService });
+  const server = createApp({ auditService, menuService, draftService, mesaService, eventService, eventEmailAlertService, whatsappConversationService, trackingService, crmService, authMode: "mock" });
   await new Promise((resolve) => server.listen(0, resolve));
   const { port } = server.address();
   const base = `http://127.0.0.1:${port}`;
@@ -437,11 +437,14 @@ test("plataformas externas, cardapios, mesa, garcom e cozinha respondem", async 
     }).then((response) => response.json());
     assert.match(directPre.whatsappUrl, /^https:\/\/wa\.me\/5551980413745/);
 
-    for (const path of ["/cardapio/insano", "/cardapio/xeriffe", "/mesa/insano/1", "/mesa/xeriffe/10", "/garcom", "/cozinha", "/admin/qrcodes"]) {
+    for (const path of ["/cardapio/insano", "/mesa/insano/1", "/mesa/xeriffe/10", "/garcom", "/cozinha", "/admin/qrcodes"]) {
       const response = await fetch(`${base}${path}`);
       assert.equal(response.status, 200);
       assert.match(await response.text(), /SamBah/);
     }
+    const publicCardapio = await fetch(`${base}/cardapio/xeriffe`).then((response) => response.text());
+    assert.match(publicCardapio, /Monte sua comanda/);
+    assert.doesNotMatch(publicCardapio, /Mesa do Xeriffe|SamBah CRM|SamBah Pay|Perola/);
 
     const eventForm = await fetch(`${base}/evento/insano`).then((response) => response.text());
     assert.match(eventForm, /Solicitacao de evento - Insano Food Truck/);

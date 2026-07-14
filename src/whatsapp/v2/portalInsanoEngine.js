@@ -1,7 +1,8 @@
+import crypto from "node:crypto";
 import { response, responseWithReplies } from "./responseContract.js";
 import { portalInsanoContract } from "./portalInsanoContract.js";
-import { getRuntimeConfig } from "../../config.js";
-import { getMesaConfig } from "../../mesaIntegrationService.js";
+import { getBaseApi, getRuntimeConfig } from "../../config.js";
+import { hashCustomerOrderToken } from "../../publicMesaOrderService.js";
 
 export function routePortalInsanoMessage({ state, message, contract = portalInsanoContract }) {
   const text = normalizeText(message.text);
@@ -13,10 +14,11 @@ export function routePortalInsanoMessage({ state, message, contract = portalInsa
     }
     return humanState(routedState);
   }
-  if (routedState.serviceState === "AGUARDANDO_PEDIDO_MESA") {
+  if (["AGUARDANDO_PEDIDO_MESA", "AGUARDANDO_COMANDA_MESA"].includes(routedState.serviceState)) {
     if (command === "humano") return startFlow(routedState, contract, "human_handoff", "humanCommand");
     return waitingMesaState(routedState);
   }
+  if (isDirectCustomerOrderIntent(text)) return openMesaCardapioLink(routedState, "directCustomerOrderIntent");
   if (isPaymentClaim(text)) return startFlow(routedState, contract, "payment_receipt_review", "paymentSafety");
   if (command) return handleNavigationCommand(routedState, contract, command);
   if (isWelcome(text)) return openMenu(resetToPortal(routedState, contract), contract, contract.welcome.menuId, "welcomeFlow", []);
@@ -89,6 +91,7 @@ function executeAction(state, contract, action, source) {
   if (action.type === "open_url_button") return openUrlButton(state, contract, action.target, source);
   if (action.type === "show_catalog") return showCatalog(state, contract, action.target, source);
   if (action.type === "open_authorized_link") return openMesaCardapioLink(state, source);
+  if (action.type === "set_fulfillment") return setFulfillment(state, contract, action.mode, source);
   return response("invalidAction", state, "Essa funcao ainda nao esta habilitada. Vou encaminhar para atendimento.", [{ type: "safe_handoff" }]);
 }
 
@@ -184,23 +187,18 @@ function openUrlButton(state, contract, target, source) {
 }
 
 function openMesaCardapioLink(state, source) {
-  const baseUrl = getMesaConfig().baseUrl;
-  let url;
-  try {
-    url = new URL(baseUrl);
-  } catch {
-    return response("missingMesaCustomerUrl", state, "CONFIGURACAO AUSENTE: link do Mesa do Xeriffe", [{ type: "missing_config", source }]);
-  }
+  const url = new URL("/cardapio/xeriffe", getBaseApi());
   const phone = String(state.phone || state.conversationId || "").replace(/\D/g, "");
   const conversationId = phone ? `wa_${phone}` : String(state.conversationId || "");
   const sambahConversationId = String(state.sambahConversationId || state.conversationId || "");
-  url.searchParams.set("cliente", "1");
+  const now = new Date().toISOString();
+  const token = crypto.randomBytes(24).toString("base64url");
   url.searchParams.set("conversationId", conversationId);
   url.searchParams.set("sambahConversationId", sambahConversationId);
   url.searchParams.set("phone", phone || String(state.phone || state.conversationId || ""));
   url.searchParams.set("origin", "WHATSAPP_SAMBAH");
   url.searchParams.set("unit", "XERIFFE_OBIRICI");
-  const now = new Date().toISOString();
+  url.searchParams.set("token", token);
   return responseWithReplies(
     source,
     {
@@ -210,19 +208,34 @@ function openMesaCardapioLink(state, source) {
       activeFlow: null,
       activeStep: null,
       awaitingInput: false,
-      serviceState: "AGUARDANDO_PEDIDO_MESA",
+      serviceState: "AGUARDANDO_COMANDA_MESA",
       mesaOrderId: null,
       mesaLinkSentAt: now,
-      mesaOrderReceivedAt: null
+      mesaOrderReceivedAt: null,
+      customerOrderTokenHash: hashCustomerOrderToken(token),
+      customerOrderTokenCreatedAt: now,
+      customerOrder: null,
+      customerOrderConfirmedAt: null,
+      sambahPayPaymentId: null,
+      paymentConfirmedAt: null
     },
     [{
       type: "url_button",
-      text: "Monte teu pedido no cardapio oficial do Mesa do Xeriffe. Quando concluir, o SamBah retoma esta conversa.",
+      text: "Monte e confirme tua comanda no cardapio do Xeriffe. O pagamento seguira pendente ate a integracao real do SamBah Pay.",
       buttonText: "VER CARDAPIO",
       url: url.toString()
     }],
     [{ type: "mesa_cardapio_link", source, url: url.toString() }]
   );
+}
+
+function setFulfillment(state, contract, mode, source) {
+  if (mode === "delivery") return startFlow({ ...state, fulfillmentMode: "delivery" }, contract, "delivery_address", source);
+  return openMenu({
+    ...state,
+    fulfillmentMode: "pickup",
+    serviceState: "AGUARDANDO_PAGAMENTO_SAMBAH_PAY"
+  }, contract, "payment_main_menu", source, []);
 }
 
 function openMenu(state, contract, menuId, source, stack = state.menuStack || []) {
@@ -274,6 +287,17 @@ function handleActiveFlow(state, contract, text, rawText) {
       "A informacao foi registrada para conferencia. O pagamento ainda nao esta confirmado.",
       [{ type: "payment_review_required" }]
     );
+  }
+  if (flow.id === "delivery_address") {
+    return openMenu({
+      ...state,
+      serviceState: "AGUARDANDO_PAGAMENTO_SAMBAH_PAY",
+      deliveryAddress: String(rawText || "").trim(),
+      activeFlow: null,
+      activeStep: null,
+      awaitingInput: false,
+      flowData: nextFlowData
+    }, contract, "payment_main_menu", "deliveryAddressCaptured", []);
   }
   return response("flowEngine", { ...state, activeFlow: null, activeStep: null, awaitingInput: false, flowData: nextFlowData }, "Registrado. A equipe vai revisar antes de confirmar qualquer disponibilidade, valor ou prazo.");
 }
@@ -455,7 +479,7 @@ function humanState(state) {
 }
 
 function waitingMesaState(state) {
-  return { handled: true, source: "waitingMesaOrder", nextState: state, replies: [], actions: [{ type: "await_mesa_order" }] };
+  return { handled: true, source: "waitingCustomerOrder", nextState: state, replies: [], actions: [{ type: "await_customer_order" }] };
 }
 
 function resetToPortal(state, contract) {
@@ -472,6 +496,10 @@ function isHumanReset(text) {
 
 function isPaymentClaim(text) {
   return ["paguei", "pix feito", "enviei comprovante"].some((phrase) => text.includes(phrase));
+}
+
+function isDirectCustomerOrderIntent(text) {
+  return ["cardapio", "pedido", "quero pedir", "quero fazer um pedido", "quero comprar", "comprar"].includes(text);
 }
 
 function setField(data, path, value) {

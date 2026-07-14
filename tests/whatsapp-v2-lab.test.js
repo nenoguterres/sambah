@@ -7,7 +7,6 @@ import { adaptMetaWebhookV2 } from "../src/whatsapp/v2/metaWebhookAdapter.js";
 import { createWhatsAppV2LabEngine } from "../src/whatsapp/v2/whatsappV2LabEngine.js";
 import { FileWhatsAppV2ConversationRepository } from "../src/whatsapp/v2/inMemoryRepositories.js";
 import { createWhatsAppV2State } from "../src/whatsapp/v2/conversationState.js";
-import { markWhatsAppV2MesaOrderReceived } from "../src/server.js";
 
 test("WhatsApp V2 lab adapta payload Meta fake sem usar token ou webhook real", () => {
   const adapted = adaptMetaWebhookV2(metaPayload({ id: "wamid-v2-1", from: "5551000000001", text: { body: "oi" } }));
@@ -141,7 +140,7 @@ test("Motor 1 preserva Portal Insano e conduz Xeriffe ao Mesa sem pedido no What
     messageId: "wamid-motor-1-portal",
     from,
     sambahConversationId,
-    text: "quero pedir"
+    text: "oi"
   });
   assert.equal(portal.replies[0].type, "menu");
   assert.equal(portal.replies[0].menu.id, "portal_main_menu");
@@ -161,64 +160,42 @@ test("Motor 1 preserva Portal Insano e conduz Xeriffe ao Mesa sem pedido no What
   const url = new URL(cardapio.replies[0].url);
   assert.equal(cardapio.replies[0].type, "url_button");
   assert.equal(cardapio.replies[0].buttonText, "VER CARDAPIO");
-  assert.equal(url.pathname, "/");
-  assert.equal(url.searchParams.get("cliente"), "1");
+  assert.equal(url.pathname, "/cardapio/xeriffe");
   assert.equal(url.searchParams.get("conversationId"), `wa_${from}`);
   assert.equal(url.searchParams.get("sambahConversationId"), sambahConversationId);
   assert.equal(url.searchParams.get("phone"), from);
   assert.equal(url.searchParams.get("origin"), "WHATSAPP_SAMBAH");
   assert.equal(url.searchParams.get("unit"), "XERIFFE_OBIRICI");
-  assert.equal(cardapio.state.serviceState, "AGUARDANDO_PEDIDO_MESA");
+  assert.equal(cardapio.state.serviceState, "AGUARDANDO_COMANDA_MESA");
+  assert.ok(url.searchParams.get("token"));
+  assert.ok(cardapio.state.customerOrderTokenHash);
   assert.equal(cardapio.state.activeFlow, null);
   assert.equal(cardapio.state.mesaOrderId, null);
   assert.equal(cardapio.state.flowData.order, undefined);
   assert.equal(cardapio.state.cart, undefined);
-  assert.equal(cardapio.actions.some((action) => /order|precomanda|draft/i.test(action.type) && action.type !== "await_mesa_order"), false);
+  assert.equal(cardapio.actions.some((action) => /order|precomanda|draft/i.test(action.type)), false);
 
   const blocked = await engine.processor.handleIncoming({
     messageId: "wamid-motor-1-blocked",
     from,
     text: "quero dois burgers, uma bebida e complemento"
   });
-  assert.equal(blocked.source, "waitingMesaOrder");
+  assert.equal(blocked.source, "waitingCustomerOrder");
   assert.equal(blocked.replies.length, 0);
-  assert.equal(blocked.state.serviceState, "AGUARDANDO_PEDIDO_MESA");
+  assert.equal(blocked.state.serviceState, "AGUARDANDO_COMANDA_MESA");
   assert.equal(blocked.state.activeFlow, null);
   assert.equal(blocked.state.flowData.order, undefined);
   assert.equal(engine.outboxRepository.list().length, 0);
 
-  const received = await markWhatsAppV2MesaOrderReceived(engine.conversationRepository, {
-    conversationId: `wa_${from}`,
-    sambahConversationId,
-    phone: from,
-    mesaOrderId: "mesa-order-motor-1",
-    status: "finalizado"
-  });
-  assert.equal(received.ok, true);
-  assert.equal(received.state.serviceState, "PEDIDO_MESA_RECEBIDO");
-  assert.equal(received.state.mesaOrderId, "mesa-order-motor-1");
-  assert.equal(received.state.activeMenu, "payment_main_menu");
-  assert.equal((await engine.conversationRepository.get(from)).mesaOrderId, "mesa-order-motor-1");
 });
 
 test("Motor 1 exige correlacao do Mesa, e Atendimento Humano permanece homologado", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000202";
   const sambahConversationId = "conversation-central-motor-1-human";
-  await engine.processor.handleIncoming({ messageId: "wamid-motor-1-h-portal", from, sambahConversationId, text: "quero pedir" });
-  await engine.processor.handleIncoming({ messageId: "wamid-motor-1-h-xeriffe", from, text: "portal.xeriffe" });
-  await engine.processor.handleIncoming({ messageId: "wamid-motor-1-h-link", from, text: "xeriffe.menu" });
-
-  const mismatch = await markWhatsAppV2MesaOrderReceived(engine.conversationRepository, {
-    conversationId: `wa_${from}`,
-    sambahConversationId: "outra-conversa",
-    phone: from,
-    mesaOrderId: "mesa-order-rejeitado",
-    status: "finalizado"
-  });
-  assert.equal(mismatch.ok, false);
-  assert.equal(mismatch.error, "mesa_correlation_mismatch");
-  assert.equal((await engine.conversationRepository.get(from)).serviceState, "AGUARDANDO_PEDIDO_MESA");
+  const link = await engine.processor.handleIncoming({ messageId: "wamid-motor-1-h-portal", from, sambahConversationId, text: "quero pedir" });
+  assert.equal(link.state.serviceState, "AGUARDANDO_COMANDA_MESA");
+  assert.equal(new URL(link.replies[0].url).searchParams.get("sambahConversationId"), sambahConversationId);
 
   const human = await engine.processor.handleIncoming({ messageId: "wamid-motor-1-h-human", from, text: "humano" });
   assert.equal(human.state.mode, "human");
@@ -517,7 +494,7 @@ test("Portal Insano Xeriffe chama somente o link do Mesa e nao integracao de ped
 
   assert.equal(result.source, "xeriffe.menu");
   assert.equal(result.state.areaId, "xeriffe_obirici");
-  assert.equal(result.state.serviceState, "AGUARDANDO_PEDIDO_MESA");
+  assert.equal(result.state.serviceState, "AGUARDANDO_COMANDA_MESA");
   assert.equal(result.replies[0].type, "url_button");
   assert.equal(engine.operationLog.includes("mesa_do_xeriffe"), false);
 });

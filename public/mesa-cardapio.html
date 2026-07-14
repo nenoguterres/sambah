@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Cardapio do Xeriffe</title>
+  <link rel="stylesheet" href="/mesa-cardapio.css">
+</head>
+<body>
+  <header class="hero">
+    <div>
+      <p class="eyebrow">Xeriffe Obirici</p>
+      <h1>Monte sua comanda</h1>
+      <p>Escolha os produtos e confirme. O pagamento continuara pendente nesta homologacao.</p>
+    </div>
+    <div class="status" id="session-status">Validando acesso...</div>
+  </header>
+  <main>
+    <nav class="categories" id="categories" aria-label="Categorias"></nav>
+    <section class="products" id="products" aria-live="polite"></section>
+  </main>
+  <aside class="cart" id="cart" aria-label="Sua comanda">
+    <div>
+      <strong>Sua comanda</strong>
+      <span id="cart-count">0 itens</span>
+    </div>
+    <div class="total" id="cart-total">R$ 0,00</div>
+    <button type="button" id="review-order" disabled>Revisar pedido</button>
+  </aside>
+  <dialog id="review-dialog">
+    <form method="dialog">
+      <button class="close" aria-label="Fechar">×</button>
+    </form>
+    <h2>Confirme sua comanda</h2>
+    <div id="review-lines"></div>
+    <div class="review-total" id="review-total"></div>
+    <p class="notice">Nenhum pagamento sera aprovado e nenhum pedido sera liberado para producao nesta etapa.</p>
+    <button type="button" id="confirm-order">Confirmar comanda</button>
+  </dialog>
+  <script type="module" src="/mesa-cardapio.js"></script>
+</body>
+</html>

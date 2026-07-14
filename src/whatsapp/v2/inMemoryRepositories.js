@@ -60,6 +60,13 @@ export class InMemoryWhatsAppV2ConversationRepository {
     if (transition.changed) this.states.set(input.phone, structuredClone(transition.state));
     return structuredClone(transition.result);
   }
+
+  async confirmCustomerOrder(input = {}) {
+    this.operations.push("confirmCustomerOrder");
+    const transition = buildCustomerOrderConfirmedTransition(findConversationState(this.states, input), input);
+    if (transition.changed) this.states.set(transition.state.conversationId, structuredClone(transition.state));
+    return structuredClone(transition.result);
+  }
 }
 
 export class FileWhatsAppV2ConversationRepository extends InMemoryWhatsAppV2ConversationRepository {
@@ -127,6 +134,14 @@ export class FileWhatsAppV2ConversationRepository extends InMemoryWhatsAppV2Conv
     return this.#mutate("markMesaOrderReceived", async ({ states }) => {
       const transition = buildMesaOrderReceivedTransition(states.get(input.phone), input);
       if (transition.changed) states.set(input.phone, transition.state);
+      return { result: structuredClone(transition.result), changed: transition.changed };
+    });
+  }
+
+  async confirmCustomerOrder(input = {}) {
+    return this.#mutate("confirmCustomerOrder", async ({ states }) => {
+      const transition = buildCustomerOrderConfirmedTransition(findConversationState(states, input), input);
+      if (transition.changed) states.set(transition.state.conversationId, transition.state);
       return { result: structuredClone(transition.result), changed: transition.changed };
     });
   }
@@ -384,6 +399,38 @@ function buildMesaOrderReceivedTransition(current, input = {}) {
     updatedAt: new Date().toISOString()
   };
   return { changed: true, state: next, result: { ok: true, statusCode: 200, duplicate: false, state: structuredClone(next) } };
+}
+
+function findConversationState(states, input = {}) {
+  const phone = String(input.phone || "").replace(/\D/g, "");
+  const ids = [input.stateId, phone, input.conversationId, phone ? `wa_${phone}` : ""].filter(Boolean).map(String);
+  for (const id of ids) {
+    if (states.has(id)) return states.get(id);
+  }
+  return null;
+}
+
+function buildCustomerOrderConfirmedTransition(current, input = {}) {
+  if (!current) return { changed: false, state: null, result: { ok: false, statusCode: 404, error: "conversation_not_found" } };
+  if (current.serviceState !== "AGUARDANDO_COMANDA_MESA") {
+    return { changed: false, state: current, result: { ok: false, statusCode: 409, error: "conversation_not_waiting_for_customer_order" } };
+  }
+  const now = new Date().toISOString();
+  const next = {
+    ...current,
+    serviceState: "COMANDA_MESA_CONFIRMADA",
+    customerOrder: structuredClone(input.order),
+    customerOrderConfirmedAt: now,
+    customerOrderTokenHash: null,
+    customerOrderTokenCreatedAt: null,
+    sambahPayPaymentId: String(input.paymentId || ""),
+    activeMenu: "fulfillment_main_menu",
+    activeFlow: null,
+    activeStep: null,
+    awaitingInput: false,
+    updatedAt: now
+  };
+  return { changed: true, state: next, result: { ok: true, statusCode: 200, state: structuredClone(next) } };
 }
 
 export class InMemoryWhatsAppV2OutboxRepository {

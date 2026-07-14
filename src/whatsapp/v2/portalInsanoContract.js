@@ -58,6 +58,17 @@ export const portalInsanoContract = {
         option("xeriffe.back", 3, "Voltar ao Portal Insano", { type: "open_menu", target: "portal_main_menu", areaId: null })
       ]
     },
+    fulfillment_main_menu: {
+      id: "fulfillment_main_menu",
+      title: "Como deseja receber?",
+      body: "A comanda foi confirmada. Escolha retirada ou entrega:",
+      strictInteractiveIds: true,
+      options: [
+        option("fulfillment.pickup", 1, "Retirada", { type: "set_fulfillment", mode: "pickup" }),
+        option("fulfillment.delivery", 2, "Entrega", { type: "set_fulfillment", mode: "delivery" }),
+        option("fulfillment.human", 3, "Atendimento Humano", { type: "start_flow", target: "human_handoff" })
+      ]
+    },
     granja_main_menu: {
       id: "granja_main_menu",
       title: "Granja Aguas da Lagoa",
@@ -121,6 +132,7 @@ export const portalInsanoContract = {
     payment_card: flow("payment_card", "Informe o pedido, comanda ou telefone relacionado.", "payment.reference", { neverConfirmPayment: true }),
     payment_cash: flow("payment_cash", "Precisa de troco?", "payment.change_needed"),
     payment_receipt_review: flow("payment_receipt_review", "Informe o numero do pedido, comanda ou telefone relacionado.", "payment.reference", { neverConfirmPayment: true }),
+    delivery_address: flow("delivery_address", "Informe o endereco completo para entrega.", "delivery.address"),
     human_handoff: {
       id: "human_handoff",
       initialMessage: "Certo. Me diz em uma frase o assunto para a equipe ja receber o contexto.",

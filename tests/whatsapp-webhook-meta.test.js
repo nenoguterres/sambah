@@ -12,6 +12,7 @@ import { MesaIntegrationService } from "../src/mesaIntegrationService.js";
 import { OrderDraftService } from "../src/orderDraftService.js";
 import { SambahConversationService } from "../src/sambahConversationService.js";
 import { createApp } from "../src/server.js";
+import { createSambahPayModule } from "../src/sambahPay/index.js";
 import { getRuntimeConfig } from "../src/config.js";
 import { WhatsAppConversationService } from "../src/whatsappConversationService.js";
 import { MockWhatsAppProvider } from "../src/whatsapp/providers/mockProvider.js";
@@ -1046,7 +1047,7 @@ test("POST /webhook/whatsapp processa mensagens e statuses sem transformar statu
   }
 });
 
-test("Motor 1 smoke HTTP: Meta conduz ao Mesa, bloqueia pedido WhatsApp e aceita retorno correlacionado", async () => {
+test("Motor 1 smoke HTTP: Meta abre cardapio publico, bloqueia pedido WhatsApp e mantem pagamento pendente", async () => {
   const previousV2 = process.env.WHATSAPP_V2_ENABLED;
   const previousSend = process.env.WHATSAPP_SEND_ENABLED;
   const previousAi = process.env.WHATSAPP_AI_ENABLED;
@@ -1068,19 +1069,14 @@ test("Motor 1 smoke HTTP: Meta conduz ao Mesa, bloqueia pedido WhatsApp e aceita
   try {
     const portal = await sendInbound("wamid-motor-http-1", "quero pedir");
     assert.equal(portal.response.status, 200);
-    assert.equal(portal.body.outboundCommand.interactive.menu.id, "portal_main_menu");
-
-    const xeriffe = await sendInbound("wamid-motor-http-3", "portal.xeriffe");
-    assert.equal(xeriffe.body.outboundCommand.interactive.menu.options[0].id, "xeriffe.menu");
-    const cardapio = await sendInbound("wamid-motor-http-4", "xeriffe.menu");
-    const cardapioUrl = new URL(cardapio.body.outboundCommand.interactive.url);
-    assert.equal(cardapioUrl.pathname, "/");
+    const cardapioUrl = new URL(portal.body.outboundCommand.interactive.url);
+    assert.equal(cardapioUrl.pathname, "/cardapio/xeriffe");
     assert.equal(cardapioUrl.searchParams.get("origin"), "WHATSAPP_SAMBAH");
     assert.equal(cardapioUrl.searchParams.get("unit"), "XERIFFE_OBIRICI");
 
     const storedWaiting = JSON.parse(await readFile(v2StateFile, "utf8"));
     const waitingState = storedWaiting.states[from];
-    assert.equal(waitingState.serviceState, "AGUARDANDO_PEDIDO_MESA");
+    assert.equal(waitingState.serviceState, "AGUARDANDO_COMANDA_MESA");
     assert.equal(cardapioUrl.searchParams.get("sambahConversationId"), waitingState.sambahConversationId);
 
     const blocked = await sendInbound("wamid-motor-http-5", "quero pizza, bebida e complemento");
@@ -1090,25 +1086,29 @@ test("Motor 1 smoke HTTP: Meta conduz ao Mesa, bloqueia pedido WhatsApp e aceita
     assert.deepEqual(await readJsonArrayOrEmpty(precomandasFile), []);
     assert.deepEqual(await readJsonArrayOrEmpty(mesaQueueFile), []);
 
-    const mesaReturn = await fetch(`${base}/api/mesa/whatsapp/order-completed`, {
+    const customerOrder = await fetch(`${base}/api/mesa/comanda-cliente`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         conversationId: cardapioUrl.searchParams.get("conversationId"),
         sambahConversationId: cardapioUrl.searchParams.get("sambahConversationId"),
         phone: cardapioUrl.searchParams.get("phone"),
-        mesaOrderId: "mesa-order-http-motor-1",
-        status: "finalizado"
+        origin: "WHATSAPP_SAMBAH",
+        unit: "XERIFFE_OBIRICI",
+        token: cardapioUrl.searchParams.get("token"),
+        items: [{ productId: menuItems()[0].productId, quantity: 1, addonIds: [] }]
       })
     });
-    const mesaReturnBody = await mesaReturn.json();
-    assert.equal(mesaReturn.status, 200);
-    assert.equal(mesaReturnBody.serviceState, "PEDIDO_MESA_RECEBIDO");
-    assert.equal(mesaReturnBody.mesaOrderId, "mesa-order-http-motor-1");
-    assert.equal(Object.hasOwn(mesaReturnBody, "state"), false);
+    const customerOrderBody = await customerOrder.json();
+    assert.equal(customerOrder.status, 201);
+    assert.equal(customerOrderBody.serviceState, "COMANDA_MESA_CONFIRMADA");
+    assert.equal(customerOrderBody.payment.status, "pending");
+    assert.equal(customerOrderBody.payment.confirmed, false);
+    assert.equal(customerOrderBody.payment.productionReleased, false);
     const storedReceived = JSON.parse(await readFile(v2StateFile, "utf8"));
-    assert.equal(storedReceived.states[from].serviceState, "PEDIDO_MESA_RECEBIDO");
-    assert.equal(storedReceived.states[from].mesaOrderId, "mesa-order-http-motor-1");
+    assert.equal(storedReceived.states[from].serviceState, "COMANDA_MESA_CONFIRMADA");
+    assert.equal(storedReceived.states[from].customerOrder.total, customerOrderBody.order.total);
+    assert.deepEqual(await readJsonArrayOrEmpty(mesaQueueFile), []);
   } finally {
     await close(server);
     await cleanup();
@@ -1191,6 +1191,7 @@ async function createTestServer({ provider = new MockWhatsAppProvider({ logger: 
       precomandas: join(dir, "precomandas.json")
     }
   });
+  const sambahPayModule = createSambahPayModule({ dataDir: dir, auditService });
   const server = createApp({
     auditService,
     menuService,
@@ -1202,6 +1203,7 @@ async function createTestServer({ provider = new MockWhatsAppProvider({ logger: 
     whatsappConversationService,
     whatsappMessageService,
     whatsappProvider: provider,
+    sambahPayModule,
     runtimeConfig: getRuntimeConfig(),
     whatsappSendFetch
   });

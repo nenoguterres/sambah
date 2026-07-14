@@ -169,6 +169,8 @@ export function normalizeMenuPayload(payload = {}) {
     category: item.category || item.categoria || "",
     price: Number(item.price ?? item.preco ?? 0),
     description: item.description || item.descricao || "",
+    imageUrl: item.imageUrl || item.imagem || item.image || "",
+    videoUrl: item.videoUrl || item.video || "",
     available: item.available ?? item.availability?.available ?? true,
     availability: item.availability || { available: item.available ?? true },
     serviceModes: Array.isArray(item.serviceModes) ? item.serviceModes : ["Mesa", "Levar"],
