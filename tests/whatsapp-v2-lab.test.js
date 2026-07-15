@@ -205,6 +205,25 @@ test("Motor 1 monta comanda guiada do Xeriffe dentro do WhatsApp sem abrir porta
   assert.equal(engine.outboxRepository.list().length, 0);
 });
 
+test("Motor 1 permite reiniciar o Portal com oi em estado legado de espera do Mesa", async () => {
+  const engine = createLabEngine({ observeOnly: true });
+  const from = "5551000000291";
+  const waiting = createWhatsAppV2State(from);
+  waiting.serviceState = "AGUARDANDO_PEDIDO_MESA";
+  waiting.mode = "bot";
+  await engine.conversationRepository.save(waiting);
+
+  const restarted = await engine.processor.handleIncoming({
+    messageId: "wamid-motor-reset-oi",
+    from,
+    text: "oi"
+  });
+  assert.equal(restarted.source, "waitingMesaResetToPortal");
+  assert.equal(restarted.replies[0].type, "menu");
+  assert.equal(restarted.replies[0].menu.id, "portal_main_menu");
+  assert.equal(restarted.state.serviceState, "AUTOMATICO");
+});
+
 test("Motor 1 mantem atendimento humano disponivel durante a comanda guiada", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000202";
