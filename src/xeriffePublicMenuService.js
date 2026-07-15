@@ -43,6 +43,7 @@ export class XeriffePublicMenuService {
     const cache = await this.menuService.getMenuCache();
     const items = (cache.items || [])
       .filter((item) => item.available !== false && item.availability?.available !== false)
+      .filter((item) => cents(item.price ?? item.preco) > 0)
       .map(publicProduct);
     return {
       ok: true,

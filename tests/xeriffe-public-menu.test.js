@@ -33,6 +33,16 @@ const menuPayload = {
       imageUrl: "",
       available: true,
       addons: []
+    },
+    {
+      id: "produto-sem-preco",
+      productId: "SEM-PRECO-001",
+      name: "Produto ainda nao configurado no Mesa",
+      category: "Outros",
+      description: "Nao deve ser publicado",
+      price: 0,
+      available: true,
+      addons: []
     }
   ]
 };
@@ -124,7 +134,9 @@ test("rota publica abre sem login e API usa cookie HttpOnly separado do shell ad
 
     const catalog = await fetch(`${base}/api/xeriffe/cardapio/catalogo`).then((response) => response.json());
     assert.equal(catalog.source, "mesa");
+    assert.equal(catalog.items.length, 2);
     assert.equal(catalog.items[0].price, 29.9);
+    assert.equal(catalog.items.some((item) => item.id === "SEM-PRECO-001"), false);
 
     const firstCartResponse = await fetch(`${base}/api/xeriffe/cardapio/comanda`);
     const cookie = firstCartResponse.headers.get("set-cookie");
