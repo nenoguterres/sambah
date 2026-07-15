@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createApp } from "../src/server.js";
+import { MenuSyncService } from "../src/menuSyncService.js";
 import { XeriffePublicMenuService } from "../src/xeriffePublicMenuService.js";
 
 const menuPayload = {
@@ -163,6 +164,70 @@ test("rota publica abre sem login e API usa cookie HttpOnly separado do shell ad
       body: JSON.stringify({ productId: "POR-BAT-001" })
     });
     assert.equal(blocked.status, 403);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Mesa publica 17 produtos autenticados no cache exclusivo do Xeriffe", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xeriffe-mesa-publish-"));
+  const menuService = new MenuSyncService({
+    cacheFile: join(dir, "menu-cache.json"),
+    config: { apiToken: "token-mesa-teste", baseUrl: "http://127.0.0.1", menuPath: "/api/menu" }
+  });
+  const mesaService = {
+    enqueueOrder: async (order) => ({ id: "queue-1", order }),
+    sendOrderToMesa: async (entry) => ({ ok: false, entry })
+  };
+  const publicMenu = new XeriffePublicMenuService({
+    menuService,
+    mesaService,
+    sessionsFile: join(dir, "sessions.json")
+  });
+  const server = createApp({
+    menuService,
+    xeriffePublicMenuService: publicMenu,
+    auditService: { record: async () => ({ event: null, duplicated: false }) },
+    authMode: "mock"
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const items = Array.from({ length: 17 }, (_, index) => ({
+    productId: `XER-${String(index + 1).padStart(3, "0")}`,
+    name: index === 0 ? "Burger Costela" : `Produto Xeriffe ${index + 1}`,
+    category: index < 4 ? "Burguers" : "Cardapio",
+    price: 20 + index,
+    description: `Produto oficial ${index + 1}`,
+    available: true,
+    addons: index === 0 ? [{ id: "A01", name: "Cebola caramelizada", price: 3 }] : []
+  }));
+  try {
+    const unauthorized = await fetch(`${base}/api/mesa/cardapio`, { method: "POST" });
+    assert.equal(unauthorized.status, 401);
+
+    const invalidToken = await fetch(`${base}/api/mesa/cardapio`, {
+      method: "POST",
+      headers: { authorization: "Bearer token-errado", "content-type": "application/json" },
+      body: JSON.stringify({ items })
+    });
+    assert.equal(invalidToken.status, 403);
+
+    const publishedResponse = await fetch(`${base}/api/mesa/cardapio`, {
+      method: "POST",
+      headers: { authorization: "Bearer token-mesa-teste", "content-type": "application/json" },
+      body: JSON.stringify({ source: "mesa-do-xeriffe", items })
+    });
+    const published = await publishedResponse.json();
+    assert.equal(publishedResponse.status, 200);
+    assert.equal(published.totalItems, 17);
+
+    const catalog = await fetch(`${base}/api/xeriffe/cardapio/catalogo`).then((response) => response.json());
+    assert.equal(catalog.source, "mesa");
+    assert.equal(catalog.items.length, 17);
+    assert.equal(catalog.items[0].name, "Burger Costela");
+    assert.equal(catalog.items[0].price, 20);
+    assert.equal(catalog.items[0].addons[0].id, "A01");
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await rm(dir, { recursive: true, force: true });

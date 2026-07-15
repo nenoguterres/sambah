@@ -8,7 +8,8 @@ const DEFAULT_MENU_PATH = "/api/menu";
 export function getMenuConfig() {
   return {
     ...getMesaConfig(),
-    menuPath: process.env.MESA_MENU_PATH || DEFAULT_MENU_PATH
+    menuPath: process.env.MESA_MENU_PATH || DEFAULT_MENU_PATH,
+    apiToken: process.env.MESA_API_TOKEN || ""
   };
 }
 
@@ -50,6 +51,29 @@ export class MenuSyncService {
 
   async saveMenuCache(cache) {
     const normalized = normalizeMenuPayload(cache);
+    await this.writeCache(normalized);
+    return normalized;
+  }
+
+  async publishFromMesa(payload = {}) {
+    const normalized = normalizeMenuPayload({
+      ...payload,
+      source: "mesa-do-xeriffe",
+      updatedAt: payload.updatedAt || new Date().toISOString(),
+      lastSyncAt: new Date().toISOString()
+    });
+    if (!normalized.items.length) {
+      const error = new Error("O Mesa nao enviou produtos para publicar");
+      error.code = "mesa_catalog_empty";
+      error.statusCode = 400;
+      throw error;
+    }
+    if (normalized.items.length > 500) {
+      const error = new Error("O cardapio excede o limite de 500 produtos");
+      error.code = "mesa_catalog_too_large";
+      error.statusCode = 413;
+      throw error;
+    }
     await this.writeCache(normalized);
     return normalized;
   }
@@ -161,7 +185,13 @@ export class MenuSyncService {
 }
 
 export function normalizeMenuPayload(payload = {}) {
-  const rawItems = Array.isArray(payload.items) ? payload.items : [];
+  const rawItems = Array.isArray(payload.items)
+    ? payload.items
+    : Array.isArray(payload.products)
+      ? payload.products
+      : Array.isArray(payload.produtos)
+        ? payload.produtos
+        : [];
   const items = rawItems.map((item) => ({
     id: item.productId || item.id,
     productId: item.productId || item.id,
@@ -170,8 +200,8 @@ export function normalizeMenuPayload(payload = {}) {
     price: Number(item.price ?? item.preco ?? 0),
     description: item.description || item.descricao || "",
     imageUrl: item.imageUrl || item.image_url || item.image || item.imagem || item.foto || "",
-    available: item.available ?? item.availability?.available ?? true,
-    availability: item.availability || { available: item.available ?? true },
+    available: item.available ?? item.ativo ?? item.disponivel ?? item.availability?.available ?? true,
+    availability: item.availability || { available: item.available ?? item.ativo ?? item.disponivel ?? true },
     serviceModes: Array.isArray(item.serviceModes) ? item.serviceModes : ["Mesa", "Levar"],
     addons: Array.isArray(item.addons) ? item.addons.map(normalizeAddon).filter((addon) => addon.id) : []
   })).filter((item) => item.productId);

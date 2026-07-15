@@ -479,6 +479,36 @@ export function createApp({
         return sendJson(res, 200, await xeriffePublicMenuService.catalog());
       }
 
+      if (req.method === "POST" && url.pathname === "/api/mesa/cardapio") {
+        const authorization = verifyMesaCatalogAuthorization(req, menuService.config?.apiToken || "");
+        if (!authorization.ok) {
+          return sendJson(res, authorization.statusCode, { ok: false, error: authorization.error });
+        }
+        const body = await readJson(req, { requireBody: true });
+        try {
+          const result = await menuService.publishFromMesa(body);
+          await safeAuditRecord(auditService, {
+            type: "xeriffe_catalog_published_from_mesa",
+            status: "success",
+            source: "mesa-do-xeriffe",
+            message: "Cardapio publico do Xeriffe atualizado pelo Mesa",
+            context: { totalItems: result.items.length, updatedAt: result.updatedAt }
+          });
+          return sendJson(res, 200, {
+            ok: true,
+            source: result.source,
+            totalItems: result.items.length,
+            updatedAt: result.updatedAt
+          });
+        } catch (error) {
+          return sendJson(res, error.statusCode || 400, {
+            ok: false,
+            error: error.code || "mesa_catalog_invalid",
+            message: error.message
+          });
+        }
+      }
+
       if (url.pathname.startsWith("/api/xeriffe/cardapio/comanda")) {
         try {
           const session = await resolveXeriffePublicSession(req, res, xeriffePublicMenuService);
@@ -3632,6 +3662,21 @@ function redirectToLogin(res, from = "/admin") {
   res.end();
 }
 
+function verifyMesaCatalogAuthorization(req, configuredToken = "") {
+  const expected = String(configuredToken || "");
+  if (!expected) return { ok: false, statusCode: 503, error: "mesa_catalog_token_not_configured" };
+  const authorization = String(req.headers.authorization || "");
+  const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1] || "";
+  const received = String(req.headers["x-mesa-token"] || bearer || "");
+  if (!received) return { ok: false, statusCode: 401, error: "mesa_catalog_authorization_required" };
+  const left = Buffer.from(received);
+  const right = Buffer.from(expected);
+  if (left.length !== right.length || !crypto.timingSafeEqual(left, right)) {
+    return { ok: false, statusCode: 403, error: "mesa_catalog_authorization_invalid" };
+  }
+  return { ok: true };
+}
+
 async function resolveXeriffePublicSession(req, res, service) {
   const cookies = String(req.headers.cookie || "").split(";").reduce((result, part) => {
     const separator = part.indexOf("=");
@@ -3711,7 +3756,7 @@ function sendJson(res, statusCode, payload) {
 function corsHeaders(origin = "") {
   const headers = {
     "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
-    "access-control-allow-headers": "content-type"
+    "access-control-allow-headers": "content-type, authorization, x-mesa-token"
   };
   headers["access-control-allow-origin"] = origin && isAllowedCorsOrigin(origin) ? origin : "*";
   return headers;
