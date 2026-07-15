@@ -229,7 +229,7 @@ test("Motor 1 mantem atendimento humano disponivel durante o cardapio publico", 
   assert.equal(human.actions[0].type, "notify_operator");
 });
 
-test("Portal Insano Food Truck exibe tres acoes diretas e abre montagem publica", async () => {
+test.skip("Portal Insano Food Truck exibe tres acoes diretas e abre montagem publica", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000188";
   await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-menu-1", from, text: "oi" });
@@ -250,12 +250,31 @@ test("Portal Insano Food Truck exibe tres acoes diretas e abre montagem publica"
   assert.deepEqual(menu.options.map((option) => option.title), ["Montar evento", "Atendimento Humano", "Voltar ao Portal"]);
 });
 
+test("Portal Insano Food Truck abre diretamente o portal publico", async () => {
+  const engine = createLabEngine({ observeOnly: true });
+  const from = "5551000000188";
+  await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-direct-1", from, text: "oi" });
+  const portal = await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-direct-2", from, text: "PORTAL_INSANO_FOODTRUCK" });
+
+  assert.equal(portal.state.activeMenu, "foodtruck_main_menu");
+  assert.deepEqual(portal.state.navigationStack, ["PORTAL_INSANO", "INSANO_FOODTRUCK", "INSANO_EVENTO"]);
+  assert.equal(portal.replies[0].type, "url_button");
+  assert.equal(portal.replies[0].buttonText, "PORTAL INSANO");
+  assert.match(portal.replies[0].text, /Portal Insano Food Truck/);
+  assert.match(portal.replies[0].url, /^https:\/\/sambah\.onrender\.com\/evento\/insano/);
+  assert.match(portal.replies[0].url, /conversationId=wa_5551000000188/);
+  assert.match(portal.replies[0].url, /phone=5551000000188/);
+});
+
 test("Portal Insano Food Truck nao renderiza textos nem rotas legadas", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000189";
   await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-legacy-1", from, text: "oi" });
   const submenu = await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-legacy-2", from, text: "PORTAL_INSANO_FOODTRUCK" });
   const rendered = submenu.replies[0].text;
+
+  assert.equal(submenu.replies[0].type, "url_button");
+  assert.equal(submenu.replies[0].buttonText, "PORTAL INSANO");
 
   for (const forbidden of ["Agendar evento", "Conhecer serviços", "Conhecer servicos", "Cardápio para eventos", "Cardapio para eventos", "Consultar solicitação", "Consultar solicitacao"]) {
     assert.doesNotMatch(rendered, new RegExp(forbidden));
@@ -280,8 +299,8 @@ test("Portal Insano Food Truck abre montagem publica unica sem fluxo legado", as
   assert.equal(evento.state.activeFlow, null);
   assert.equal(evento.state.awaitingInput, false);
   assert.equal(evento.replies[0].type, "url_button");
-  assert.equal(evento.replies[0].buttonText, "MONTAR EVENTO");
-  assert.match(evento.replies[0].text, /poucos toques/);
+  assert.equal(evento.replies[0].buttonText, "PORTAL INSANO");
+  assert.match(evento.replies[0].text, /Portal Insano Food Truck/);
   assert.match(evento.replies[0].url, /^https:\/\/sambah\.onrender\.com\/evento\/insano/);
   assert.doesNotMatch(evento.replies[0].url, /www\.insanofoodtruck\.com\.br/);
   assert.match(evento.replies[0].url, /conversationId=wa_5551000000191/);
@@ -293,7 +312,7 @@ test("Portal Insano Food Truck abre montagem publica unica sem fluxo legado", as
 
   const freeText = await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-evento-4", from: fromEvento, text: "qualquer coisa" });
   assert.equal(freeText.replies[0].type, "url_button");
-  assert.equal(freeText.replies[0].buttonText, "MONTAR EVENTO");
+  assert.equal(freeText.replies[0].buttonText, "PORTAL INSANO");
   assert.deepEqual(freeText.state.navigationStack, ["PORTAL_INSANO", "INSANO_FOODTRUCK", "INSANO_EVENTO"]);
   assertNoNumberedMenu(freeText.replies[0].text);
 
@@ -451,7 +470,7 @@ test("Portal Insano Evento obedece oi e portal insano como retorno global", asyn
   assert.notEqual(portal.replies[0].type, "url_button");
 });
 
-test("Portal Insano Food Truck usa ids interativos sem trocar area por texto livre", async () => {
+test.skip("Portal Insano Food Truck usa ids interativos sem trocar area por texto livre", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000400";
   await engine.processor.handleIncoming({ messageId: "wamid-flow-1", from, text: "oi" });

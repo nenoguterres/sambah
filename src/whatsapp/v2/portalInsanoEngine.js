@@ -143,6 +143,8 @@ function openUrlButton(state, contract, target, source) {
   };
   const formTarget = formTargets[target];
   if (formTarget) {
+    const isFoodtruckPortal = source === "PORTAL_INSANO_FOODTRUCK"
+      || state.foodtruckSubstate?.selectedAction === "PORTAL_INSANO_FOODTRUCK";
     return responseWithReplies(
       source,
       {
@@ -152,13 +154,18 @@ function openUrlButton(state, contract, target, source) {
         activeFlow: null,
         activeStep: null,
         awaitingInput: false,
-        navigationStack: pushNavigationScreen(state.navigationStack, formTarget.screen),
-        foodtruckSubstate: { selectedAction: source, target: formTarget.substate }
+        navigationStack: isFoodtruckPortal
+          ? ["PORTAL_INSANO", "INSANO_FOODTRUCK", formTarget.screen]
+          : pushNavigationScreen(state.navigationStack, formTarget.screen),
+        foodtruckSubstate: {
+          selectedAction: isFoodtruckPortal ? "PORTAL_INSANO_FOODTRUCK" : source,
+          target: formTarget.substate
+        }
       },
       [{
         type: "url_button",
-        text: formTarget.text,
-        buttonText: formTarget.buttonText,
+        text: isFoodtruckPortal ? "Portal Insano Food Truck\n\nAcesse o atendimento para evento, cardápio e orçamento." : formTarget.text,
+        buttonText: isFoodtruckPortal ? "PORTAL INSANO" : formTarget.buttonText,
         url
       }],
       [{ type: formTarget.actionType, source, url }]

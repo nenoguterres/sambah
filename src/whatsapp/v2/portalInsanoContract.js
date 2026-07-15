@@ -25,7 +25,7 @@ export const portalInsanoContract = {
       body: "Escolha uma area para continuar:",
       strictInteractiveIds: true,
       options: [
-        option("PORTAL_INSANO_FOODTRUCK", 1, "Insano Food Truck", { type: "open_menu", target: "foodtruck_main_menu", areaId: "insano_food_truck" }),
+        option("PORTAL_INSANO_FOODTRUCK", 1, "Insano Food Truck", { type: "open_url_button", target: "integration.insano_food_truck.event_form_url" }),
         option("portal.xeriffe", 2, "Xeriffe Obirici", { type: "open_menu", target: "xeriffe_main_menu", areaId: "xeriffe_obirici" }),
         option("portal.more", 3, "Mais opcoes", { type: "open_menu", target: "portal_more_menu", areaId: null })
       ]
