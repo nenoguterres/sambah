@@ -434,6 +434,73 @@ test("WhatsApp V2 nao reserva messageId se a gravacao neutra falhar", async () =
   }
 });
 
+test("WhatsApp V2 continua ate o sender quando o historico auxiliar falha", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-v2-aux-history-failure-"));
+  const providerCalls = [];
+  const outbound = [];
+  const messageId = "wamid-v2-aux-history-failure";
+  try {
+    const result = await whatsappMaintenanceHandler(metaPayload({
+      from: "555181675115",
+      id: messageId,
+      type: "text",
+      text: { body: "oi" }
+    }), {
+      conversationService: {
+        recordNeutralIncoming: async () => ({
+          ok: true,
+          duplicate: false,
+          conversa: { id: "wa_5551981675115", telefone: "5551981675115", status: "aguardando_equipe" },
+          message: { id: messageId, direction: "in", text: "oi", status: "recebida" }
+        }),
+        recordOutgoing: async (_id, entry) => {
+          outbound.push(entry);
+          return { ok: true, conversa: { id: "wa_5551981675115" }, message: { id: "out-aux-failure", ...entry } };
+        }
+      },
+      messageService: {
+        handleIncoming: async () => {
+          throw new SyntaxError("Unexpected non-whitespace character after JSON at position 195610");
+        },
+        appendMessage: async () => {
+          throw new Error("secondary outbound history unavailable");
+        }
+      },
+      auditService: { record: async () => ({ duplicated: false }) },
+      whatsappProvider: {
+        sendMessage: async (entry) => {
+          providerCalls.push(entry);
+          return {
+            ok: true,
+            sent: true,
+            status: "sent",
+            httpStatus: 200,
+            providerMessageId: "wamid-provider-after-aux-failure",
+            response: { messages: [{ id: "wamid-provider-after-aux-failure" }] },
+            metaMessageType: "interactive_list"
+          };
+        }
+      },
+      runtimeConfig: {
+        dataDir: dir,
+        whatsappV2: { enabled: true, autoReplyEnabled: true, sendEnabled: true },
+        whatsappBusiness: { accessToken: "token-test", phoneNumberId: "phone-number-test" }
+      }
+    });
+
+    assert.equal(result.engine, "v2");
+    assert.equal(result.sent, true);
+    assert.equal(result.senderCalled, true);
+    assert.equal(result.providerMessageId, "wamid-provider-after-aux-failure");
+    assert.equal(providerCalls.length, 1);
+    assert.equal(providerCalls[0].to, "555181675115");
+    assert.equal(providerCalls[0].message.type, "menu");
+    assert.equal(outbound.length, 1);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("POST /webhook/whatsapp V2 operacional cria outbound sem sender quando envio esta desabilitado", async () => {
   const previousV2 = process.env.WHATSAPP_V2_ENABLED;
   const previousSend = process.env.WHATSAPP_SEND_ENABLED;
