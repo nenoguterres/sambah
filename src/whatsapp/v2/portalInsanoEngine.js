@@ -164,6 +164,27 @@ function openUrlButton(state, contract, target, source) {
       [{ type: formTarget.actionType, source, url }]
     );
   }
+  if (target === "integration.mesa_do_xeriffe.customer_url") {
+    return responseWithReplies(
+      source,
+      {
+        ...state,
+        areaId: "xeriffe_obirici",
+        activeMenu: "xeriffe_main_menu",
+        activeFlow: null,
+        activeStep: null,
+        awaitingInput: false,
+        serviceState: "AUTOMATICO"
+      },
+      [{
+        type: "url_button",
+        text: "Cardapio Xeriffe Obirici\n\nEscolha produtos e adicionais em poucos toques. A comanda fica aberta para continuar comprando.",
+        buttonText: "ABRIR CARDAPIO",
+        url
+      }],
+      [{ type: "xeriffe_public_menu_url", source, url }]
+    );
+  }
   return responseWithReplies(
     source,
     {
@@ -636,7 +657,8 @@ function resolveContractPath(contract, target = "") {
   const aliases = {
     "integration.insano_food_truck.catalog_url": "integrations.insano_food_truck.catalogUrl",
     "integration.insano_food_truck.event_form_url": "integrations.insano_food_truck.eventFormUrl",
-    "integration.insano_food_truck.quote_form_url": "integrations.insano_food_truck.quoteFormUrl"
+    "integration.insano_food_truck.quote_form_url": "integrations.insano_food_truck.quoteFormUrl",
+    "integration.mesa_do_xeriffe.customer_url": "integrations.mesa_do_xeriffe.customerUrl"
   };
   const path = aliases[target] || target;
   return path.split(".").reduce((value, key) => value?.[key], contract);

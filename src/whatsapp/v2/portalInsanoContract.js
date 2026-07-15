@@ -53,7 +53,7 @@ export const portalInsanoContract = {
       strictInteractiveIds: true,
       fallbackText: "1. Ver Cardapio\n2. Atendimento Humano\n3. Voltar ao Portal Insano",
       options: [
-        option("xeriffe.menu", 1, "Ver Cardapio", { type: "open_mesa_menu" }),
+        option("xeriffe.menu", 1, "Ver Cardapio", { type: "open_url_button", target: "integration.mesa_do_xeriffe.customer_url" }),
         option("xeriffe.human", 2, "Atendimento Humano", { type: "start_flow", target: "human_handoff" }),
         option("xeriffe.back", 3, "Voltar ao Portal Insano", { type: "open_menu", target: "portal_main_menu", areaId: null })
       ]
@@ -144,7 +144,7 @@ export const portalInsanoContract = {
       eventFormUrl: null,
       quoteFormUrl: null
     },
-    mesa_do_xeriffe: { enabled: true, customerUrl: null },
+    mesa_do_xeriffe: { enabled: true, customerUrl: "https://sambah.onrender.com/xeriffe/cardapio" },
     sambah_pay: { enabled: false },
     meta_sender: { enabled: false, realSenderAllowed: false },
     ai: { enabled: false }

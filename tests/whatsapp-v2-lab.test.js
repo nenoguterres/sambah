@@ -131,7 +131,7 @@ test("Portal Insano menu principal roteia cada botao sem chamar IA", async () =>
   assertNoNumberedMenu(numeric.replies[0].text);
 });
 
-test("Motor 1 monta comanda guiada do Xeriffe dentro do WhatsApp sem abrir portal", async () => {
+test("Motor 1 abre o cardapio publico do Xeriffe sem criar pedido no WhatsApp", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000201";
   const sambahConversationId = "conversation-central-motor-1";
@@ -157,51 +157,15 @@ test("Motor 1 monta comanda guiada do Xeriffe dentro do WhatsApp sem abrir porta
   assert.deepEqual(xeriffe.replies[0].menu.options.map((item) => item.id), ["xeriffe.menu", "xeriffe.human", "xeriffe.back"]);
 
   const cardapio = await engine.processor.handleIncoming({ messageId: "wamid-motor-1-cardapio", from, text: "xeriffe.menu" });
-  assert.equal(cardapio.replies[0].type, "menu");
-  assert.equal(cardapio.replies[0].menu.id, "xeriffe_catalog_categories");
-  assert.deepEqual(cardapio.replies[0].menu.options.map((item) => item.title), ["Burguers", "Fritas"]);
-  assert.equal(cardapio.replies[0].url, undefined);
+  assert.equal(cardapio.replies[0].type, "url_button");
+  assert.equal(cardapio.replies[0].buttonText, "ABRIR CARDAPIO");
+  assert.equal(cardapio.replies[0].url, "https://sambah.onrender.com/xeriffe/cardapio");
   assert.equal(cardapio.state.serviceState, "AUTOMATICO");
   assert.equal(cardapio.state.activeFlow, null);
   assert.equal(cardapio.state.mesaOrderId, null);
   assert.equal(cardapio.state.flowData.order, undefined);
   assert.equal(cardapio.state.cart, undefined);
-  assert.equal(cardapio.actions[0].type, "mesa_menu_inside_whatsapp");
-
-  const products = await engine.processor.handleIncoming({ messageId: "wamid-motor-1-category", from, text: "xeriffe.category:Burguers" });
-  assert.equal(products.replies[0].menu.id, "xeriffe_catalog_products");
-  assert.equal(products.replies[0].menu.options[0].id, "xeriffe.product:burguer-costela");
-
-  const product = await engine.processor.handleIncoming({ messageId: "wamid-motor-1-product", from, text: "xeriffe.product:burguer-costela" });
-  assert.equal(product.replies[0].type, "product_card");
-  assert.equal(product.replies[0].imageUrl, "https://example.com/burguer-costela.jpg");
-  assert.match(product.replies[0].text, /Codigo do produto: burguer-costela/);
-  assert.match(product.replies[0].text, /barbecue/);
-  assert.match(product.replies[0].text, /Total deste item: R\$ 30,00/);
-
-  const addons = await engine.processor.handleIncoming({ messageId: "wamid-motor-1-addons", from, text: "xeriffe.product.addons" });
-  assert.equal(addons.replies[0].menu.id, "xeriffe_product_addons");
-  assert.equal(addons.replies[0].menu.options[0].id, "xeriffe.addon:barbecue");
-
-  const withAddon = await engine.processor.handleIncoming({ messageId: "wamid-motor-1-addon", from, text: "xeriffe.addon:barbecue" });
-  assert.equal(withAddon.replies[0].type, "product_card");
-  assert.match(withAddon.replies[0].text, /Codigo da comanda: burguer-costela-barbecue/);
-  assert.match(withAddon.replies[0].text, /Total deste item: R\$ 32,00/);
-
-  const firstItem = await engine.processor.handleIncoming({ messageId: "wamid-motor-1-add", from, text: "xeriffe.product.add" });
-  assert.equal(firstItem.state.activeMenu, "xeriffe_command_summary");
-  assert.equal(firstItem.state.xeriffeCommand.items.length, 1);
-  assert.equal(firstItem.state.xeriffeCommand.items[0].commandCode, "burguer-costela-barbecue");
-  assert.match(firstItem.replies[0].menu.body, /Valor total: R\$ 32,00/);
-
-  await engine.processor.handleIncoming({ messageId: "wamid-motor-1-continue", from, text: "xeriffe.command.continue" });
-  await engine.processor.handleIncoming({ messageId: "wamid-motor-1-fritas-category", from, text: "xeriffe.category:Fritas" });
-  await engine.processor.handleIncoming({ messageId: "wamid-motor-1-fritas-product", from, text: "xeriffe.product:fritas-porcao-pequena" });
-  const secondItem = await engine.processor.handleIncoming({ messageId: "wamid-motor-1-fritas-add", from, text: "xeriffe.product.add" });
-  assert.equal(secondItem.state.xeriffeCommand.items.length, 2);
-  assert.match(secondItem.replies[0].menu.body, /Valor total: R\$ 47,00/);
-  assert.equal(secondItem.state.serviceState, "AUTOMATICO");
-  assert.equal(secondItem.state.mesaOrderId, null);
+  assert.equal(cardapio.actions[0].type, "xeriffe_public_menu_url");
   assert.equal(engine.outboxRepository.list().length, 0);
 });
 
@@ -224,7 +188,7 @@ test("Motor 1 permite reiniciar o Portal com oi em estado legado de espera do Me
   assert.equal(restarted.state.serviceState, "AUTOMATICO");
 });
 
-test("Motor 1 mantem atendimento humano disponivel durante a comanda guiada", async () => {
+test("Motor 1 mantem atendimento humano disponivel durante o cardapio publico", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000202";
   await engine.processor.handleIncoming({ messageId: "wamid-motor-1-h-portal", from, text: "quero pedir" });
@@ -427,7 +391,7 @@ test("Portal Insano preserva area nos menus Foodtruck, Xeriffe, Granja e Tecnolo
   const engine = createLabEngine({ observeOnly: true });
   const flows = [
     ["PORTAL_INSANO_FOODTRUCK", "INSANO_EVENTO", "foodtruck_main_menu", "insano_food_truck"],
-    ["portal.xeriffe", "xeriffe.menu", "xeriffe_catalog_categories", "xeriffe_obirici"],
+    ["portal.xeriffe", "xeriffe.menu", "xeriffe_main_menu", "xeriffe_obirici"],
     ["portal.granja", "1", "granja_main_menu", "granja_aguas_da_lagoa"],
     ["portal.tecnologia", "11", "technology_main_menu", "desenvolvimento_tecnologias"]
   ];
@@ -519,7 +483,7 @@ test("Portal Insano texto de pagamento nunca confirma pagamento", async () => {
   assert.equal(second.state.mode, "bot");
 });
 
-test("Portal Insano Xeriffe abre cardapio do Mesa dentro do WhatsApp sem URL externa", async () => {
+test("Portal Insano Xeriffe abre somente o cardapio publico rapido", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000600";
   await engine.processor.handleIncoming({ messageId: "wamid-int-1", from, text: "oi" });
@@ -529,10 +493,10 @@ test("Portal Insano Xeriffe abre cardapio do Mesa dentro do WhatsApp sem URL ext
   assert.equal(result.source, "xeriffe.menu");
   assert.equal(result.state.areaId, "xeriffe_obirici");
   assert.equal(result.state.serviceState, "AUTOMATICO");
-  assert.equal(result.state.activeMenu, "xeriffe_catalog_categories");
-  assert.equal(result.replies[0].type, "menu");
-  assert.equal(result.replies[0].url, undefined);
-  assert.equal(result.actions[0].type, "mesa_menu_inside_whatsapp");
+  assert.equal(result.state.activeMenu, "xeriffe_main_menu");
+  assert.equal(result.replies[0].type, "url_button");
+  assert.equal(result.replies[0].url, "https://sambah.onrender.com/xeriffe/cardapio");
+  assert.equal(result.actions[0].type, "xeriffe_public_menu_url");
   assert.equal(engine.operationLog.includes("mesa_do_xeriffe"), false);
 });
 

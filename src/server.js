@@ -14,6 +14,7 @@ import { InsanoWorkhubController } from "./insanoWorkhubController.js";
 import { InsanoWorkhubService } from "./insanoWorkhubService.js";
 import { buildMesaOrder, MesaIntegrationService } from "./mesaIntegrationService.js";
 import { MenuSyncService } from "./menuSyncService.js";
+import { XeriffePublicMenuService } from "./xeriffePublicMenuService.js";
 import { OrderDraftService } from "./orderDraftService.js";
 import { OrderTrackingService } from "./orderTrackingService.js";
 import { PerolaService } from "./perolaService.js";
@@ -45,6 +46,12 @@ const dataFile = (name) => join(runtimeConfig.dataDir, name);
 const audit = new AuditService({ filePath: dataFile("audit-logs.json") });
 const mesa = new MesaIntegrationService({ queueFile: dataFile("mesa-queue.json") });
 const menu = new MenuSyncService({ cacheFile: dataFile("menu-cache.json") });
+const xeriffePublicMenu = new XeriffePublicMenuService({
+  menuService: menu,
+  mesaService: mesa,
+  sessionsFile: dataFile("xeriffe-public-sessions.json"),
+  whatsappNumber: runtimeConfig.whatsappNumber
+});
 const conversation = new SambahConversationService({ scriptsFile: dataFile("sambah-scripts.json") });
 const whatsappConversations = new WhatsAppConversationService({
   filePath: dataFile("whatsapp-conversas.json"),
@@ -112,6 +119,7 @@ export function createApp({
   auditService = audit,
   mesaService = mesa,
   menuService = menu,
+  xeriffePublicMenuService = xeriffePublicMenu,
   conversationService = conversation,
   whatsappConversationService = whatsappConversations,
   draftService = drafts,
@@ -463,6 +471,48 @@ export function createApp({
         return serveStatic(res, "portal-xeriffe.html");
       }
 
+      if (req.method === "GET" && ["/xeriffe/cardapio", "/xeriffe/cardapio/"].includes(url.pathname)) {
+        return serveStatic(res, "xeriffe-cardapio.html");
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/xeriffe/cardapio/catalogo") {
+        return sendJson(res, 200, await xeriffePublicMenuService.catalog());
+      }
+
+      if (url.pathname.startsWith("/api/xeriffe/cardapio/comanda")) {
+        try {
+          const session = await resolveXeriffePublicSession(req, res, xeriffePublicMenuService);
+          if (req.method === "GET" && url.pathname === "/api/xeriffe/cardapio/comanda") {
+            return sendJson(res, 200, await xeriffePublicMenuService.cart(session.id));
+          }
+          if (req.headers["x-xeriffe-cart"] !== "1") {
+            return sendJson(res, 403, { ok: false, error: "cart_request_required" });
+          }
+          if (req.method === "POST" && url.pathname === "/api/xeriffe/cardapio/comanda/itens") {
+            const body = await readJson(req, { requireBody: true });
+            return sendJson(res, 201, await xeriffePublicMenuService.addItem(session.id, body));
+          }
+          const itemMatch = url.pathname.match(/^\/api\/xeriffe\/cardapio\/comanda\/itens\/([^/]+)$/);
+          if (req.method === "PATCH" && itemMatch) {
+            const body = await readJson(req, { requireBody: true });
+            return sendJson(res, 200, await xeriffePublicMenuService.updateItem(session.id, decodeURIComponent(itemMatch[1]), body));
+          }
+          if (req.method === "DELETE" && itemMatch) {
+            return sendJson(res, 200, await xeriffePublicMenuService.removeItem(session.id, decodeURIComponent(itemMatch[1])));
+          }
+          if (req.method === "POST" && url.pathname === "/api/xeriffe/cardapio/comanda/finalizar") {
+            const body = await readJson(req, { requireBody: true });
+            return sendJson(res, 202, await xeriffePublicMenuService.finalize(session.id, body.customer || body));
+          }
+          return sendJson(res, 404, { ok: false, error: "not_found" });
+        } catch (error) {
+          if (error.statusCode) {
+            return sendJson(res, error.statusCode, { ok: false, error: error.code || "public_menu_error", message: error.message });
+          }
+          throw error;
+        }
+      }
+
       if (req.method === "GET" && ["/pedir", "/eventos", "/empresas", "/xeriffe", "/whatsapp"].includes(url.pathname)) {
         return serveStatic(res, "portal.html");
       }
@@ -627,6 +677,10 @@ export function createApp({
 
       if (req.method === "GET" && url.pathname === "/conteudo") {
         return serveStatic(res, "conteudo.html");
+      }
+
+      if (req.method === "GET" && ["/xeriffe-cardapio.css", "/xeriffe-cardapio.js"].includes(url.pathname)) {
+        return serveStatic(res, url.pathname.slice(1));
       }
 
       if (req.method === "GET" && url.pathname === "/sambah-pay.css") {
@@ -3576,6 +3630,22 @@ function sendHtml(res, statusCode, html) {
 function redirectToLogin(res, from = "/admin") {
   res.writeHead(302, { location: `/login?next=${encodeURIComponent(from)}` });
   res.end();
+}
+
+async function resolveXeriffePublicSession(req, res, service) {
+  const cookies = String(req.headers.cookie || "").split(";").reduce((result, part) => {
+    const separator = part.indexOf("=");
+    if (separator < 0) return result;
+    result[part.slice(0, separator).trim()] = decodeURIComponent(part.slice(separator + 1).trim());
+    return result;
+  }, {});
+  const session = await service.ensureSession(cookies.xeriffe_cart || "");
+  if (session.created) {
+    const forwardedProto = String(req.headers["x-forwarded-proto"] || "").toLowerCase();
+    const secure = forwardedProto === "https" ? "; Secure" : "";
+    res.setHeader("set-cookie", `xeriffe_cart=${encodeURIComponent(session.id)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=14400${secure}`);
+  }
+  return session;
 }
 
 function publicAuditEvent(event = {}) {

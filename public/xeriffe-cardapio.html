@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#171311">
+  <title>Cardápio | Xeriffe Obirici</title>
+  <link rel="stylesheet" href="/xeriffe-cardapio.css">
+</head>
+<body>
+  <header class="brand-header">
+    <span class="crown" aria-hidden="true">♛</span>
+    <strong>Xeriffe <span>Obirici</span></strong>
+    <small>Cardápio</small>
+  </header>
+
+  <main>
+    <section class="intro">
+      <div>
+        <p class="eyebrow">Escolha rápido. Mate a fome.</p>
+        <h1 id="pageTitle">O que vai pedir?</h1>
+      </div>
+      <label class="search"><span>⌕</span><input id="searchInput" type="search" placeholder="Buscar no cardápio" autocomplete="off"></label>
+    </section>
+
+    <section aria-labelledby="categoryTitle">
+      <div class="section-heading"><h2 id="categoryTitle">Categorias</h2><span>Deslize ou toque</span></div>
+      <div class="category-carousel" id="categoryCarousel" tabindex="0"></div>
+      <div class="category-chips" id="categoryChips"></div>
+    </section>
+
+    <section class="products-section" aria-labelledby="productsTitle">
+      <div class="section-heading"><h2 id="productsTitle">Produtos</h2><span id="productCount"></span></div>
+      <div class="product-grid" id="productGrid"></div>
+      <div class="empty-state" id="emptyState" hidden>Nenhum produto disponível nesta categoria.</div>
+    </section>
+  </main>
+
+  <button class="cart-bar" id="openCart" type="button" aria-label="Abrir comanda">
+    <span class="cart-icon">🛒</span>
+    <span><b id="cartCount">0 itens</b><small id="cartTotal">R$ 0,00</small></span>
+    <strong>Ver comanda</strong>
+  </button>
+
+  <dialog class="sheet" id="productDialog">
+    <form method="dialog" class="sheet-card" id="productForm">
+      <button class="close" value="cancel" aria-label="Fechar">×</button>
+      <div id="productMedia"></div>
+      <p class="eyebrow" id="productCode"></p>
+      <div class="product-title-row"><h2 id="productName"></h2><strong id="productBasePrice"></strong></div>
+      <p id="productDescription"></p>
+      <div class="quantity-row"><span>Quantidade</span><div><button id="qtyMinus" type="button">−</button><b id="productQty">1</b><button id="qtyPlus" type="button">+</button></div></div>
+      <section><h3>Adicionais <small>toque para adicionar</small></h3><div class="addon-list" id="addonList"></div></section>
+      <label class="note-label">Observação<textarea id="productNote" maxlength="300" placeholder="Ex.: sem cebola, ponto da carne..."></textarea></label>
+      <p class="composite-code" id="compositeCode"></p>
+      <button class="primary-action" id="saveProduct" type="submit"><span>Adicionar à comanda</span><b id="productTotal"></b></button>
+    </form>
+  </dialog>
+
+  <dialog class="sheet cart-sheet" id="cartDialog">
+    <section class="sheet-card">
+      <button class="close" id="closeCart" type="button" aria-label="Fechar">×</button>
+      <h2>Sua comanda</h2>
+      <div class="cart-items" id="cartItems"></div>
+      <div class="cart-summary"><span>Total</span><strong id="cartSheetTotal">R$ 0,00</strong></div>
+      <div class="checkout-fields">
+        <label>Nome<input id="customerName" maxlength="100" autocomplete="name" placeholder="Seu nome"></label>
+        <label>WhatsApp<input id="customerPhone" maxlength="30" inputmode="tel" autocomplete="tel" placeholder="Seu WhatsApp"></label>
+        <label>Observação geral<textarea id="customerNote" maxlength="500" placeholder="Entrega, retirada ou observação"></textarea></label>
+      </div>
+      <button class="primary-action" id="finishOrder" type="button">Finalizar pedido</button>
+      <button class="secondary-action" id="continueShopping" type="button">Continuar comprando</button>
+      <div class="quick-categories" id="cartCategories"></div>
+      <a class="whatsapp-link" id="whatsappLink" href="#" hidden>Voltar ao WhatsApp</a>
+      <p class="order-message" id="orderMessage" role="status"></p>
+    </section>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/xeriffe-cardapio.js" defer></script>
+</body>
+</html>
