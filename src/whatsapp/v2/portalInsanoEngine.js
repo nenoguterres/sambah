@@ -1,9 +1,8 @@
 import { response, responseWithReplies } from "./responseContract.js";
 import { portalInsanoContract } from "./portalInsanoContract.js";
 import { getRuntimeConfig } from "../../config.js";
-import { getMesaConfig } from "../../mesaIntegrationService.js";
 
-export function routePortalInsanoMessage({ state, message, contract = portalInsanoContract }) {
+export function routePortalInsanoMessage({ state, message, contract = portalInsanoContract, menuCache = { items: [], categories: [] } }) {
   const text = normalizeText(message.text);
   const routedState = normalizeNavigationState(normalizeLegacyFoodtruckState(state, contract), contract);
   const command = routeNavigationCommand(text);
@@ -24,16 +23,17 @@ export function routePortalInsanoMessage({ state, message, contract = portalInsa
   if (command) return handleNavigationCommand(routedState, contract, command);
   if (isWelcome(text)) return openMenu(resetToPortal(routedState, contract), contract, contract.welcome.menuId, "welcomeFlow", []);
   if (routedState.activeFlow) return handleActiveFlow(routedState, contract, text, message.text);
+  if (isXeriffeCatalogMenu(routedState.activeMenu)) return handleXeriffeCatalogMessage(routedState, menuCache, text);
   if (isExternalPortalArea(routedState)) {
     const selected = resolveMenuOption(contract.menus[routedState.activeMenu], text);
-    if (selected) return executeAction(routedState, contract, selected.action, selected.id);
+    if (selected) return executeAction(routedState, contract, selected.action, selected.id, menuCache);
     return openMenu(routedState, contract, routedState.activeMenu, "fallbackMenu", routedState.menuStack || []);
   }
   const currentScreen = currentNavigationScreen(routedState);
   if (!isMenuScreen(currentScreen)) return renderCurrentScreen(routedState, contract, "guidedScreenFallback");
   const currentMenuId = menuIdForScreen(currentScreen) || routedState.activeMenu || contract.welcome.menuId;
   const selected = resolveMenuOption(contract.menus[currentMenuId], text);
-  if (selected) return executeAction(routedState, contract, selected.action, selected.id);
+  if (selected) return executeAction(routedState, contract, selected.action, selected.id, menuCache);
   return openMenu({ ...routedState, activeMenu: currentMenuId }, contract, currentMenuId, "fallbackMenu", routedState.menuStack || []);
 }
 
@@ -74,7 +74,7 @@ export function resolveMenuOption(menu, text) {
   }) || null;
 }
 
-function executeAction(state, contract, action, source) {
+function executeAction(state, contract, action, source, menuCache = { items: [], categories: [] }) {
   if (action.type === "open_menu") {
     const isPortalReturn = action.target === contract.welcome.menuId || source === "PORTAL_VOLTAR";
     const nextState = {
@@ -91,7 +91,7 @@ function executeAction(state, contract, action, source) {
   if (action.type === "start_flow") return startFlow(state, contract, action.target, source);
   if (action.type === "open_url_button") return openUrlButton(state, contract, action.target, source);
   if (action.type === "show_catalog") return showCatalog(state, contract, action.target, source);
-  if (action.type === "open_authorized_link") return openMesaCardapioLink(state, source);
+  if (action.type === "open_mesa_menu") return openXeriffeCategories(state, menuCache, source);
   return response("invalidAction", state, "Essa funcao ainda nao esta habilitada. Vou encaminhar para atendimento.", [{ type: "safe_handoff" }]);
 }
 
@@ -186,46 +186,277 @@ function openUrlButton(state, contract, target, source) {
   );
 }
 
-function openMesaCardapioLink(state, source) {
-  const baseUrl = getMesaConfig().baseUrl;
-  let url;
-  try {
-    url = new URL(baseUrl);
-  } catch {
-    return response("missingMesaCustomerUrl", state, "CONFIGURACAO AUSENTE: link do Mesa do Xeriffe", [{ type: "missing_config", source }]);
+function openXeriffeCategories(state, menuCache, source = "xeriffe.menu", requestedPage = 0) {
+  const items = availableMenuItems(menuCache);
+  if (!items.length) {
+    return response(
+      "xeriffeMenuUnavailable",
+      { ...state, areaId: "xeriffe_obirici", activeMenu: "xeriffe_main_menu", serviceState: "AUTOMATICO" },
+      "O cardapio oficial do Mesa ainda nao esta sincronizado. Nao vou abrir pagina externa nem inventar produtos.",
+      [{ type: "menu_cache_unavailable", source }]
+    );
   }
-  const phone = String(state.phone || state.conversationId || "").replace(/\D/g, "");
-  const conversationId = phone ? `wa_${phone}` : String(state.conversationId || "");
-  const sambahConversationId = String(state.sambahConversationId || state.conversationId || "");
-  url.searchParams.set("cliente", "1");
-  url.searchParams.set("conversationId", conversationId);
-  url.searchParams.set("sambahConversationId", sambahConversationId);
-  url.searchParams.set("phone", phone || String(state.phone || state.conversationId || ""));
-  url.searchParams.set("origin", "WHATSAPP_SAMBAH");
-  url.searchParams.set("unit", "XERIFFE_OBIRICI");
-  const now = new Date().toISOString();
+  const categories = [...new Set([
+    ...(Array.isArray(menuCache?.categories) ? menuCache.categories : []),
+    ...items.map((item) => item.category)
+  ].filter((category) => category && items.some((item) => item.category === category)))];
+  const pageSize = 8;
+  const lastPage = Math.max(0, Math.ceil(categories.length / pageSize) - 1);
+  const page = Math.min(Math.max(0, Number(requestedPage) || 0), lastPage);
+  const options = categories.slice(page * pageSize, (page + 1) * pageSize).map((category, index) => ({
+    id: `xeriffe.category:${encodeURIComponent(normalizeText(category))}`,
+    order: index + 1,
+    title: category,
+    description: `${items.filter((item) => item.category === category).length} produtos`,
+    fallbackText: category
+  }));
+  if (page > 0) options.push({ id: "xeriffe.categories.prev", order: options.length + 1, title: "Categorias anteriores", description: "Voltar uma pagina", fallbackText: "Categorias anteriores" });
+  if (page < lastPage) options.push({ id: "xeriffe.categories.next", order: options.length + 1, title: "Mais categorias", description: "Ver a proxima pagina", fallbackText: "Mais categorias" });
+  const command = normalizeXeriffeCommand(state);
   return responseWithReplies(
     source,
     {
       ...state,
       areaId: "xeriffe_obirici",
-      activeMenu: "xeriffe_main_menu",
-      activeFlow: null,
-      activeStep: null,
+      activeMenu: "xeriffe_catalog_categories",
+      serviceState: "AUTOMATICO",
       awaitingInput: false,
-      serviceState: "AGUARDANDO_PEDIDO_MESA",
-      mesaOrderId: null,
-      mesaLinkSentAt: now,
-      mesaOrderReceivedAt: null
+      xeriffeCatalogPage: page,
+      xeriffeCommand: { ...command, selectedCategory: null, selectedProductId: null, selectedAddonIds: [] }
     },
-    [{
-      type: "url_button",
-      text: "Monte teu pedido no cardapio oficial do Mesa do Xeriffe. Quando concluir, o SamBah retoma esta conversa.",
-      buttonText: "VER CARDAPIO",
-      url: url.toString()
-    }],
-    [{ type: "mesa_cardapio_link", source, url: url.toString() }]
+    [menuReply("xeriffe_catalog_categories", "Cardapio Xeriffe", command.items.length ? `Escolha uma categoria. Comanda: ${command.items.length} item(ns).` : "Escolha uma categoria:", options, "VER CATEGORIAS")],
+    [{ type: "mesa_menu_inside_whatsapp", source, page }]
   );
+}
+
+function handleXeriffeCatalogMessage(state, menuCache, text) {
+  const command = normalizeXeriffeCommand(state);
+  if (state.activeMenu === "xeriffe_catalog_categories") {
+    if (text === "xeriffe.categories.next") return openXeriffeCategories(state, menuCache, "xeriffe.categories.next", Number(state.xeriffeCatalogPage || 0) + 1);
+    if (text === "xeriffe.categories.prev") return openXeriffeCategories(state, menuCache, "xeriffe.categories.prev", Number(state.xeriffeCatalogPage || 0) - 1);
+    if (text.startsWith("xeriffe.category:")) {
+      return openXeriffeProducts(state, menuCache, decodeMenuId(text.slice("xeriffe.category:".length)));
+    }
+    return openXeriffeCategories(state, menuCache, "xeriffe.categories.fallback", state.xeriffeCatalogPage || 0);
+  }
+  if (state.activeMenu === "xeriffe_catalog_products") {
+    if (text === "xeriffe.catalog.categories") return openXeriffeCategories(state, menuCache, "xeriffe.catalog.categories");
+    if (text.startsWith("xeriffe.product:")) {
+      return openXeriffeProductCard(state, menuCache, decodeMenuId(text.slice("xeriffe.product:".length)), []);
+    }
+    return openXeriffeProducts(state, menuCache, command.selectedCategory);
+  }
+  if (state.activeMenu === "xeriffe_product_card") {
+    if (text === "xeriffe.catalog.back") return openXeriffeCategories(state, menuCache, "xeriffe.catalog.back");
+    if (text === "xeriffe.product.addons") return openXeriffeAddons(state, menuCache);
+    if (text === "xeriffe.product.add") return addSelectedProductToCommand(state, menuCache);
+    return openXeriffeProductCard(state, menuCache, command.selectedProductId, command.selectedAddonIds);
+  }
+  if (state.activeMenu === "xeriffe_product_addons") {
+    if (text === "xeriffe.addons.done") return openXeriffeProductCard(state, menuCache, command.selectedProductId, command.selectedAddonIds);
+    if (text === "xeriffe.catalog.back") return openXeriffeCategories(state, menuCache, "xeriffe.catalog.back");
+    if (text.startsWith("xeriffe.addon:")) {
+      const addonId = decodeMenuId(text.slice("xeriffe.addon:".length));
+      const selected = new Set(command.selectedAddonIds);
+      if (selected.has(addonId)) selected.delete(addonId);
+      else selected.add(addonId);
+      return openXeriffeProductCard(state, menuCache, command.selectedProductId, [...selected], "xeriffe.addon.toggle");
+    }
+    return openXeriffeAddons(state, menuCache);
+  }
+  if (state.activeMenu === "xeriffe_command_summary") {
+    if (text === "xeriffe.command.continue") return openXeriffeCategories(state, menuCache, "xeriffe.command.continue");
+    if (text === "xeriffe.command.clear") {
+      return openXeriffeCategories({ ...state, xeriffeCommand: emptyXeriffeCommand() }, menuCache, "xeriffe.command.clear");
+    }
+    return renderXeriffeCommandSummary(state, "xeriffe.command.summary");
+  }
+  return openXeriffeCategories(state, menuCache, "xeriffe.catalog.recover");
+}
+
+function openXeriffeProducts(state, menuCache, category) {
+  const resolvedCategory = [...new Set(availableMenuItems(menuCache).map((item) => item.category).filter(Boolean))]
+    .find((item) => normalizeText(item) === normalizeText(category)) || "";
+  const products = availableMenuItems(menuCache).filter((item) => item.category === resolvedCategory).slice(0, 9);
+  if (!products.length) return openXeriffeCategories(state, menuCache, "xeriffe.category.empty");
+  const options = products.map((product, index) => ({
+    id: `xeriffe.product:${encodeURIComponent(product.productId)}`,
+    order: index + 1,
+    title: product.name,
+    description: `${formatMoney(product.price)} | Cod. ${product.productId}`,
+    fallbackText: product.name
+  }));
+  options.push({ id: "xeriffe.catalog.categories", order: options.length + 1, title: "Voltar ao cardapio", description: "Escolher outra categoria", fallbackText: "Voltar ao cardapio" });
+  return responseWithReplies(
+    "xeriffe.category",
+    {
+      ...state,
+      activeMenu: "xeriffe_catalog_products",
+      xeriffeCommand: { ...normalizeXeriffeCommand(state), selectedCategory: resolvedCategory, selectedProductId: null, selectedAddonIds: [] }
+    },
+    [menuReply("xeriffe_catalog_products", resolvedCategory, "Escolha um produto:", options, "VER PRODUTOS")],
+    [{ type: "mesa_category_selected", category: resolvedCategory }]
+  );
+}
+
+function openXeriffeProductCard(state, menuCache, productId, selectedAddonIds = [], source = "xeriffe.product") {
+  const product = findMenuProduct(menuCache, productId);
+  if (!product) return openXeriffeCategories(state, menuCache, "xeriffe.product.missing");
+  const availableAddons = availableProductAddons(product);
+  const selected = selectedAddonIds.filter((id) => availableAddons.some((addon) => addon.id === id));
+  const selectedAddons = selected.map((id) => availableAddons.find((addon) => addon.id === id));
+  const total = Number(product.price || 0) + selectedAddons.reduce((sum, addon) => sum + Number(addon.price || 0), 0);
+  const code = buildCommandCode(product.productId, selected);
+  const addonLines = availableAddons.length
+    ? availableAddons.map((addon) => `${selected.includes(addon.id) ? "[x]" : "[ ]"} ${addon.name} | cod. ${addon.id} | ${formatMoney(addon.price)}`).join("\n")
+    : "Sem adicionais disponiveis.";
+  const selectedLines = selectedAddons.length
+    ? `\nSelecionados:\n${selectedAddons.map((addon) => `- ${addon.name} (${addon.id})`).join("\n")}`
+    : "";
+  const buttons = [
+    { id: "xeriffe.product.add", title: "Adicionar comanda" },
+    ...(availableAddons.length ? [{ id: "xeriffe.product.addons", title: "Ver adicionais" }] : []),
+    { id: "xeriffe.catalog.back", title: "Voltar cardapio" }
+  ];
+  const body = [
+    product.name,
+    `Codigo do produto: ${product.productId}`,
+    product.description || "",
+    `Valor base: ${formatMoney(product.price)}`,
+    "",
+    "Adicionais:",
+    addonLines,
+    selectedLines,
+    "",
+    `Codigo da comanda: ${code}`,
+    `Total deste item: ${formatMoney(total)}`
+  ].filter((line) => line !== "").join("\n");
+  return responseWithReplies(
+    source,
+    {
+      ...state,
+      activeMenu: "xeriffe_product_card",
+      xeriffeCommand: { ...normalizeXeriffeCommand(state), selectedCategory: product.category, selectedProductId: product.productId, selectedAddonIds: selected }
+    },
+    [{ type: "product_card", text: body, imageUrl: safeImageUrl(product.imageUrl), buttons }],
+    [{ type: "mesa_product_card", productId: product.productId, commandCode: code }]
+  );
+}
+
+function openXeriffeAddons(state, menuCache) {
+  const command = normalizeXeriffeCommand(state);
+  const product = findMenuProduct(menuCache, command.selectedProductId);
+  if (!product) return openXeriffeCategories(state, menuCache, "xeriffe.addons.product_missing");
+  const selected = new Set(command.selectedAddonIds);
+  const options = availableProductAddons(product).slice(0, 8).map((addon, index) => ({
+    id: `xeriffe.addon:${encodeURIComponent(addon.id)}`,
+    order: index + 1,
+    title: `${selected.has(addon.id) ? "Remover" : "Adicionar"} ${addon.name}`,
+    description: `Cod. ${addon.id} | ${formatMoney(addon.price)}`,
+    fallbackText: addon.name
+  }));
+  options.push({ id: "xeriffe.addons.done", order: options.length + 1, title: "Concluir adicionais", description: "Voltar ao produto", fallbackText: "Concluir adicionais" });
+  return responseWithReplies(
+    "xeriffe.product.addons",
+    { ...state, activeMenu: "xeriffe_product_addons" },
+    [menuReply("xeriffe_product_addons", "Adicionais", "Toque para adicionar ou remover. Cada adicional entra no codigo da comanda.", options, "ESCOLHER ADICIONAL")],
+    [{ type: "mesa_addons_opened", productId: product.productId }]
+  );
+}
+
+function addSelectedProductToCommand(state, menuCache) {
+  const command = normalizeXeriffeCommand(state);
+  const product = findMenuProduct(menuCache, command.selectedProductId);
+  if (!product) return openXeriffeCategories(state, menuCache, "xeriffe.command.product_missing");
+  const addons = command.selectedAddonIds.map((id) => availableProductAddons(product).find((addon) => addon.id === id)).filter(Boolean);
+  const total = Number(product.price || 0) + addons.reduce((sum, addon) => sum + Number(addon.price || 0), 0);
+  const item = {
+    productId: product.productId,
+    name: product.name,
+    quantity: 1,
+    unitPrice: Number(product.price || 0),
+    addons: addons.map((addon) => ({ id: addon.id, name: addon.name, price: Number(addon.price || 0) })),
+    commandCode: buildCommandCode(product.productId, addons.map((addon) => addon.id)),
+    total
+  };
+  const nextState = {
+    ...state,
+    activeMenu: "xeriffe_command_summary",
+    xeriffeCommand: { ...command, items: [...command.items, item], selectedProductId: null, selectedAddonIds: [] }
+  };
+  return renderXeriffeCommandSummary(nextState, "xeriffe.product.added");
+}
+
+function renderXeriffeCommandSummary(state, source) {
+  const command = normalizeXeriffeCommand(state);
+  const total = command.items.reduce((sum, item) => sum + Number(item.total || 0), 0);
+  const lines = command.items.map((item, index) => `${index + 1}. ${item.name}\nCod. ${item.commandCode}\n${formatMoney(item.total)}`);
+  const options = [
+    { id: "xeriffe.command.continue", order: 1, title: "Voltar ao cardapio", description: "Adicionar outro produto", fallbackText: "Voltar ao cardapio" },
+    { id: "xeriffe.command.summary", order: 2, title: "Revisar comanda", description: `${command.items.length} item(ns) | ${formatMoney(total)}`, fallbackText: "Revisar comanda" },
+    { id: "xeriffe.command.clear", order: 3, title: "Limpar comanda", description: "Remover todos os itens", fallbackText: "Limpar comanda" }
+  ];
+  return responseWithReplies(
+    source,
+    { ...state, activeMenu: "xeriffe_command_summary", serviceState: "AUTOMATICO", xeriffeCommand: command },
+    [menuReply("xeriffe_command_summary", "Comanda Xeriffe", `${lines.join("\n\n")}\n\nValor total: ${formatMoney(total)}\n\nA comanda ainda nao foi enviada ao Mesa.`, options, "OPCOES DA COMANDA")],
+    [{ type: "xeriffe_command_updated", items: command.items.length, total }]
+  );
+}
+
+function menuReply(id, title, body, options, buttonText) {
+  return { type: "menu", text: `${title}\n${body}`, menu: { id, title, body, buttonText, options } };
+}
+
+function isXeriffeCatalogMenu(menuId = "") {
+  return ["xeriffe_catalog_categories", "xeriffe_catalog_products", "xeriffe_product_card", "xeriffe_product_addons", "xeriffe_command_summary"].includes(menuId);
+}
+
+function availableMenuItems(menuCache = {}) {
+  return (Array.isArray(menuCache.items) ? menuCache.items : []).filter((item) => item?.productId && item.available !== false && item.availability?.available !== false);
+}
+
+function findMenuProduct(menuCache, productId) {
+  return availableMenuItems(menuCache).find((item) => normalizeText(item.productId) === normalizeText(productId)) || null;
+}
+
+function availableProductAddons(product = {}) {
+  return (Array.isArray(product.addons) ? product.addons : []).filter((addon) => addon?.id && addon.available !== false && addon.availability?.available !== false);
+}
+
+function emptyXeriffeCommand() {
+  return { items: [], selectedCategory: null, selectedProductId: null, selectedAddonIds: [] };
+}
+
+function normalizeXeriffeCommand(state = {}) {
+  const value = state.xeriffeCommand && typeof state.xeriffeCommand === "object" ? state.xeriffeCommand : {};
+  return {
+    items: Array.isArray(value.items) ? value.items : [],
+    selectedCategory: value.selectedCategory || null,
+    selectedProductId: value.selectedProductId || null,
+    selectedAddonIds: Array.isArray(value.selectedAddonIds) ? value.selectedAddonIds : []
+  };
+}
+
+function buildCommandCode(productId, addonIds = []) {
+  return [productId, ...addonIds].filter(Boolean).join("-");
+}
+
+function formatMoney(value) {
+  return `R$ ${Number(value || 0).toFixed(2).replace(".", ",")}`;
+}
+
+function safeImageUrl(value = "") {
+  const url = String(value || "").trim();
+  return /^https:\/\//i.test(url) ? url : "";
+}
+
+function decodeMenuId(value = "") {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return "";
+  }
 }
 
 function openMenu(state, contract, menuId, source, stack = state.menuStack || []) {

@@ -120,6 +120,31 @@ async function sendMetaPayload(fetchImpl, endpoint, accessToken, body, { timeout
 }
 
 function buildMetaMessagePayload({ to, message = {} } = {}) {
+  if (message.type === "product_card" && Array.isArray(message.buttons) && message.buttons.length > 0) {
+    const imageUrl = /^https:\/\//i.test(String(message.imageUrl || "").trim()) ? String(message.imageUrl).trim() : "";
+    return {
+      type: "interactive_product_card",
+      interactive: true,
+      fallbackText: String(message.text || ""),
+      body: {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to,
+        type: "interactive",
+        interactive: {
+          type: "button",
+          ...(imageUrl ? { header: { type: "image", image: { link: imageUrl } } } : {}),
+          body: { text: trimMetaText(message.text || "Produto") },
+          action: {
+            buttons: message.buttons.slice(0, 3).map((button) => ({
+              type: "reply",
+              reply: { id: String(button.id).slice(0, 256), title: trimMetaButtonTitle(button.title) }
+            }))
+          }
+        }
+      }
+    };
+  }
   if (message.type === "url_button" && message.url) {
     const fallbackText = `${message.text || ""}\n${message.buttonText || "ABRIR"}: ${message.url}`.trim();
     return {
