@@ -201,6 +201,24 @@ test("Motor 1 preserva Portal Insano e conduz Xeriffe ao Mesa sem pedido no What
   assert.equal((await engine.conversationRepository.get(from)).mesaOrderId, "mesa-order-motor-1");
 });
 
+test("Motor 1 permite reiniciar o Portal com oi enquanto aguarda o Mesa", async () => {
+  const engine = createLabEngine({ observeOnly: true });
+  const from = "5551000000291";
+  await engine.processor.handleIncoming({ messageId: "wamid-motor-reset-portal", from, text: "quero pedir" });
+  await engine.processor.handleIncoming({ messageId: "wamid-motor-reset-xeriffe", from, text: "portal.xeriffe" });
+  await engine.processor.handleIncoming({ messageId: "wamid-motor-reset-cardapio", from, text: "xeriffe.menu" });
+
+  const restarted = await engine.processor.handleIncoming({
+    messageId: "wamid-motor-reset-oi",
+    from,
+    text: "oi"
+  });
+  assert.equal(restarted.source, "waitingMesaResetToPortal");
+  assert.equal(restarted.replies[0].type, "menu");
+  assert.equal(restarted.replies[0].menu.id, "portal_main_menu");
+  assert.equal(restarted.state.serviceState, "AUTOMATICO");
+});
+
 test("Motor 1 exige correlacao do Mesa, e Atendimento Humano permanece homologado", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000202";
