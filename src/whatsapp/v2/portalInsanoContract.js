@@ -27,9 +27,19 @@ export const portalInsanoContract = {
       options: [
         option("PORTAL_INSANO_FOODTRUCK", 1, "Insano Food Truck", { type: "open_menu", target: "foodtruck_main_menu", areaId: "insano_food_truck" }),
         option("portal.xeriffe", 2, "Xeriffe Obirici", { type: "open_menu", target: "xeriffe_main_menu", areaId: "xeriffe_obirici" }),
-        option("portal.granja", 3, "Granja Aguas da Lagoa", { type: "open_menu", target: "granja_main_menu", areaId: "granja_aguas_da_lagoa" }),
-        option("portal.tecnologia", 4, "Desenvolvimento de Tecnologias", { type: "open_menu", target: "technology_main_menu", areaId: "desenvolvimento_tecnologias" }),
-        option("portal.humano", 5, "Atendimento Humano", { type: "open_menu", target: "human_contact_menu", areaId: "atendimento_humano" })
+        option("portal.more", 3, "Mais opcoes", { type: "open_menu", target: "portal_more_menu", areaId: null })
+      ]
+    },
+    portal_more_menu: {
+      id: "portal_more_menu",
+      title: "Mais opcoes",
+      body: "Escolha uma area para continuar:",
+      strictInteractiveIds: true,
+      options: [
+        option("portal.granja", 1, "Granja Aguas da Lagoa", { type: "open_menu", target: "granja_main_menu", areaId: "granja_aguas_da_lagoa" }),
+        option("portal.tecnologia", 2, "Desenvolvimento de Tecnologias", { type: "open_menu", target: "technology_main_menu", areaId: "desenvolvimento_tecnologias" }),
+        option("portal.humano", 3, "Atendimento Humano", { type: "open_menu", target: "human_contact_menu", areaId: "atendimento_humano" }),
+        option("portal.more.back", 4, "Voltar ao Portal Insano", { type: "open_menu", target: "portal_main_menu", areaId: null })
       ]
     },
     foodtruck_main_menu: {

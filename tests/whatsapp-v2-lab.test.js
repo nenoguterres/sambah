@@ -107,9 +107,7 @@ test("Portal Insano menu principal roteia cada botao sem chamar IA", async () =>
   const cases = [
     ["PORTAL_INSANO_FOODTRUCK", "foodtruck_main_menu", "insano_food_truck"],
     ["portal.xeriffe", "xeriffe_main_menu", "xeriffe_obirici"],
-    ["portal.granja", "granja_main_menu", "granja_aguas_da_lagoa"],
-    ["portal.tecnologia", "technology_main_menu", "desenvolvimento_tecnologias"],
-    ["portal.humano", "human_contact_menu", "atendimento_humano"]
+    ["portal.more", "portal_more_menu", null]
   ];
 
   for (const [index, [text, menu, area]] of cases.entries()) {
@@ -125,6 +123,7 @@ test("Portal Insano menu principal roteia cada botao sem chamar IA", async () =>
   const humanEngine = createLabEngine({ observeOnly: true });
   const humanFrom = "5551000000198";
   await humanEngine.processor.handleIncoming({ messageId: "wamid-human-welcome", from: humanFrom, text: "oi" });
+  await humanEngine.processor.handleIncoming({ messageId: "wamid-human-more", from: humanFrom, text: "portal.more" });
   await humanEngine.processor.handleIncoming({ messageId: "wamid-human-menu", from: humanFrom, text: "portal.humano" });
   const chef = await humanEngine.processor.handleIncoming({ messageId: "wamid-human-chef", from: humanFrom, text: "human.chef_neno" });
   assert.equal(chef.state.serviceState, "HUMANO");
@@ -155,9 +154,7 @@ test("Motor 1 abre o cardapio publico do Xeriffe sem criar pedido no WhatsApp", 
   assert.deepEqual(portal.replies[0].menu.options.map((item) => item.title), [
     "Insano Food Truck",
     "Xeriffe Obirici",
-    "Granja Aguas da Lagoa",
-    "Desenvolvimento de Tecnologias",
-    "Atendimento Humano"
+    "Mais opcoes"
   ]);
 
   const xeriffe = await engine.processor.handleIncoming({ messageId: "wamid-motor-1-xeriffe", from, text: "portal.xeriffe" });
@@ -421,15 +418,16 @@ test("Portal Insano Food Truck limpa estado legado antes de roteamento", async (
 test("Portal Insano preserva area nos menus Foodtruck, Xeriffe, Granja e Tecnologia", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const flows = [
-    ["PORTAL_INSANO_FOODTRUCK", "INSANO_EVENTO", "foodtruck_main_menu", "insano_food_truck"],
-    ["portal.xeriffe", "xeriffe.menu", "xeriffe_main_menu", "xeriffe_obirici"],
-    ["portal.granja", "1", "granja_main_menu", "granja_aguas_da_lagoa"],
-    ["portal.tecnologia", "11", "technology_main_menu", "desenvolvimento_tecnologias"]
+    [null, "PORTAL_INSANO_FOODTRUCK", "INSANO_EVENTO", "foodtruck_main_menu", "insano_food_truck"],
+    [null, "portal.xeriffe", "xeriffe.menu", "xeriffe_main_menu", "xeriffe_obirici"],
+    ["portal.more", "portal.granja", "1", "granja_main_menu", "granja_aguas_da_lagoa"],
+    ["portal.more", "portal.tecnologia", "11", "technology_main_menu", "desenvolvimento_tecnologias"]
   ];
 
-  for (const [index, [areaOption, secondOption, expectedMenu, expectedArea]] of flows.entries()) {
+  for (const [index, [moreOption, areaOption, secondOption, expectedMenu, expectedArea]] of flows.entries()) {
     const from = `55510000002${index}`;
     await engine.processor.handleIncoming({ messageId: `wamid-area-${areaOption}-welcome`, from, text: "oi" });
+    if (moreOption) await engine.processor.handleIncoming({ messageId: `wamid-area-${areaOption}-more`, from, text: moreOption });
     await engine.processor.handleIncoming({ messageId: `wamid-area-${areaOption}-select`, from, text: areaOption });
     const result = await engine.processor.handleIncoming({ messageId: `wamid-area-${areaOption}-second`, from, text: secondOption });
     assert.equal(result.state.areaId, expectedArea);
