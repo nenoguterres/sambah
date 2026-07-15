@@ -16,6 +16,7 @@ export function createWhatsAppV2State(conversationId, now = new Date().toISOStri
     mesaOrderId: null,
     mesaLinkSentAt: null,
     mesaOrderReceivedAt: null,
+    xeriffeCommand: { items: [], selectedCategory: null, selectedProductId: null, selectedAddonIds: [] },
     awaitingInput: false,
     history: [],
     audit: [],

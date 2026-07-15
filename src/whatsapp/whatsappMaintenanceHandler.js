@@ -4,7 +4,7 @@ import { createWhatsAppV2OperationalEngine } from "./v2/whatsappV2LabEngine.js";
 import { FileWhatsAppV2ConversationRepository } from "./v2/inMemoryRepositories.js";
 import { join } from "node:path";
 
-export async function whatsappMaintenanceHandler(payload = {}, { conversationService, messageService, auditService, whatsappProvider = null, runtimeConfig = getRuntimeConfig() } = {}) {
+export async function whatsappMaintenanceHandler(payload = {}, { conversationService, messageService, auditService, menuService = null, whatsappProvider = null, runtimeConfig = getRuntimeConfig() } = {}) {
   const incoming = parseWhatsAppIncoming(payload);
   const conversationResult = await conversationService.recordNeutralIncoming(incoming);
   const messageResult = await safeHandleIncomingHistory(messageService, payload, incoming);
@@ -71,6 +71,7 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
       sambahConversationId: conversationResult.conversa.id
     }, runtimeConfig, {
       conversationRepository: v2Repository,
+      menuService,
       reserved: reservation.reserved
     });
     if (processed.state?.mode === "human" || processed.state?.serviceState === "HUMANO") {
@@ -278,14 +279,14 @@ function buildV2OutboundCommand({ incoming = {}, reply = {}, correlationId = "" 
     recipient,
     text: renderV2ReplyAsText(reply),
     message: normalizeV2ProviderMessage(reply),
-    interactive: reply.type === "menu" || reply.type === "url_button" ? reply : null,
+    interactive: ["menu", "url_button", "product_card"].includes(reply.type) ? reply : null,
     correlationId,
     phoneNumberId: String(incoming.phoneNumberIdReceived || "").trim()
   };
 }
 
 function normalizeV2ProviderMessage(reply = {}) {
-  if (reply.type === "menu" || reply.type === "url_button") return reply;
+  if (["menu", "url_button", "product_card"].includes(reply.type)) return reply;
   return { type: "text", text: renderV2ReplyAsText(reply) };
 }
 
@@ -308,9 +309,10 @@ async function reserveIncomingMessage(repository, incoming = {}) {
   return { reserved, duplicate: !reserved };
 }
 
-async function processWhatsAppV2(incoming = {}, runtimeConfig = getRuntimeConfig(), { conversationRepository = createWhatsAppV2Repository(runtimeConfig), reserved = false } = {}) {
+async function processWhatsAppV2(incoming = {}, runtimeConfig = getRuntimeConfig(), { conversationRepository = createWhatsAppV2Repository(runtimeConfig), menuService = null, reserved = false } = {}) {
   const engine = createWhatsAppV2OperationalEngine({
-    conversationRepository
+    conversationRepository,
+    menuService
   });
   return engine.processor.handleIncoming({
     messageId: incoming.messageId || "",

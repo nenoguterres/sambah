@@ -9,7 +9,7 @@ export function createWhatsAppV2LabEngine(options = {}) {
   const outboxRepository = options.outboxRepository || new InMemoryWhatsAppV2OutboxRepository({ operationLog });
   const sender = options.sender;
   if (!sender) throw new Error("WHATSAPP_V2_LAB_SENDER_REQUIRED");
-  const processor = new WhatsAppV2LabProcessor({ conversationRepository, outboxRepository, sender, observeOnly: options.observeOnly === true });
+  const processor = new WhatsAppV2LabProcessor({ conversationRepository, outboxRepository, sender, menuService: options.menuService, observeOnly: options.observeOnly === true });
   return { processor, conversationRepository, outboxRepository, sender, operationLog };
 }
 
@@ -20,16 +20,18 @@ export function createWhatsAppV2OperationalEngine(options = {}) {
     conversationRepository,
     outboxRepository: null,
     sender: null,
+    menuService: options.menuService,
     externalDelivery: true
   });
   return { processor, conversationRepository, operationLog };
 }
 
 export class WhatsAppV2LabProcessor {
-  constructor({ conversationRepository, outboxRepository, sender, observeOnly = false, externalDelivery = false }) {
+  constructor({ conversationRepository, outboxRepository, sender, menuService = null, observeOnly = false, externalDelivery = false }) {
     this.conversationRepository = conversationRepository;
     this.outboxRepository = outboxRepository;
     this.sender = sender;
+    this.menuService = menuService;
     this.observeOnly = observeOnly;
     this.externalDelivery = externalDelivery;
   }
@@ -43,6 +45,7 @@ export class WhatsAppV2LabProcessor {
     try {
       const currentState = await this.conversationRepository.get(message.conversationId);
       const nextHistory = [...(currentState.history || []), { messageId: message.messageId, text: message.text, at: message.receivedAt }];
+      const menuCache = await this.menuService?.getMenuCache?.() || await this.menuService?.cacheSnapshot?.() || { items: [], categories: [] };
       const routed = routePortalInsanoMessage({
         state: {
           ...currentState,
@@ -50,7 +53,8 @@ export class WhatsAppV2LabProcessor {
           sambahConversationId: message.sambahConversationId || currentState.sambahConversationId || null,
           history: nextHistory
         },
-        message
+        message,
+        menuCache
       });
       const result = assertWhatsAppV2ResponseContract(routed);
       const nextState = {

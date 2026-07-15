@@ -1698,6 +1698,7 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
               conversationService: whatsappConversationService,
               messageService: whatsappMessageService,
               auditService,
+              menuService,
               whatsappProvider: appWhatsappProvider,
               runtimeConfig: appRuntimeConfig || getRuntimeConfig()
             }));
@@ -1727,6 +1728,7 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
         conversationService: whatsappConversationService,
         messageService: whatsappMessageService,
         auditService,
+        menuService,
         whatsappProvider: appWhatsappProvider,
         runtimeConfig: appRuntimeConfig || getRuntimeConfig()
       });

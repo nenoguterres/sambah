@@ -1113,7 +1113,7 @@ test("POST /webhook/whatsapp processa mensagens e statuses sem transformar statu
   }
 });
 
-test("Motor 1 smoke HTTP: Meta conduz ao Mesa, bloqueia pedido WhatsApp e aceita retorno correlacionado", async () => {
+test("Motor 1 smoke HTTP: Meta monta comanda guiada sem abrir Portal ou enviar ao Mesa", async () => {
   const previousV2 = process.env.WHATSAPP_V2_ENABLED;
   const previousSend = process.env.WHATSAPP_SEND_ENABLED;
   const previousAi = process.env.WHATSAPP_AI_ENABLED;
@@ -1140,42 +1140,41 @@ test("Motor 1 smoke HTTP: Meta conduz ao Mesa, bloqueia pedido WhatsApp e aceita
     const xeriffe = await sendInbound("wamid-motor-http-3", "portal.xeriffe");
     assert.equal(xeriffe.body.outboundCommand.interactive.menu.options[0].id, "xeriffe.menu");
     const cardapio = await sendInbound("wamid-motor-http-4", "xeriffe.menu");
-    const cardapioUrl = new URL(cardapio.body.outboundCommand.interactive.url);
-    assert.equal(cardapioUrl.pathname, "/");
-    assert.equal(cardapioUrl.searchParams.get("origin"), "WHATSAPP_SAMBAH");
-    assert.equal(cardapioUrl.searchParams.get("unit"), "XERIFFE_OBIRICI");
+    assert.equal(cardapio.body.outboundCommand.interactive.type, "menu");
+    assert.equal(cardapio.body.outboundCommand.interactive.menu.id, "xeriffe_catalog_categories");
+    assert.equal(cardapio.body.outboundCommand.interactive.url, undefined);
+    assert.deepEqual(cardapio.body.outboundCommand.interactive.menu.options.map((item) => item.title), ["Lanches", "Fritas"]);
 
     const storedWaiting = JSON.parse(await readFile(v2StateFile, "utf8"));
     const waitingState = storedWaiting.states[from];
-    assert.equal(waitingState.serviceState, "AGUARDANDO_PEDIDO_MESA");
-    assert.equal(cardapioUrl.searchParams.get("sambahConversationId"), waitingState.sambahConversationId);
+    assert.equal(waitingState.serviceState, "AUTOMATICO");
+    assert.equal(waitingState.activeMenu, "xeriffe_catalog_categories");
 
-    const blocked = await sendInbound("wamid-motor-http-5", "quero pizza, bebida e complemento");
-    assert.equal(blocked.body.automaticReplyCreated, false);
-    assert.equal(blocked.body.reason, "no_reply_created");
+    const products = await sendInbound("wamid-motor-http-5", "xeriffe.category:Lanches");
+    assert.equal(products.body.outboundCommand.interactive.menu.id, "xeriffe_catalog_products");
+    assert.equal(products.body.outboundCommand.interactive.menu.options[0].id, "xeriffe.product:kachurrasco");
+
+    const product = await sendInbound("wamid-motor-http-6", "xeriffe.product:kachurrasco");
+    assert.equal(product.body.outboundCommand.interactive.type, "product_card");
+    assert.equal(product.body.outboundCommand.interactive.imageUrl, "https://example.com/kachurrasco.jpg");
+    assert.match(product.body.outboundCommand.text, /Codigo do produto: kachurrasco/);
+
+    await sendInbound("wamid-motor-http-7", "xeriffe.product.addons");
+    const withAddon = await sendInbound("wamid-motor-http-8", "xeriffe.addon:barbecue");
+    assert.match(withAddon.body.outboundCommand.text, /Codigo da comanda: kachurrasco-barbecue/);
+    assert.match(withAddon.body.outboundCommand.text, /Total deste item: R\$ 26,00/);
+
+    const added = await sendInbound("wamid-motor-http-9", "xeriffe.product.add");
+    assert.equal(added.body.outboundCommand.interactive.menu.id, "xeriffe_command_summary");
+    assert.match(added.body.outboundCommand.text, /Valor total: R\$ 26,00/);
+
+    const storedCommand = JSON.parse(await readFile(v2StateFile, "utf8"));
+    assert.equal(storedCommand.states[from].xeriffeCommand.items.length, 1);
+    assert.equal(storedCommand.states[from].xeriffeCommand.items[0].commandCode, "kachurrasco-barbecue");
+    assert.equal(storedCommand.states[from].serviceState, "AUTOMATICO");
     assert.deepEqual(await readJsonArrayOrEmpty(draftsFile), []);
     assert.deepEqual(await readJsonArrayOrEmpty(precomandasFile), []);
     assert.deepEqual(await readJsonArrayOrEmpty(mesaQueueFile), []);
-
-    const mesaReturn = await fetch(`${base}/api/mesa/whatsapp/order-completed`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        conversationId: cardapioUrl.searchParams.get("conversationId"),
-        sambahConversationId: cardapioUrl.searchParams.get("sambahConversationId"),
-        phone: cardapioUrl.searchParams.get("phone"),
-        mesaOrderId: "mesa-order-http-motor-1",
-        status: "finalizado"
-      })
-    });
-    const mesaReturnBody = await mesaReturn.json();
-    assert.equal(mesaReturn.status, 200);
-    assert.equal(mesaReturnBody.serviceState, "PEDIDO_MESA_RECEBIDO");
-    assert.equal(mesaReturnBody.mesaOrderId, "mesa-order-http-motor-1");
-    assert.equal(Object.hasOwn(mesaReturnBody, "state"), false);
-    const storedReceived = JSON.parse(await readFile(v2StateFile, "utf8"));
-    assert.equal(storedReceived.states[from].serviceState, "PEDIDO_MESA_RECEBIDO");
-    assert.equal(storedReceived.states[from].mesaOrderId, "mesa-order-http-motor-1");
   } finally {
     await close(server);
     await cleanup();
@@ -1396,7 +1395,28 @@ function signMetaBody(raw, secret) {
 }
 
 function menuItems() {
-  return [{ productId: "kachurrasco", name: "Kachurrasco", price: 24, available: true, addons: [] }];
+  return [
+    {
+      productId: "kachurrasco",
+      name: "Kachurrasco",
+      category: "Lanches",
+      price: 24,
+      description: "Baguete com espetinho",
+      imageUrl: "https://example.com/kachurrasco.jpg",
+      available: true,
+      addons: [{ id: "barbecue", name: "Barbecue extra", price: 2, available: true }]
+    },
+    {
+      productId: "fritas-porcao-pequena",
+      name: "Fritas porcao pequena",
+      category: "Fritas",
+      price: 15,
+      description: "Batata frita crocante",
+      imageUrl: "https://example.com/fritas.jpg",
+      available: true,
+      addons: []
+    }
+  ];
 }
 
 function menuRules() {

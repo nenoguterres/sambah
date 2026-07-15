@@ -53,7 +53,7 @@ export const portalInsanoContract = {
       strictInteractiveIds: true,
       fallbackText: "1. Ver Cardapio\n2. Atendimento Humano\n3. Voltar ao Portal Insano",
       options: [
-        option("xeriffe.menu", 1, "Ver Cardapio", { type: "open_authorized_link", target: "integration.mesa_do_xeriffe.customer_url" }),
+        option("xeriffe.menu", 1, "Ver Cardapio", { type: "open_mesa_menu" }),
         option("xeriffe.human", 2, "Atendimento Humano", { type: "start_flow", target: "human_handoff" }),
         option("xeriffe.back", 3, "Voltar ao Portal Insano", { type: "open_menu", target: "portal_main_menu", areaId: null })
       ]

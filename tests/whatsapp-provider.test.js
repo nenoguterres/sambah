@@ -235,6 +235,41 @@ test("provider meta envia menu com mais de tres opcoes como lista", async () => 
   assert.equal(request.body.interactive.action.sections[0].rows[0].id, "portal.foodtruck");
 });
 
+test("provider meta envia produto com imagem e botoes da comanda dentro do WhatsApp", async () => {
+  let request = null;
+  const provider = createWhatsAppProvider({
+    config: { provider: "meta", phoneNumberId: "12345", accessToken: "token-secreto" },
+    fetchImpl: async (url, options) => {
+      request = { url, body: JSON.parse(options.body) };
+      return new Response(JSON.stringify({ messages: [{ id: "wamid-product-card" }] }), { status: 200 });
+    }
+  });
+  const result = await provider.sendMessage({
+    to: "5551999999999",
+    message: {
+      type: "product_card",
+      text: "Burguer costela\nCodigo: burguer-costela\nTotal: R$ 30,00",
+      imageUrl: "https://example.com/burguer-costela.jpg",
+      buttons: [
+        { id: "xeriffe.product.add", title: "Adicionar comanda" },
+        { id: "xeriffe.product.addons", title: "Ver adicionais" },
+        { id: "xeriffe.catalog.back", title: "Voltar cardapio" }
+      ]
+    }
+  });
+  assert.equal(result.sent, true);
+  assert.equal(result.metaMessageType, "interactive_product_card");
+  assert.equal(request.body.type, "interactive");
+  assert.equal(request.body.interactive.type, "button");
+  assert.equal(request.body.interactive.header.type, "image");
+  assert.equal(request.body.interactive.header.image.link, "https://example.com/burguer-costela.jpg");
+  assert.deepEqual(request.body.interactive.action.buttons.map((button) => button.reply.id), [
+    "xeriffe.product.add",
+    "xeriffe.product.addons",
+    "xeriffe.catalog.back"
+  ]);
+});
+
 test("provider meta usa texto numerado quando lista interativa falha", async () => {
   const requests = [];
   const provider = createWhatsAppProvider({
