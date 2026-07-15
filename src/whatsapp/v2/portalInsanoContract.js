@@ -1,6 +1,6 @@
 export const portalInsanoContract = {
   schema: "sambah.whatsapp.portal-insano",
-  version: "3.1.0",
+  version: "3.2.0",
   assistant: {
     name: "SamBah",
     role: "Assistente oficial de atendimento do Portal Insano"
@@ -29,7 +29,7 @@ export const portalInsanoContract = {
         option("portal.xeriffe", 2, "Xeriffe Obirici", { type: "open_menu", target: "xeriffe_main_menu", areaId: "xeriffe_obirici" }),
         option("portal.granja", 3, "Granja Aguas da Lagoa", { type: "open_menu", target: "granja_main_menu", areaId: "granja_aguas_da_lagoa" }),
         option("portal.tecnologia", 4, "Desenvolvimento de Tecnologias", { type: "open_menu", target: "technology_main_menu", areaId: "desenvolvimento_tecnologias" }),
-        option("portal.humano", 5, "Atendimento Humano", { type: "start_flow", target: "human_handoff" })
+        option("portal.humano", 5, "Atendimento Humano", { type: "open_menu", target: "human_contact_menu", areaId: "atendimento_humano" })
       ]
     },
     foodtruck_main_menu: {
@@ -49,13 +49,37 @@ export const portalInsanoContract = {
     xeriffe_main_menu: {
       id: "xeriffe_main_menu",
       title: "Xeriffe Obirici",
-      body: "Escolha uma opcao:",
+      body: "Cardapio direto ou atendimento no local:",
       strictInteractiveIds: true,
-      fallbackText: "1. Ver Cardapio\n2. Atendimento Humano\n3. Voltar ao Portal Insano",
+      fallbackText: "1. Abrir Cardapio\n2. Reserva - Mesa - Evento\n3. Voltar ao Portal Insano",
       options: [
-        option("xeriffe.menu", 1, "Ver Cardapio", { type: "open_url_button", target: "integration.mesa_do_xeriffe.customer_url" }),
-        option("xeriffe.human", 2, "Atendimento Humano", { type: "start_flow", target: "human_handoff" }),
+        option("xeriffe.menu", 1, "Abrir Cardapio", { type: "open_url_button", target: "integration.mesa_do_xeriffe.customer_url" }),
+        option("xeriffe.services", 2, "Reserva - Mesa - Evento", { type: "open_menu", target: "xeriffe_services_menu", areaId: "xeriffe_obirici" }),
         option("xeriffe.back", 3, "Voltar ao Portal Insano", { type: "open_menu", target: "portal_main_menu", areaId: null })
+      ]
+    },
+    xeriffe_services_menu: {
+      id: "xeriffe_services_menu",
+      title: "Xeriffe Obirici",
+      body: "Escolha o atendimento que precisa:",
+      strictInteractiveIds: true,
+      options: [
+        option("xeriffe.reserve", 1, "Reservar mesa", { type: "start_flow", target: "xeriffe_reservation_request" }),
+        option("xeriffe.table", 2, "Atendimento na mesa", { type: "start_flow", target: "xeriffe_table_service" }),
+        option("xeriffe.event", 3, "Espaco para evento", { type: "start_flow", target: "xeriffe_event_information" }),
+        option("xeriffe.human", 4, "Atendimento Humano", { type: "open_menu", target: "human_contact_menu", areaId: "atendimento_humano" }),
+        option("xeriffe.services.back", 5, "Voltar ao Xeriffe", { type: "open_menu", target: "xeriffe_main_menu", areaId: "xeriffe_obirici" })
+      ]
+    },
+    human_contact_menu: {
+      id: "human_contact_menu",
+      title: "Atendimento Humano",
+      body: "Com quem deseja falar?",
+      strictInteractiveIds: true,
+      options: [
+        option("human.chef_neno", 1, "Chef Neno Gutterres", { type: "start_flow", target: "human_handoff", assignee: "Chef Neno Gutterres" }),
+        option("human.kazuko", 2, "Kazuko Doi", { type: "start_flow", target: "human_handoff", assignee: "Kazuko Doi" }),
+        option("human.back", 3, "Voltar ao Portal Insano", { type: "open_menu", target: "portal_main_menu", areaId: null })
       ]
     },
     granja_main_menu: {
@@ -113,6 +137,8 @@ export const portalInsanoContract = {
   flows: {
     xeriffe_command_access: flow("xeriffe_command_access", "Informe o numero da comanda ou telefone.", "command.reference"),
     xeriffe_order_tracking: flow("xeriffe_order_tracking", "Informe o numero do pedido ou telefone.", "order.reference"),
+    xeriffe_reservation_request: flow("xeriffe_reservation_request", "Informe data, horario e quantidade de pessoas para a reserva.", "reservation.details"),
+    xeriffe_table_service: flow("xeriffe_table_service", "Informe o numero da mesa e o que precisa.", "table.request"),
     xeriffe_event_information: flow("xeriffe_event_information", "Qual data ou tipo de evento tu quer consultar?", "event.interest"),
     granja_purchase_request: flow("granja_purchase_request", "Qual produto ou animal tu deseja consultar?", "granja.item"),
     granja_visit_request: flow("granja_visit_request", "Qual dia tu gostaria de visitar?", "visit.date"),

@@ -7,7 +7,8 @@ const flows = {
   "/eventos": renderEvents,
   "/empresas": renderCompanies,
   "/xeriffe": renderXeriffe,
-  "/whatsapp": renderWhatsApp
+  "/whatsapp": renderWhatsApp,
+  "/atendimento": renderHumanSupport
 };
 
 (flows[route] || renderHome)();
@@ -15,13 +16,46 @@ const flows = {
 function renderHome() {
   app.innerHTML = `
     <section class="portal-home" aria-label="Portal Insano">
-      <img class="insano-logo" src="/assets/brand/insano-logo-home.png" alt="Insano Gastronomia Original">
+      <div class="portal-welcome">
+        <span class="portal-sambah" aria-hidden="true">SamBah!</span>
+        <div><p>Portal Insano</p><h1>Onde você quer ir?</h1><span>Escolha uma área. Sem menus repetidos.</span></div>
+      </div>
       <nav class="home-actions" aria-label="Acessos principais">
-        ${homeAction("/pedir", "QUERO PEDIR", "/assets/brand/actions/02-pedidos-insano-crop.png", "CapBah atendendo pedido Insano")}
-        ${homeAction("/eventos", "PRECISO DE FOOD TRUCK", "/assets/brand/capbah-oficial.png", "CapBah anfitriao Insano")}
-        ${homeAction("/empresas", "EVENTO CORPORATIVO", "/assets/brand/capbah-oficial.png", "CapBah atendimento corporativo")}
-        ${homeAction("/xeriffe", "CONHECER O XERIFFE", "/assets/brand/actions/03-pedidos-buteco-xeriffe-crop.png", "CapBah com estrela Xeriffe Obirici", "portal-action-xeriffe")}
+        ${homeAction("/pedir", "Insano Food Truck", "Pedido, evento e orçamento", "INSANO", "portal-action-insano")}
+        ${homeAction("/xeriffe/cardapio", "Xeriffe Obirici", "Abrir o cardápio agora", "Xeriffe", "portal-action-xeriffe")}
+        ${homeAction(fallbackWhatsappUrl("Olá! Quero atendimento da Granja Águas da Lagoa."), "Granja", "Águas da Lagoa", "Granja", "portal-action-granja", true)}
+        ${homeAction("/sambah", "Tecnologias", "Conhecer o SamBah", "SamBah!", "portal-action-sambah")}
+        ${homeAction("/atendimento", "Atendimento humano", "Chef Neno ou Kazuko Doi", "Humano", "portal-action-human")}
       </nav>
+    </section>
+  `;
+}
+
+function renderHumanSupport() {
+  const contacts = [
+    {
+      name: "Chef Neno Gutterres",
+      visual: '<span class="contact-initials" aria-hidden="true">CN</span>'
+    },
+    {
+      name: "Kazuko Doi",
+      visual: '<span class="contact-initials" aria-hidden="true">KD</span>'
+    }
+  ];
+  app.innerHTML = `
+    <section class="human-support" aria-labelledby="humanTitle">
+      <p class="eyebrow">Atendimento humano</p>
+      <h1 id="humanTitle">Com quem deseja falar?</h1>
+      <p>Escolha uma pessoa e continue no WhatsApp oficial.</p>
+      <div class="human-contacts">
+        ${contacts.map((contact) => `
+          <a href="${fallbackWhatsappUrl(`Olá! Quero falar com ${contact.name}.`)}" data-whatsapp-url>
+            ${contact.visual}
+            <span><strong>${contact.name}</strong><small>Iniciar atendimento</small></span>
+          </a>
+        `).join("")}
+      </div>
+      <a class="back-button" href="/">Voltar ao Portal Insano</a>
     </section>
   `;
 }
@@ -441,8 +475,8 @@ function replaceFormWithResult(formElement, html) {
   }
   formElement.innerHTML = html;
 }
-function homeAction(href, label, image, alt, extraClass = "") {
-  return `<a class="portal-action ${extraClass}" href="${href}"><span>${label}</span><img src="${image}" alt="${alt}" loading="lazy"></a>`;
+function homeAction(href, label, description, wordmark, extraClass = "", isWhatsapp = false) {
+  return `<a class="portal-action ${extraClass}" href="${href}"${isWhatsapp ? " data-whatsapp-url" : ""}><span class="portal-action-copy"><strong>${label}</strong><small>${description}</small></span><span class="brand-word" aria-hidden="true">${wordmark}</span></a>`;
 }
 
 function link(href, label) {

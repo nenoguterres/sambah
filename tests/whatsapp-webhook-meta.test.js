@@ -1113,7 +1113,7 @@ test("POST /webhook/whatsapp processa mensagens e statuses sem transformar statu
   }
 });
 
-test("Motor 1 smoke HTTP: Meta monta comanda guiada sem abrir Portal ou enviar ao Mesa", async () => {
+test("Motor 1 smoke HTTP: Meta abre cardapio publico sem criar pedido ou enviar ao Mesa", async () => {
   const previousV2 = process.env.WHATSAPP_V2_ENABLED;
   const previousSend = process.env.WHATSAPP_SEND_ENABLED;
   const previousAi = process.env.WHATSAPP_AI_ENABLED;
@@ -1139,39 +1139,16 @@ test("Motor 1 smoke HTTP: Meta monta comanda guiada sem abrir Portal ou enviar a
 
     const xeriffe = await sendInbound("wamid-motor-http-3", "portal.xeriffe");
     assert.equal(xeriffe.body.outboundCommand.interactive.menu.options[0].id, "xeriffe.menu");
+    assert.equal(xeriffe.body.outboundCommand.interactive.menu.options[1].id, "xeriffe.services");
     const cardapio = await sendInbound("wamid-motor-http-4", "xeriffe.menu");
-    assert.equal(cardapio.body.outboundCommand.interactive.type, "menu");
-    assert.equal(cardapio.body.outboundCommand.interactive.menu.id, "xeriffe_catalog_categories");
-    assert.equal(cardapio.body.outboundCommand.interactive.url, undefined);
-    assert.deepEqual(cardapio.body.outboundCommand.interactive.menu.options.map((item) => item.title), ["Lanches", "Fritas"]);
+    assert.equal(cardapio.body.outboundCommand.interactive.type, "url_button");
+    assert.equal(cardapio.body.outboundCommand.interactive.buttonText, "ABRIR CARDAPIO");
+    assert.equal(cardapio.body.outboundCommand.interactive.url, "https://sambah.onrender.com/xeriffe/cardapio");
 
-    const storedWaiting = JSON.parse(await readFile(v2StateFile, "utf8"));
-    const waitingState = storedWaiting.states[from];
-    assert.equal(waitingState.serviceState, "AUTOMATICO");
-    assert.equal(waitingState.activeMenu, "xeriffe_catalog_categories");
-
-    const products = await sendInbound("wamid-motor-http-5", "xeriffe.category:Lanches");
-    assert.equal(products.body.outboundCommand.interactive.menu.id, "xeriffe_catalog_products");
-    assert.equal(products.body.outboundCommand.interactive.menu.options[0].id, "xeriffe.product:kachurrasco");
-
-    const product = await sendInbound("wamid-motor-http-6", "xeriffe.product:kachurrasco");
-    assert.equal(product.body.outboundCommand.interactive.type, "product_card");
-    assert.equal(product.body.outboundCommand.interactive.imageUrl, "https://example.com/kachurrasco.jpg");
-    assert.match(product.body.outboundCommand.text, /Codigo do produto: kachurrasco/);
-
-    await sendInbound("wamid-motor-http-7", "xeriffe.product.addons");
-    const withAddon = await sendInbound("wamid-motor-http-8", "xeriffe.addon:barbecue");
-    assert.match(withAddon.body.outboundCommand.text, /Codigo da comanda: kachurrasco-barbecue/);
-    assert.match(withAddon.body.outboundCommand.text, /Total deste item: R\$ 26,00/);
-
-    const added = await sendInbound("wamid-motor-http-9", "xeriffe.product.add");
-    assert.equal(added.body.outboundCommand.interactive.menu.id, "xeriffe_command_summary");
-    assert.match(added.body.outboundCommand.text, /Valor total: R\$ 26,00/);
-
-    const storedCommand = JSON.parse(await readFile(v2StateFile, "utf8"));
-    assert.equal(storedCommand.states[from].xeriffeCommand.items.length, 1);
-    assert.equal(storedCommand.states[from].xeriffeCommand.items[0].commandCode, "kachurrasco-barbecue");
-    assert.equal(storedCommand.states[from].serviceState, "AUTOMATICO");
+    const stored = JSON.parse(await readFile(v2StateFile, "utf8"));
+    assert.equal(stored.states[from].serviceState, "AUTOMATICO");
+    assert.equal(stored.states[from].activeMenu, "xeriffe_main_menu");
+    assert.deepEqual(stored.states[from].xeriffeCommand.items, []);
     assert.deepEqual(await readJsonArrayOrEmpty(draftsFile), []);
     assert.deepEqual(await readJsonArrayOrEmpty(precomandasFile), []);
     assert.deepEqual(await readJsonArrayOrEmpty(mesaQueueFile), []);

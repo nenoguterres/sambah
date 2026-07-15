@@ -88,7 +88,7 @@ function executeAction(state, contract, action, source, menuCache = { items: [],
     const stack = isPortalReturn ? [] : [...(state.menuStack || []), state.activeMenu || contract.welcome.menuId];
     return openMenu({ ...nextState, navigationStack: isPortalReturn ? ["PORTAL_INSANO"] : nextState.navigationStack, menuStack: stack }, contract, action.target, source);
   }
-  if (action.type === "start_flow") return startFlow(state, contract, action.target, source);
+  if (action.type === "start_flow") return startFlow(state, contract, action.target, source, action);
   if (action.type === "open_url_button") return openUrlButton(state, contract, action.target, source);
   if (action.type === "show_catalog") return showCatalog(state, contract, action.target, source);
   if (action.type === "open_mesa_menu") return openXeriffeCategories(state, menuCache, source);
@@ -493,15 +493,19 @@ function openMenu(state, contract, menuId, source, stack = state.menuStack || []
   );
 }
 
-function startFlow(state, contract, flowId, source) {
+function startFlow(state, contract, flowId, source, action = {}) {
   const flow = contract.flows[flowId];
   if (!flow) return integrationDisabled(state, source);
   if (flow.id === "human_handoff") {
+    const assignee = String(action.assignee || "").trim();
+    const flowData = assignee ? setField(state.flowData || {}, "handoff.assignee", assignee) : state.flowData;
     return response(
       source,
-      { ...state, navigationStack: normalizeNavigationStack(state), mode: "human", serviceState: "HUMANO", activeFlow: null, activeStep: null, awaitingInput: false },
-      "Conversa encaminhada para atendimento humano. O historico e o contexto foram preservados.",
-      [{ type: "notify_operator" }]
+      { ...state, navigationStack: normalizeNavigationStack(state), mode: "human", serviceState: "HUMANO", activeFlow: null, activeStep: null, awaitingInput: false, flowData },
+      assignee
+        ? `Conversa encaminhada para ${assignee}. O historico e o contexto foram preservados.`
+        : "Conversa encaminhada para atendimento humano. O historico e o contexto foram preservados.",
+      [{ type: "notify_operator", assignee: assignee || null }]
     );
   }
   const nextState = { ...state, activeFlow: flowId, activeStep: flow.steps[0].id, awaitingInput: true };

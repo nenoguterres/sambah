@@ -109,19 +109,27 @@ test("Portal Insano menu principal roteia cada botao sem chamar IA", async () =>
     ["portal.xeriffe", "xeriffe_main_menu", "xeriffe_obirici"],
     ["portal.granja", "granja_main_menu", "granja_aguas_da_lagoa"],
     ["portal.tecnologia", "technology_main_menu", "desenvolvimento_tecnologias"],
-    ["portal.humano", null, null]
+    ["portal.humano", "human_contact_menu", "atendimento_humano"]
   ];
 
   for (const [index, [text, menu, area]] of cases.entries()) {
     const from = `55510000001${index}`;
     await engine.processor.handleIncoming({ messageId: `wamid-main-${text}-welcome`, from, text: "oi" });
     const result = await engine.processor.handleIncoming({ messageId: `wamid-main-${text}-select`, from, text });
-    assert.equal(result.state.activeMenu, menu || "portal_main_menu");
+    assert.equal(result.state.activeMenu, menu);
     assert.equal(result.state.areaId, area);
     assert.equal(result.state.activeFlow, null);
-    if (text === "portal.humano") assert.equal(result.state.serviceState, "HUMANO");
   }
   assert.equal(engine.operationLog.includes("ai"), false);
+
+  const humanEngine = createLabEngine({ observeOnly: true });
+  const humanFrom = "5551000000198";
+  await humanEngine.processor.handleIncoming({ messageId: "wamid-human-welcome", from: humanFrom, text: "oi" });
+  await humanEngine.processor.handleIncoming({ messageId: "wamid-human-menu", from: humanFrom, text: "portal.humano" });
+  const chef = await humanEngine.processor.handleIncoming({ messageId: "wamid-human-chef", from: humanFrom, text: "human.chef_neno" });
+  assert.equal(chef.state.serviceState, "HUMANO");
+  assert.equal(chef.state.flowData.handoff.assignee, "Chef Neno Gutterres");
+  assert.match(chef.replies[0].text, /Chef Neno Gutterres/);
 
   const numericEngine = createLabEngine({ observeOnly: true });
   const numeric = await numericEngine.processor.handleIncoming({ messageId: "wamid-main-numeric", from: "5551000000199", text: "1" });
@@ -154,7 +162,7 @@ test("Motor 1 abre o cardapio publico do Xeriffe sem criar pedido no WhatsApp", 
 
   const xeriffe = await engine.processor.handleIncoming({ messageId: "wamid-motor-1-xeriffe", from, text: "portal.xeriffe" });
   assert.equal(xeriffe.state.areaId, "xeriffe_obirici");
-  assert.deepEqual(xeriffe.replies[0].menu.options.map((item) => item.id), ["xeriffe.menu", "xeriffe.human", "xeriffe.back"]);
+  assert.deepEqual(xeriffe.replies[0].menu.options.map((item) => item.id), ["xeriffe.menu", "xeriffe.services", "xeriffe.back"]);
 
   const cardapio = await engine.processor.handleIncoming({ messageId: "wamid-motor-1-cardapio", from, text: "xeriffe.menu" });
   assert.equal(cardapio.replies[0].type, "url_button");
@@ -167,6 +175,29 @@ test("Motor 1 abre o cardapio publico do Xeriffe sem criar pedido no WhatsApp", 
   assert.equal(cardapio.state.cart, undefined);
   assert.equal(cardapio.actions[0].type, "xeriffe_public_menu_url");
   assert.equal(engine.outboxRepository.list().length, 0);
+});
+
+test("Xeriffe separa compra rapida de reserva, mesa e evento", async () => {
+  const engine = createLabEngine({ observeOnly: true });
+  const from = "5551000000202";
+  await engine.processor.handleIncoming({ messageId: "wamid-xeriffe-services-welcome", from, text: "oi" });
+  await engine.processor.handleIncoming({ messageId: "wamid-xeriffe-services-area", from, text: "portal.xeriffe" });
+  const services = await engine.processor.handleIncoming({ messageId: "wamid-xeriffe-services-menu", from, text: "xeriffe.services" });
+  assert.equal(services.state.activeMenu, "xeriffe_services_menu");
+  assert.deepEqual(services.replies[0].menu.options.map((item) => item.id), [
+    "xeriffe.reserve",
+    "xeriffe.table",
+    "xeriffe.event",
+    "xeriffe.human",
+    "xeriffe.services.back"
+  ]);
+
+  const human = await engine.processor.handleIncoming({ messageId: "wamid-xeriffe-human-menu", from, text: "xeriffe.human" });
+  assert.equal(human.state.activeMenu, "human_contact_menu");
+  const kazuko = await engine.processor.handleIncoming({ messageId: "wamid-xeriffe-human-kazuko", from, text: "human.kazuko" });
+  assert.equal(kazuko.state.serviceState, "HUMANO");
+  assert.equal(kazuko.state.flowData.handoff.assignee, "Kazuko Doi");
+  assert.match(kazuko.replies[0].text, /Kazuko Doi/);
 });
 
 test("Motor 1 permite reiniciar o Portal com oi em estado legado de espera do Mesa", async () => {

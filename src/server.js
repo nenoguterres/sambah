@@ -543,7 +543,7 @@ export function createApp({
         }
       }
 
-      if (req.method === "GET" && ["/pedir", "/eventos", "/empresas", "/xeriffe", "/whatsapp"].includes(url.pathname)) {
+      if (req.method === "GET" && ["/pedir", "/eventos", "/empresas", "/xeriffe", "/whatsapp", "/atendimento"].includes(url.pathname)) {
         return serveStatic(res, "portal.html");
       }
 

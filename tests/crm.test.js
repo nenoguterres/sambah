@@ -482,24 +482,26 @@ test("Portal Insano cria pedidos, eventos, empresas, Xeriffe e WhatsApp sem expo
     body: JSON.stringify(body)
   }).then((response) => response.json());
   try {
-    for (const path of ["/", "/pedir", "/eventos", "/empresas", "/xeriffe", "/whatsapp", "/sambah"]) {
+    for (const path of ["/", "/pedir", "/eventos", "/empresas", "/xeriffe", "/whatsapp", "/atendimento", "/sambah"]) {
       const response = await fetch(`${base}${path}`);
       assert.equal(response.status, 200);
       assert.match(await response.text(), path === "/sambah" ? /samBah/i : /Portal Insano|portalApp/);
     }
 
     const home = await fetch(`${base}/`).then((response) => response.text());
-    assert.match(home, /PORTAL INSANO GASTRONOMIA/);
+    assert.match(home, /PORTAL INSANO/);
     assert.match(home, /portal-topbar/);
+    assert.doesNotMatch(home, /sambah-shell\.js|sambah-shell\.css|renderSambahShell/);
     const portalJs = await fetch(`${base}/portal.js`).then((response) => response.text());
-    assert.match(portalJs, /QUERO PEDIR/);
-    assert.match(portalJs, /PRECISO DE FOOD TRUCK/);
-    assert.match(portalJs, /EVENTO CORPORATIVO/);
-    assert.match(portalJs, /CONHECER O XERIFFE/);
-    assert.match(portalJs, /assets\/brand\/insano-logo-home\.png/);
-    assert.match(portalJs, /assets\/brand\/actions\/02-pedidos-insano-crop\.png/);
-    assert.match(portalJs, /assets\/brand\/actions\/03-pedidos-buteco-xeriffe-crop\.png/);
-    assert.doesNotMatch(portalJs, /O que voce precisa hoje\?/);
+    assert.match(portalJs, /Insano Food Truck/);
+    assert.match(portalJs, /Xeriffe Obirici/);
+    assert.match(portalJs, /Granja/);
+    assert.match(portalJs, /Tecnologias/);
+    assert.match(portalJs, /Atendimento humano/);
+    assert.match(portalJs, /Chef Neno Gutterres/);
+    assert.match(portalJs, /Kazuko Doi/);
+    assert.doesNotMatch(portalJs, /insano-gastronomia-2026|xeriffe-obirici-original|granja-aguas-da-lagoa|sambah-original|chef-neno-gutterres/);
+    assert.match(portalJs, /\/xeriffe\/cardapio/);
 
     const delivery = await post("/api/site/precomanda", {
       operation: "Insano",
