@@ -14,6 +14,9 @@ export function routePortalInsanoMessage({ state, message, contract = portalInsa
     return humanState(routedState);
   }
   if (routedState.serviceState === "AGUARDANDO_PEDIDO_MESA") {
+    if (isHumanReset(text) || command === "inicio" || command === "portal_voltar") {
+      return openMenu(resetToPortal(routedState, contract), contract, contract.welcome.menuId, "waitingMesaResetToPortal", []);
+    }
     if (command === "humano") return startFlow(routedState, contract, "human_handoff", "humanCommand");
     return waitingMesaState(routedState);
   }
