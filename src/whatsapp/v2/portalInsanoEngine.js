@@ -129,8 +129,8 @@ function openUrlButton(state, contract, target, source) {
     "integration.insano_food_truck.event_form_url": {
       screen: "INSANO_EVENTO",
       substate: "evento",
-      text: "Evento \u2014 Insano Food Truck\n\nPreenche os dados do teu evento para nossa equipe verificar a agenda e responder nesta mesma conversa.",
-      buttonText: "PREENCHER SOLICITA\u00c7\u00c3O",
+      text: "Monte teu evento em poucos toques. Escolha produtos, quantidade e revise o orçamento antes de enviar.",
+      buttonText: "MONTAR EVENTO",
       actionType: "event_form_url_button"
     },
     "integration.insano_food_truck.quote_form_url": {

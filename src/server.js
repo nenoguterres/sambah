@@ -680,12 +680,8 @@ export function createApp({
         return serveStatic(res, "crm.html");
       }
 
-      if (req.method === "GET" && url.pathname === "/evento/insano") {
-        return serveStatic(res, "event-insano.html");
-      }
-
-      if (req.method === "GET" && url.pathname === "/orcamento/insano") {
-        return serveStatic(res, "quote-insano.html");
+      if (req.method === "GET" && ["/insano/eventos", "/insano/eventos/", "/evento/insano", "/orcamento/insano"].includes(url.pathname)) {
+        return serveStatic(res, "insano-eventos.html");
       }
 
       if (req.method === "GET" && url.pathname === "/catalogo/insano") {
@@ -725,7 +721,7 @@ export function createApp({
         return serveStatic(res, "insano-workhub.js");
       }
 
-      if (req.method === "GET" && ["/site.css", "/site.js", "/crm.css", "/crm.js", "/conteudo.css", "/platform.css", "/platform.js", "/oportunidades.css", "/oportunidades.js", "/conversas.css", "/conversas.js", "/portal.css", "/portal.js", "/perola.css", "/perola.js", "/voice-pay.css", "/voice-pay.js", "/sambah-ecosystem.css", "/sambah-central.js", "/sambah-pay.js", "/sambah-autoserve.js", "/sambah-devices.js", "/sambah-locker.js", "/sambah-weight.js", "/sambah-events.js", "/sambah-observability.js", "/sambah-security.js", "/sambah-lgpd.js", "/sambah-database.js", "/sambah-messaging.js", "/sambah-shell.css", "/sambah-shell.js", "/admin-permissoes.css", "/admin-permissoes.js", "/admin-usuarios.css", "/admin-usuarios.js", "/admin-auditoria.css", "/admin-auditoria.js", "/insano-catalog-admin.css", "/insano-catalog-admin.js", "/login.css", "/login.js", "/auth-ui.js"].includes(url.pathname)) {
+      if (req.method === "GET" && ["/site.css", "/site.js", "/crm.css", "/crm.js", "/conteudo.css", "/platform.css", "/platform.js", "/insano-eventos.css", "/insano-eventos.js", "/oportunidades.css", "/oportunidades.js", "/conversas.css", "/conversas.js", "/portal.css", "/portal.js", "/perola.css", "/perola.js", "/voice-pay.css", "/voice-pay.js", "/sambah-ecosystem.css", "/sambah-central.js", "/sambah-pay.js", "/sambah-autoserve.js", "/sambah-devices.js", "/sambah-locker.js", "/sambah-weight.js", "/sambah-events.js", "/sambah-observability.js", "/sambah-security.js", "/sambah-lgpd.js", "/sambah-database.js", "/sambah-messaging.js", "/sambah-shell.css", "/sambah-shell.js", "/admin-permissoes.css", "/admin-permissoes.js", "/admin-usuarios.css", "/admin-usuarios.js", "/admin-auditoria.css", "/admin-auditoria.js", "/insano-catalog-admin.css", "/insano-catalog-admin.js", "/login.css", "/login.js", "/auth-ui.js"].includes(url.pathname)) {
         return serveStatic(res, url.pathname.slice(1));
       }
 

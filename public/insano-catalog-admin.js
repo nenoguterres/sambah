@@ -12,7 +12,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 function bindActions() {
   addButton.addEventListener("click", () => {
-    products.push({ id: `produto-${Date.now()}`, name: "", description: "", imageUrl: "", active: true });
+    products.push({ id: `produto-${Date.now()}`, name: "", description: "", imageUrl: "", category: "Comida", price: "", unit: "por pessoa", active: true });
     renderProducts();
   });
   formEl.addEventListener("submit", async (event) => {
@@ -60,6 +60,11 @@ function productCard(item, index) {
       <div class="row">
         <label>Nome<input data-index="${index}" data-field="name" value="${escapeHtml(item.name || "")}" placeholder="Produto"></label>
         <label>URL da foto<input data-index="${index}" data-field="imageUrl" value="${escapeHtml(item.imageUrl || "")}" placeholder="https://..."></label>
+      </div>
+      <div class="row">
+        <label>Categoria<input data-index="${index}" data-field="category" value="${escapeHtml(item.category || "Comida")}" placeholder="Comida"></label>
+        <label>Valor por pessoa<input data-index="${index}" data-field="price" type="number" min="0" step="0.01" value="${escapeHtml(item.price ?? "")}" placeholder="Vazio para sob consulta"></label>
+        <label>Unidade<input data-index="${index}" data-field="unit" value="${escapeHtml(item.unit || "por pessoa")}" placeholder="por pessoa"></label>
       </div>
       <label>Descricao<textarea data-index="${index}" data-field="description" placeholder="Descricao curta">${escapeHtml(item.description || "")}</textarea></label>
       <div class="actions">

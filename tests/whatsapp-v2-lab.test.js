@@ -229,7 +229,7 @@ test("Motor 1 mantem atendimento humano disponivel durante o cardapio publico", 
   assert.equal(human.actions[0].type, "notify_operator");
 });
 
-test("Portal Insano Food Truck exibe submenu oficial e catalogo por botao URL", async () => {
+test("Portal Insano Food Truck exibe tres acoes diretas e abre montagem publica", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000188";
   await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-menu-1", from, text: "oi" });
@@ -244,19 +244,10 @@ test("Portal Insano Food Truck exibe submenu oficial e catalogo por botao URL", 
   assert.equal(menu.buttonText, "ESCOLHER UMA AÇÃO");
   assert.deepEqual(menu.options.map((option) => option.id), [
     "INSANO_EVENTO",
-    "INSANO_ORCAMENTO",
-    "INSANO_CATALOGO",
     "INSANO_HUMANO",
     "PORTAL_VOLTAR"
   ]);
-
-  const catalog = await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-menu-3", from, text: "INSANO_CATALOGO" });
-  assert.equal(catalog.replies[0].type, "url_button");
-  assert.equal(catalog.replies[0].buttonText, "ABRIR CATÁLOGO");
-  assert.equal(catalog.replies[0].text, "Conheça o catálogo de produtos do Insano Food Truck.");
-  assert.equal(catalog.replies[0].url, "https://sambah.onrender.com/catalogo/insano");
-  assert.equal(catalog.state.foodtruckSubstate.selectedAction, "INSANO_CATALOGO");
-  assert.deepEqual(catalog.state.navigationStack, ["PORTAL_INSANO", "INSANO_FOODTRUCK", "INSANO_CATALOGO"]);
+  assert.deepEqual(menu.options.map((option) => option.title), ["Montar evento", "Atendimento Humano", "Voltar ao Portal"]);
 });
 
 test("Portal Insano Food Truck nao renderiza textos nem rotas legadas", async () => {
@@ -278,7 +269,7 @@ test("Portal Insano Food Truck nao renderiza textos nem rotas legadas", async ()
   assertNoNumberedMenu(numeric.replies[0].text);
 });
 
-test("Portal Insano Food Truck Evento abre formulario unico e Orcamento nao inicia fluxo legado", async () => {
+test("Portal Insano Food Truck abre montagem publica unica sem fluxo legado", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const fromEvento = "5551000000191";
   await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-evento-1", from: fromEvento, text: "oi" });
@@ -289,8 +280,8 @@ test("Portal Insano Food Truck Evento abre formulario unico e Orcamento nao inic
   assert.equal(evento.state.activeFlow, null);
   assert.equal(evento.state.awaitingInput, false);
   assert.equal(evento.replies[0].type, "url_button");
-  assert.equal(evento.replies[0].buttonText, "PREENCHER SOLICITAÇÃO");
-  assert.match(evento.replies[0].text, /Evento — Insano Food Truck/);
+  assert.equal(evento.replies[0].buttonText, "MONTAR EVENTO");
+  assert.match(evento.replies[0].text, /poucos toques/);
   assert.match(evento.replies[0].url, /^https:\/\/sambah\.onrender\.com\/evento\/insano/);
   assert.doesNotMatch(evento.replies[0].url, /www\.insanofoodtruck\.com\.br/);
   assert.match(evento.replies[0].url, /conversationId=wa_5551000000191/);
@@ -302,28 +293,10 @@ test("Portal Insano Food Truck Evento abre formulario unico e Orcamento nao inic
 
   const freeText = await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-evento-4", from: fromEvento, text: "qualquer coisa" });
   assert.equal(freeText.replies[0].type, "url_button");
-  assert.equal(freeText.replies[0].buttonText, "PREENCHER SOLICITAÇÃO");
+  assert.equal(freeText.replies[0].buttonText, "MONTAR EVENTO");
   assert.deepEqual(freeText.state.navigationStack, ["PORTAL_INSANO", "INSANO_FOODTRUCK", "INSANO_EVENTO"]);
   assertNoNumberedMenu(freeText.replies[0].text);
 
-  const fromOrcamento = "5551000000192";
-  await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-orcamento-1", from: fromOrcamento, text: "oi" });
-  await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-orcamento-2", from: fromOrcamento, text: "PORTAL_INSANO_FOODTRUCK" });
-  const orcamento = await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-orcamento-3", from: fromOrcamento, text: "INSANO_ORCAMENTO" });
-
-  assert.equal(orcamento.state.activeMenu, "foodtruck_main_menu");
-  assert.equal(orcamento.state.activeFlow, null);
-  assert.equal(orcamento.state.awaitingInput, false);
-  assert.equal(orcamento.replies[0].type, "url_button");
-  assert.equal(orcamento.replies[0].buttonText, "PREENCHER ORÇAMENTO");
-  assert.match(orcamento.replies[0].text, /Orçamento — Insano Food Truck/);
-  assert.match(orcamento.replies[0].url, /^https:\/\/sambah\.onrender\.com\/orcamento\/insano/);
-  assert.match(orcamento.replies[0].url, /conversationId=wa_5551000000192/);
-  assert.match(orcamento.replies[0].url, /phone=5551000000192/);
-  assert.equal(orcamento.state.foodtruckSubstate.target, "orcamento");
-  assert.deepEqual(orcamento.state.navigationStack, ["PORTAL_INSANO", "INSANO_FOODTRUCK", "INSANO_ORCAMENTO"]);
-  assertNoFoodtruckPlaceholder(orcamento.replies[0].text);
-  assertNoNumberedMenu(orcamento.replies[0].text);
 });
 
 test("Portal Insano Food Truck retorno do evento reabre submenu e humano usa handoff", async () => {
@@ -339,8 +312,6 @@ test("Portal Insano Food Truck retorno do evento reabre submenu e humano usa han
   assert.deepEqual(menu.state.navigationStack, ["PORTAL_INSANO", "INSANO_FOODTRUCK"]);
   assert.deepEqual(menu.replies[0].menu.options.map((option) => option.id), [
     "INSANO_EVENTO",
-    "INSANO_ORCAMENTO",
-    "INSANO_CATALOGO",
     "INSANO_HUMANO",
     "PORTAL_VOLTAR"
   ]);
@@ -387,7 +358,7 @@ test("Portal Insano migra conversa antiga sem pilha para a tela conhecida", asyn
   const result = await engine.processor.handleIncoming({ messageId: "wamid-old-nav-state", from, text: "texto solto" });
 
   assert.equal(result.replies[0].type, "url_button");
-  assert.equal(result.replies[0].buttonText, "PREENCHER SOLICITAÇÃO");
+  assert.equal(result.replies[0].buttonText, "MONTAR EVENTO");
   assert.deepEqual(result.state.navigationStack, ["PORTAL_INSANO", "INSANO_FOODTRUCK", "INSANO_EVENTO"]);
 });
 
@@ -492,13 +463,13 @@ test("Portal Insano Food Truck usa ids interativos sem trocar area por texto liv
   assert.deepEqual(textOnly.state.navigationStack, ["PORTAL_INSANO", "INSANO_FOODTRUCK"]);
   assertNoNumberedMenu(textOnly.replies[0].text);
 
-  const quote = await engine.processor.handleIncoming({ messageId: "wamid-flow-4", from, text: "INSANO_ORCAMENTO" });
-  assert.equal(quote.state.activeMenu, "foodtruck_main_menu");
-  assert.equal(quote.state.activeFlow, null);
-  assert.equal(quote.state.foodtruckSubstate.target, "orcamento");
-  assert.equal(quote.replies[0].type, "url_button");
-  assert.equal(quote.replies[0].buttonText, "PREENCHER ORÇAMENTO");
-  assertNoFoodtruckPlaceholder(quote.replies[0].text);
+  const builder = await engine.processor.handleIncoming({ messageId: "wamid-flow-4", from, text: "INSANO_EVENTO" });
+  assert.equal(builder.state.activeMenu, "foodtruck_main_menu");
+  assert.equal(builder.state.activeFlow, null);
+  assert.equal(builder.state.foodtruckSubstate.target, "evento");
+  assert.equal(builder.replies[0].type, "url_button");
+  assert.equal(builder.replies[0].buttonText, "MONTAR EVENTO");
+  assertNoFoodtruckPlaceholder(builder.replies[0].text);
 });
 
 test("Portal Insano texto de pagamento nunca confirma pagamento", async () => {

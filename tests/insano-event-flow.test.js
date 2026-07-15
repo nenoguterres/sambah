@@ -233,14 +233,14 @@ test("falha no retorno WhatsApp nao bloqueia email do formulario Evento", async 
   }
 });
 
-test("formulario publico do Evento nao expoe shell operacional do SamBah", async () => {
+test("montador publico do Evento reutiliza catalogo real e nao expoe shell operacional", async () => {
   const app = await makeServer();
   try {
     const response = await fetch(`${app.base}/evento/insano?conversationId=wa_5551987654321&phone=5551987654321`);
     const html = await response.text();
     assert.equal(response.status, 200);
-    assert.match(html, /Solicitacao de evento - Insano Food Truck/);
-    assert.match(html, /platform\.js/);
+    assert.match(html, /Monte seu evento — Insano Food Truck/);
+    assert.match(html, /insano-eventos\.js/);
     assert.doesNotMatch(html, /renderSambahShell/);
     assert.doesNotMatch(html, /admin\/assets\/sambah-shell/);
     assert.doesNotMatch(html, /Abrir CRM/);
@@ -249,17 +249,15 @@ test("formulario publico do Evento nao expoe shell operacional do SamBah", async
     assert.doesNotMatch(html, /Garcom/);
     assert.doesNotMatch(html, /Cozinha/);
 
-    const script = await fetch(`${app.base}/platform.js`).then((item) => item.text());
-    assert.match(script, /Nome do contato/);
-    assert.match(script, /Telefone de contato/);
-    assert.match(script, /Data do evento/);
-    assert.match(script, /Publico previsto/);
-    assert.match(script, /ENVIAR SOLICITACAO/);
-    assert.match(script, /VOLTAR AO WHATSAPP/);
-    assert.doesNotMatch(script, /Conferir dados/);
-    assert.doesNotMatch(script, /ENVIAR PARA ANALISE/);
-    assert.doesNotMatch(script, /CORRIGIR DADOS/);
-    assert.doesNotMatch(script, /ATENDIMENTO HUMANO/);
+    const script = await fetch(`${app.base}/insano-eventos.js`).then((item) => item.text());
+    assert.match(script, /O que vamos fazer/);
+    assert.match(script, /Monte seu evento/);
+    assert.match(script, /\/api\/insano\/catalogo/);
+    assert.match(script, /Ver orçamento/);
+    assert.match(script, /Enviar solicitação/);
+    assert.match(script, /\/api\/site\/insano\/evento/);
+    assert.match(script, /\/api\/site\/insano\/orcamento/);
+    assert.doesNotMatch(script, /renderSambahShell/);
   } finally {
     await app.close();
   }
@@ -327,33 +325,23 @@ test("fluxo Orcamento usa formulario proprio e envia email sem cair no Evento", 
   }
 });
 
-test("formulario publico do Orcamento nao expoe shell operacional do SamBah", async () => {
+test("rota antiga de Orcamento abre o mesmo montador rapido sem shell operacional", async () => {
   const app = await makeServer();
   try {
     const response = await fetch(`${app.base}/orcamento/insano?conversationId=wa_5551987654321&phone=5551987654321`);
     const html = await response.text();
     assert.equal(response.status, 200);
-    assert.match(html, /Solicitacao de orcamento - Insano Food Truck/);
-    assert.match(html, /platform\.js/);
+    assert.match(html, /Monte seu evento — Insano Food Truck/);
+    assert.match(html, /insano-eventos\.js/);
     assert.doesNotMatch(html, /renderSambahShell/);
     assert.doesNotMatch(html, /admin\/assets\/sambah-shell/);
     assert.doesNotMatch(html, /Abrir CRM/);
 
-    const script = await fetch(`${app.base}/platform.js`).then((item) => item.text());
-    assert.match(script, /Solicitacao de orcamento/);
-    assert.match(script, /Produto/);
-    assert.match(script, /Hamburguer/);
-    assert.match(script, /Pizzas/);
-    assert.match(script, /Churrasquinho/);
-    assert.match(script, /Porcoes de buteco/);
-    assert.match(script, /Joelho de Porco/);
-    assert.match(script, /Quantidade de porcoes/);
-    assert.match(script, /min="50"/);
-    assert.match(script, /ENVIAR ORCAMENTO/);
+    const script = await fetch(`${app.base}/insano-eventos.js`).then((item) => item.text());
+    assert.match(script, /state\.mode = "orcamento"/);
+    assert.match(script, /Orçamento rápido/);
     assert.match(script, /\/api\/site\/insano\/orcamento/);
-    assert.match(script, /VOLTAR AO WHATSAPP/);
-    assert.doesNotMatch(script, /Conferir dados/);
-    assert.doesNotMatch(script, /ATENDIMENTO HUMANO/);
+    assert.doesNotMatch(script, /renderSambahShell/);
   } finally {
     await app.close();
   }

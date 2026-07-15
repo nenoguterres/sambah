@@ -444,7 +444,8 @@ test("plataformas externas, cardapios, mesa, garcom e cozinha respondem", async 
     }
 
     const eventForm = await fetch(`${base}/evento/insano`).then((response) => response.text());
-    assert.match(eventForm, /Solicitacao de evento - Insano Food Truck/);
+    assert.match(eventForm, /Monte seu evento — Insano Food Truck/);
+    assert.match(eventForm, /insano-eventos\.js/);
     assert.doesNotMatch(eventForm, /renderSambahShell|Abrir CRM|Cardapio Xeriffe|QR Codes|Garcom|Cozinha/);
 
     const precomandas = await fetch(`${base}/api/precomandas`).then((response) => response.json());

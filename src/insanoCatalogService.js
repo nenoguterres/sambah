@@ -56,7 +56,7 @@ export class InsanoCatalogService {
 }
 
 function product(id, name, description) {
-  return { id, name, description, imageUrl: "", active: true };
+  return { id, name, description, imageUrl: "", category: "Comida", price: null, unit: "por pessoa", active: true };
 }
 
 function normalizeProduct(item = {}) {
@@ -66,9 +66,18 @@ function normalizeProduct(item = {}) {
     name: cleanText(item.name || item.nome || ""),
     description: cleanText(item.description || item.descricao || ""),
     imageUrl: cleanUrl(item.imageUrl || item.image || item.foto || ""),
+    category: cleanText(item.category || item.categoria || "Comida") || "Comida",
+    price: cleanPrice(item.price ?? item.preco),
+    unit: cleanText(item.unit || item.unidade || "por pessoa") || "por pessoa",
     active: item.active !== false,
     order: Number(item.order || item.ordem || 0) || 0
   };
+}
+
+function cleanPrice(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(String(value).replace(",", "."));
+  return Number.isFinite(number) && number >= 0 ? Math.round(number * 100) / 100 : null;
 }
 
 function cleanText(value = "") {

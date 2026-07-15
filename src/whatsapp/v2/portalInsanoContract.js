@@ -1,6 +1,6 @@
 export const portalInsanoContract = {
   schema: "sambah.whatsapp.portal-insano",
-  version: "3.2.0",
+  version: "3.3.0",
   assistant: {
     name: "SamBah",
     role: "Assistente oficial de atendimento do Portal Insano"
@@ -49,11 +49,9 @@ export const portalInsanoContract = {
       buttonText: "ESCOLHER UMA AÇÃO",
       strictInteractiveIds: true,
       options: [
-        option("INSANO_EVENTO", 1, "Evento", { type: "open_url_button", target: "integration.insano_food_truck.event_form_url" }),
-        option("INSANO_ORCAMENTO", 2, "Orçamento", { type: "open_url_button", target: "integration.insano_food_truck.quote_form_url" }),
-        option("INSANO_CATALOGO", 3, "Catálogo de produtos", { type: "open_url_button", target: "integration.insano_food_truck.catalog_url" }),
-        option("INSANO_HUMANO", 4, "Atendimento Humano", { type: "start_flow", target: "human_handoff" }),
-        option("PORTAL_VOLTAR", 5, "Voltar ao Portal Insano", { type: "open_menu", target: "portal_main_menu", areaId: null, clearFoodtruckSubstate: true })
+        option("INSANO_EVENTO", 1, "Montar evento", { type: "open_url_button", target: "integration.insano_food_truck.event_form_url" }),
+        option("INSANO_HUMANO", 2, "Atendimento Humano", { type: "start_flow", target: "human_handoff" }),
+        option("PORTAL_VOLTAR", 3, "Voltar ao Portal", { type: "open_menu", target: "portal_main_menu", areaId: null, clearFoodtruckSubstate: true })
       ]
     },
     xeriffe_main_menu: {
