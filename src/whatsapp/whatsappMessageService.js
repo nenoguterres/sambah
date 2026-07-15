@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { parseWhatsAppWebhookPayload } from "./whatsappWebhookParser.js";
 import { maskWhatsAppPhone, normalizeWhatsAppPhone, sameWhatsAppPhone } from "./phoneNumber.js";
@@ -12,6 +12,7 @@ export class WhatsAppMessageService {
     this.sessionsFile = sessionsFile;
     this.messagesFile = messagesFile;
     this.now = now;
+    this.messageMutationQueue = Promise.resolve();
   }
 
   status() {
@@ -48,25 +49,27 @@ export class WhatsAppMessageService {
   async recordMetaStatus(status = {}) {
     const providerMessageId = String(status.id || "").trim();
     if (!providerMessageId) return { ok: false, updated: false, reason: "missing_status_id" };
-    const messages = await this.readMessages();
-    let updated = false;
-    const next = messages.map((message) => {
-      if (!matchesProviderMessageId(message, providerMessageId)) return message;
-      updated = true;
-      return {
-        ...message,
-        status: status.status || message.status,
-        providerMessageId,
-        recipientId: status.recipient_id || message.recipientId || "",
-        deliveredAt: status.status === "delivered" ? metaTimestamp(status.timestamp) : message.deliveredAt || null,
-        readAt: status.status === "read" ? metaTimestamp(status.timestamp) : message.readAt || null,
-        failedAt: status.status === "failed" ? metaTimestamp(status.timestamp) : message.failedAt || null,
-        statusUpdatedAt: this.now().toISOString(),
-        statusPayload: sanitizeMetaStatus(status)
-      };
+    return this.#mutateMessages(async () => {
+      const messages = await this.readMessages();
+      let updated = false;
+      const next = messages.map((message) => {
+        if (!matchesProviderMessageId(message, providerMessageId)) return message;
+        updated = true;
+        return {
+          ...message,
+          status: status.status || message.status,
+          providerMessageId,
+          recipientId: status.recipient_id || message.recipientId || "",
+          deliveredAt: status.status === "delivered" ? metaTimestamp(status.timestamp) : message.deliveredAt || null,
+          readAt: status.status === "read" ? metaTimestamp(status.timestamp) : message.readAt || null,
+          failedAt: status.status === "failed" ? metaTimestamp(status.timestamp) : message.failedAt || null,
+          statusUpdatedAt: this.now().toISOString(),
+          statusPayload: sanitizeMetaStatus(status)
+        };
+      });
+      if (updated) await this.writeMessages(next);
+      return { ok: true, updated, providerMessageId, status: status.status || "" };
     });
-    if (updated) await this.writeMessages(next);
-    return { ok: true, updated, providerMessageId, status: status.status || "" };
   }
 
   async handleIncoming(payload) {
@@ -111,33 +114,35 @@ export class WhatsAppMessageService {
   }
 
   async appendMessage({ direction, normalized, text, sendResult }) {
-    const messages = await this.readMessages();
-    const messageId = String(normalized.messageId || "").trim();
-    if (direction === "in" && messageId) {
-      const existing = messages.find((item) => item.direction === "in" && item.messageId === messageId);
-      if (existing) return { ok: true, duplicate: true, message: existing };
-    }
-    const providerMessageId = sendResult?.providerMessageId || sendResult?.response?.messages?.[0]?.id || "";
-    const message = {
-      id: `${direction}_${this.now().getTime()}_${Math.random().toString(16).slice(2)}`,
-      direction,
-      provider: normalized.provider,
-      phone: normalized.from,
-      customerName: normalized.customer?.name || "",
-      messageId,
-      providerMessageId,
-      correlationId: normalized.correlationId || "",
-      text: text || normalized.message,
-      status: sendResult?.status || (direction === "out" ? "registrada_sem_envio" : "received"),
-      httpStatus: sendResult?.httpStatus || null,
-      response: sendResult?.response || null,
-      errorCode: sendResult?.response?.error?.code || sendResult?.error || "",
-      errorMessage: sendResult?.response?.error?.message || sendResult?.error || "",
-      createdAt: this.now().toISOString()
-    };
-    messages.unshift(message);
-    await this.writeMessages(messages.slice(0, 200));
-    return { ok: true, duplicate: false, message };
+    return this.#mutateMessages(async () => {
+      const messages = await this.readMessages();
+      const messageId = String(normalized.messageId || "").trim();
+      if (direction === "in" && messageId) {
+        const existing = messages.find((item) => item.direction === "in" && item.messageId === messageId);
+        if (existing) return { ok: true, duplicate: true, message: existing };
+      }
+      const providerMessageId = sendResult?.providerMessageId || sendResult?.response?.messages?.[0]?.id || "";
+      const message = {
+        id: `${direction}_${this.now().getTime()}_${Math.random().toString(16).slice(2)}`,
+        direction,
+        provider: normalized.provider,
+        phone: normalized.from,
+        customerName: normalized.customer?.name || "",
+        messageId,
+        providerMessageId,
+        correlationId: normalized.correlationId || "",
+        text: text || normalized.message,
+        status: sendResult?.status || (direction === "out" ? "registrada_sem_envio" : "received"),
+        httpStatus: sendResult?.httpStatus || null,
+        response: sendResult?.response || null,
+        errorCode: sendResult?.response?.error?.code || sendResult?.error || "",
+        errorMessage: sendResult?.response?.error?.message || sendResult?.error || "",
+        createdAt: this.now().toISOString()
+      };
+      messages.unshift(message);
+      await this.writeMessages(messages.slice(0, 200));
+      return { ok: true, duplicate: false, message };
+    });
   }
 
   async readSessions() {
@@ -160,19 +165,53 @@ export class WhatsAppMessageService {
   }
 
   async readMessages() {
+    let raw = "";
     try {
-      const raw = await readFile(this.messagesFile, "utf8");
-      const parsed = JSON.parse(stripBom(raw) || "[]");
-      return Array.isArray(parsed) ? parsed : [];
+      raw = await readFile(this.messagesFile, "utf8");
     } catch (error) {
       if (error.code === "ENOENT") return [];
       throw error;
+    }
+    try {
+      const parsed = JSON.parse(stripBom(raw) || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+      await this.#quarantineCorruptMessages(error);
+      return [];
     }
   }
 
   async writeMessages(messages) {
     await mkdir(dirname(this.messagesFile), { recursive: true });
-    await writeFile(this.messagesFile, `${JSON.stringify(messages, null, 2)}\n`, "utf8");
+    const tempFile = `${this.messagesFile}.write-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.tmp`;
+    try {
+      await writeFile(tempFile, `${JSON.stringify(messages, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
+      await rename(tempFile, this.messagesFile);
+    } catch (error) {
+      await unlink(tempFile).catch(() => {});
+      throw error;
+    }
+  }
+
+  async #quarantineCorruptMessages(error) {
+    const stamp = this.now().toISOString().replace(/[^0-9]/g, "");
+    const quarantineFile = `${this.messagesFile}.corrupt-${stamp}`;
+    try {
+      await rename(this.messagesFile, quarantineFile);
+      console.info("whatsapp.messages.corrupt_quarantined", {
+        status: "corrupt_quarantined",
+        error: String(error?.message || error)
+      });
+    } catch (renameError) {
+      if (renameError?.code !== "ENOENT") throw renameError;
+    }
+  }
+
+  async #mutateMessages(operation) {
+    const run = this.messageMutationQueue.then(operation, operation);
+    this.messageMutationQueue = run.then(() => undefined, () => undefined);
+    return run;
   }
 }
 

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MockWhatsAppProvider } from "../src/whatsapp/providers/mockProvider.js";
@@ -74,6 +74,46 @@ test("pedidos de humano e evento tambem ficam somente registrados", async () => 
     const history = JSON.parse(await readFile(join(ctx.dir, "messages.json"), "utf8"));
     assert.equal(history.length, 2);
     assert.equal(history.some((item) => item.direction === "out"), false);
+  } finally {
+    await ctx.cleanup();
+  }
+});
+
+test("WhatsAppMessageService coloca historico corrompido em quarentena e recria JSON valido", async () => {
+  const ctx = await createContext();
+  try {
+    const messagesFile = join(ctx.dir, "messages.json");
+    await writeFile(messagesFile, '[{"id":"old"}] lixo', "utf8");
+
+    const result = await ctx.service.handleIncoming({
+      eventId: "wamid-after-corrupt-history",
+      from: "51999999991",
+      message: "oi"
+    });
+
+    assert.equal(result.ok, true);
+    const history = JSON.parse(await readFile(messagesFile, "utf8"));
+    assert.equal(history.length, 1);
+    assert.equal(history[0].messageId, "wamid-after-corrupt-history");
+    const files = await readdir(ctx.dir);
+    assert.equal(files.some((name) => name.startsWith("messages.json.corrupt-")), true);
+  } finally {
+    await ctx.cleanup();
+  }
+});
+
+test("WhatsAppMessageService serializa inbounds concorrentes sem perder nem corromper mensagens", async () => {
+  const ctx = await createContext();
+  try {
+    await Promise.all(Array.from({ length: 30 }, (_, index) => ctx.service.handleIncoming({
+      eventId: `wamid-concurrent-${index}`,
+      from: "51999999992",
+      message: `oi ${index}`
+    })));
+
+    const history = JSON.parse(await readFile(join(ctx.dir, "messages.json"), "utf8"));
+    assert.equal(history.length, 30);
+    assert.equal(new Set(history.map((message) => message.messageId)).size, 30);
   } finally {
     await ctx.cleanup();
   }

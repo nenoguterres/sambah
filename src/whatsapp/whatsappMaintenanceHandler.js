@@ -7,7 +7,7 @@ import { join } from "node:path";
 export async function whatsappMaintenanceHandler(payload = {}, { conversationService, messageService, auditService, whatsappProvider = null, runtimeConfig = getRuntimeConfig() } = {}) {
   const incoming = parseWhatsAppIncoming(payload);
   const conversationResult = await conversationService.recordNeutralIncoming(incoming);
-  const messageResult = messageService ? await messageService.handleIncoming(payload) : null;
+  const messageResult = await safeHandleIncomingHistory(messageService, payload, incoming);
   if (conversationResult.duplicate) {
     await safeAuditRecord(auditService, {
       type: "whatsapp_duplicate_message_ignored",
@@ -170,7 +170,7 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
       metaMessageType: sendResult?.metaMessageType || reply.type || "text"
     });
     if (messageService?.appendMessage) {
-      await messageService.appendMessage({
+      await safeAppendOutgoingHistory(messageService, {
         direction: "out",
         normalized: {
           provider: "meta",
@@ -338,5 +338,34 @@ async function safeAuditRecord(auditService, entry) {
       status: "audit_failed",
       error: String(error?.message || error)
     });
+  }
+}
+
+async function safeHandleIncomingHistory(messageService, payload, incoming = {}) {
+  if (typeof messageService?.handleIncoming !== "function") return null;
+  try {
+    return await messageService.handleIncoming(payload);
+  } catch (error) {
+    console.info("whatsapp.message_history.inbound_failed", {
+      status: "auxiliary_persistence_failed",
+      messageId: incoming.messageId || "",
+      phone: maskPhone(incoming.telefone || ""),
+      error: String(error?.code || error?.message || error)
+    });
+    return null;
+  }
+}
+
+async function safeAppendOutgoingHistory(messageService, entry) {
+  try {
+    return await messageService.appendMessage(entry);
+  } catch (error) {
+    console.info("whatsapp.message_history.outbound_failed", {
+      status: "auxiliary_persistence_failed",
+      messageId: entry?.normalized?.messageId || "",
+      phone: maskPhone(entry?.normalized?.from || ""),
+      error: String(error?.code || error?.message || error)
+    });
+    return null;
   }
 }
