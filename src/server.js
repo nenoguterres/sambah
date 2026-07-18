@@ -671,7 +671,11 @@ export function createApp({
         return serveStatic(res, "sambah-messaging.html");
       }
 
-      if (req.method === "GET" && url.pathname === "/admin/insano-catalogo") {
+      if (req.method === "GET" && url.pathname === "/central-paineis") {
+    if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
+    return serveStatic(res, "central-paineis.html");
+  }
+  if (req.method === "GET" && url.pathname === "/admin/insano-catalogo") {
         if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
         return serveStatic(res, "insano-catalog-admin.html");
       }
