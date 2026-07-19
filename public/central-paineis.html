@@ -1,44 +1,590 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Central dos Painéis</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Central dos Pain&eacute;is</title>
+
 <style>
-:root{--bg:#07111f;--card:#10233a;--line:#274563;--txt:#f4f8fc;--muted:#9bb0c5;--blue:#20a4ff;--green:#32dc86;--red:#ff6572}
-*{box-sizing:border-box}body{margin:0;background:linear-gradient(135deg,#050b14,#0a1a2c);color:var(--txt);font-family:Segoe UI,Arial,sans-serif;min-height:100vh}
-header{display:flex;justify-content:space-between;align-items:center;padding:18px 26px;border-bottom:1px solid var(--line);background:#07111fef}
-h1,h2,h3,p{margin:0}.brand{display:flex;gap:13px;align-items:center}.logo{width:46px;height:46px;display:grid;place-items:center;border-radius:14px;background:linear-gradient(135deg,#20a4ff,#745cff);font-size:24px}
-small,.muted{color:var(--muted)}a,button{color:white}.btn{border:1px solid var(--line);background:#10233a;padding:11px 15px;border-radius:12px;text-decoration:none;cursor:pointer}
-main{max-width:1400px;margin:auto;padding:24px}.hero{display:grid;grid-template-columns:1.35fr .65fr;gap:18px}.box{background:linear-gradient(180deg,#10233a,#0a1727);border:1px solid var(--line);border-radius:20px;padding:22px}
-.hero h2{font-size:32px;margin:7px 0 10px}.eyebrow{font-size:12px;font-weight:800;color:var(--blue);letter-spacing:.12em}.status div{display:flex;justify-content:space-between;padding:8px 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:8px;background:var(--green)}.warn{background:#ffbd44}
-.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:18px 0}.metric{background:#0d1d30;border:1px solid var(--line);border-radius:16px;padding:17px}.metric strong{font-size:28px;display:block}
-.content{display:grid;grid-template-columns:1.1fr .9fr;gap:18px}.head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.filters{display:flex;gap:7px;flex-wrap:wrap}.filters button{border:1px solid var(--line);background:#091626;color:var(--muted);padding:7px 10px;border-radius:999px}.filters .active{border-color:var(--blue);color:white}
-.devices{display:grid;grid-template-columns:repeat(2,1fr);gap:11px}.device{display:grid;grid-template-columns:42px 1fr auto;gap:11px;align-items:center;padding:13px;border:1px solid var(--line);border-radius:15px;background:#091626}.ico{width:42px;height:42px;border-radius:12px;background:#16324f;display:grid;place-items:center;font-size:20px}.badge{font-size:11px;font-weight:800;padding:6px 8px;border-radius:999px;background:#113b28;color:#70f3b0}.offline{background:#3a1820;color:#ff909a}
-label{display:block;font-size:12px;color:var(--muted);margin:10px 0 6px}select,input{width:100%;padding:12px;border:1px solid var(--line);border-radius:11px;background:#081522;color:white}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.quick{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}.quick button{border:1px solid var(--line);background:#091626;padding:10px;border-radius:10px}.send{width:100%;border:0;background:linear-gradient(135deg,#20a4ff,#745cff);padding:13px;border-radius:11px;font-weight:800}.history{margin-top:14px}.item{border-left:3px solid var(--blue);padding:9px 11px;background:#091626;border-radius:9px;margin-top:8px}.item small{display:block;margin-top:3px}
-footer{text-align:center;color:var(--muted);padding:22px;font-size:12px}
-@media(max-width:900px){.hero,.content{grid-template-columns:1fr}.metrics{grid-template-columns:1fr 1fr}}@media(max-width:580px){main{padding:14px}.devices{grid-template-columns:1fr}.row{grid-template-columns:1fr}.hero h2{font-size:26px}}
+:root{
+  --bg:#07111f;
+  --card:#10233a;
+  --line:#274563;
+  --txt:#f4f8fc;
+  --muted:#9bb0c5;
+  --blue:#20a4ff;
+  --green:#32dc86;
+}
+
+*{box-sizing:border-box}
+
+body{
+  margin:0;
+  min-height:100vh;
+  background:linear-gradient(135deg,#050b14,#0a1a2c);
+  color:var(--txt);
+  font-family:Segoe UI,Arial,sans-serif;
+}
+
+header{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:18px 26px;
+  border-bottom:1px solid var(--line);
+  background:#07111f;
+}
+
+h1,h2,h3,p{margin:0}
+
+.brand{
+  display:flex;
+  gap:13px;
+  align-items:center;
+}
+
+.logo{
+  width:46px;
+  height:46px;
+  display:grid;
+  place-items:center;
+  border-radius:14px;
+  background:linear-gradient(135deg,#20a4ff,#745cff);
+  font-size:24px;
+}
+
+small,.muted{color:var(--muted)}
+
+a,button{color:white}
+
+.btn{
+  border:1px solid var(--line);
+  background:#10233a;
+  padding:11px 15px;
+  border-radius:12px;
+  text-decoration:none;
+  cursor:pointer;
+}
+
+main{
+  max-width:1400px;
+  margin:auto;
+  padding:24px;
+}
+
+.hero{
+  display:grid;
+  grid-template-columns:1.35fr .65fr;
+  gap:18px;
+}
+
+.box{
+  background:linear-gradient(180deg,#10233a,#0a1727);
+  border:1px solid var(--line);
+  border-radius:20px;
+  padding:22px;
+}
+
+.hero h2{
+  font-size:32px;
+  margin:7px 0 10px;
+}
+
+.eyebrow{
+  font-size:12px;
+  font-weight:800;
+  color:var(--blue);
+  letter-spacing:.12em;
+}
+
+.status div{
+  display:flex;
+  justify-content:space-between;
+  padding:8px 0;
+}
+
+.dot{
+  width:10px;
+  height:10px;
+  border-radius:50%;
+  display:inline-block;
+  margin-right:8px;
+  background:var(--green);
+}
+
+.warn{background:#ffbd44}
+
+.metrics{
+  display:grid;
+  grid-template-columns:repeat(5,1fr);
+  gap:14px;
+  margin:18px 0;
+}
+
+.metric{
+  background:#0d1d30;
+  border:1px solid var(--line);
+  border-radius:16px;
+  padding:17px;
+}
+
+.metric strong{
+  font-size:28px;
+  display:block;
+}
+
+.content{
+  display:grid;
+  grid-template-columns:1.1fr .9fr;
+  gap:18px;
+}
+
+.head{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:14px;
+}
+
+.filters{
+  display:flex;
+  gap:7px;
+  flex-wrap:wrap;
+}
+
+.filters button{
+  border:1px solid var(--line);
+  background:#091626;
+  color:var(--muted);
+  padding:7px 10px;
+  border-radius:999px;
+  cursor:pointer;
+}
+
+.filters .active{
+  border-color:var(--blue);
+  color:white;
+}
+
+.devices{
+  display:grid;
+  grid-template-columns:repeat(2,1fr);
+  gap:11px;
+}
+
+.device{
+  display:grid;
+  grid-template-columns:42px 1fr auto;
+  gap:11px;
+  align-items:center;
+  padding:13px;
+  border:1px solid var(--line);
+  border-radius:15px;
+  background:#091626;
+}
+
+.ico{
+  width:42px;
+  height:42px;
+  border-radius:12px;
+  background:#16324f;
+  display:grid;
+  place-items:center;
+  font-size:20px;
+}
+
+.badge{
+  font-size:11px;
+  font-weight:800;
+  padding:6px 8px;
+  border-radius:999px;
+  background:#113b28;
+  color:#70f3b0;
+}
+
+.offline{
+  background:#3a1820;
+  color:#ff909a;
+}
+
+.aguardando{
+  background:#3b3013;
+  color:#ffd974;
+}
+
+label{
+  display:block;
+  font-size:12px;
+  color:var(--muted);
+  margin:10px 0 6px;
+}
+
+select,input{
+  width:100%;
+  padding:12px;
+  border:1px solid var(--line);
+  border-radius:11px;
+  background:#081522;
+  color:white;
+}
+
+.row{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+}
+
+.quick{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+  margin:12px 0;
+}
+
+.quick button{
+  border:1px solid var(--line);
+  background:#091626;
+  padding:10px;
+  border-radius:10px;
+  cursor:pointer;
+}
+
+.send{
+  width:100%;
+  border:0;
+  background:linear-gradient(135deg,#20a4ff,#745cff);
+  padding:13px;
+  border-radius:11px;
+  font-weight:800;
+  cursor:pointer;
+}
+
+.history{margin-top:14px}
+
+.item{
+  border-left:3px solid var(--blue);
+  padding:9px 11px;
+  background:#091626;
+  border-radius:9px;
+  margin-top:8px;
+}
+
+.item small{
+  display:block;
+  margin-top:3px;
+}
+
+footer{
+  text-align:center;
+  color:var(--muted);
+  padding:22px;
+  font-size:12px;
+}
+
+@media(max-width:1100px){
+  .metrics{grid-template-columns:repeat(3,1fr)}
+}
+
+@media(max-width:900px){
+  .hero,.content{grid-template-columns:1fr}
+  .metrics{grid-template-columns:1fr 1fr}
+}
+
+@media(max-width:580px){
+  main{padding:14px}
+  .devices{grid-template-columns:1fr}
+  .row{grid-template-columns:1fr}
+  .hero h2{font-size:26px}
+}
 </style>
 </head>
+
 <body>
-<header><div class="brand"><div class="logo">▦</div><div><h1>Central dos Painéis</h1><small>SamBah • operação unificada</small></div></div><a class="btn" href="/sambah-central">Voltar ao SamBah</a></header>
+
+<header>
+  <div class="brand">
+    <div class="logo">&#9638;</div>
+    <div>
+      <h1>Central dos Pain&eacute;is</h1>
+      <small>SamBah &bull; opera&ccedil;&atilde;o unificada</small>
+    </div>
+  </div>
+
+  <a class="btn" href="/sambah-central">Voltar ao SamBah</a>
+</header>
+
 <main>
+
 <section class="hero">
-<div class="box"><div class="eyebrow">ECOSSISTEMA INSANO</div><h2>Um único comando para todas as telas</h2><p class="muted">TVs do salão, monitores internos, painel de chamadas e Central dos Letreiros no mesmo módulo.</p></div>
-<div class="box status"><div><span><i class="dot"></i>SamBah</span><b>ONLINE</b></div><div><span><i class="dot"></i>Central</span><b>ATIVA</b></div><div><span><i class="dot warn"></i>ESP32 / CAN</span><b>AGUARDANDO</b></div></div>
+
+  <div class="box">
+    <div class="eyebrow">ECOSSISTEMA INSANO</div>
+    <h2>Um &uacute;nico comando para todas as telas</h2>
+    <p class="muted">
+      TVs do sal&atilde;o, seis monitores de divulga&ccedil;&atilde;o,
+      monitores internos, painel de chamadas e Central dos Letreiros
+      no mesmo m&oacute;dulo.
+    </p>
+  </div>
+
+  <div class="box status">
+    <div><span><i class="dot"></i>SamBah</span><b>ONLINE</b></div>
+    <div><span><i class="dot"></i>Central</span><b>ATIVA</b></div>
+    <div><span><i class="dot warn"></i>ESP32 / CAN</span><b>AGUARDANDO</b></div>
+  </div>
+
 </section>
-<section class="metrics"><div class="metric"><strong>8</strong><small>Cadastrados</small></div><div class="metric"><strong>6</strong><small>Online</small></div><div class="metric"><strong>2</strong><small>Offline</small></div><div class="metric"><strong id="count">0</strong><small>Mensagens hoje</small></div></section>
+
+<section class="metrics">
+
+  <div class="metric">
+    <strong>14</strong>
+    <small>Cadastrados</small>
+  </div>
+
+  <div class="metric">
+    <strong>6</strong>
+    <small>Online</small>
+  </div>
+
+  <div class="metric">
+    <strong>2</strong>
+    <small>Offline</small>
+  </div>
+
+  <div class="metric">
+    <strong>6</strong>
+    <small>Aguardando conex&atilde;o</small>
+  </div>
+
+  <div class="metric">
+    <strong id="count">0</strong>
+    <small>Mensagens hoje</small>
+  </div>
+
+</section>
+
 <section class="content">
-<div class="box"><div class="head"><div><h3>Mapa dos Painéis</h3><small>Clientes, funcionários e letreiros</small></div><div class="filters"><button class="active" data-f="todos">Todos</button><button data-f="cliente">Clientes</button><button data-f="funcionario">Equipe</button><button data-f="letreiro">Letreiros</button></div></div><div class="devices" id="devices"></div></div>
-<div class="box"><h3>Envio rápido</h3><div class="row"><div><label>Destino</label><select id="destino"><option>Todos os painéis</option><option>TVs dos clientes</option><option>Equipe / funcionários</option><option>Painel de chamadas</option><option>Central dos Letreiros</option></select></div><div><label>Prioridade</label><select id="prioridade"><option>Normal</option><option>Pedido pronto</option><option>Operacional</option><option>Alerta técnico</option><option>Emergência</option></select></div></div><label>Mensagem</label><input id="mensagem" maxlength="120" placeholder="Digite a mensagem"><div class="quick"><button data-m="PED 27 PRONTO">PED 27 PRONTO</button><button data-m="OFERTA DO DIA">OFERTA DO DIA</button><button data-m="ATENÇÃO PRODUÇÃO">ATENÇÃO PRODUÇÃO</button><button data-m="CHAME NO SAMBAH">CHAME NO SAMBAH</button></div><button class="send" id="send">Enviar simulação</button><div class="history" id="history"></div></div>
+
+  <div class="box">
+
+    <div class="head">
+
+      <div>
+        <h3>Mapa dos Pain&eacute;is</h3>
+        <small>Clientes, funcion&aacute;rios, divulga&ccedil;&atilde;o e letreiros</small>
+      </div>
+
+      <div class="filters">
+        <button class="active" data-f="todos">Todos</button>
+        <button data-f="cliente">Clientes</button>
+        <button data-f="funcionario">Equipe</button>
+        <button data-f="divulgacao">Divulga&ccedil;&atilde;o</button>
+        <button data-f="letreiro">Letreiros</button>
+      </div>
+
+    </div>
+
+    <div class="devices" id="devices"></div>
+
+  </div>
+
+  <div class="box">
+
+    <h3>Envio r&aacute;pido</h3>
+
+    <div class="row">
+
+      <div>
+        <label>Destino</label>
+
+        <select id="destino">
+          <option>Todos os pain&eacute;is</option>
+          <option>TVs dos clientes</option>
+          <option>Monitores de divulga&ccedil;&atilde;o</option>
+          <option>Equipe / funcion&aacute;rios</option>
+          <option>Painel de chamadas</option>
+          <option>Central dos Letreiros</option>
+        </select>
+      </div>
+
+      <div>
+        <label>Prioridade</label>
+
+        <select id="prioridade">
+          <option>Normal</option>
+          <option>Pedido pronto</option>
+          <option>Operacional</option>
+          <option>Alerta t&eacute;cnico</option>
+          <option>Emerg&ecirc;ncia</option>
+        </select>
+      </div>
+
+    </div>
+
+    <label>Mensagem</label>
+
+    <input
+      id="mensagem"
+      maxlength="120"
+      placeholder="Digite a mensagem"
+    >
+
+    <div class="quick">
+      <button data-m="PED 27 PRONTO">PED 27 PRONTO</button>
+      <button data-m="OFERTA DO DIA">OFERTA DO DIA</button>
+      <button data-m="ATENCAO PRODUCAO">ATEN&Ccedil;&Atilde;O PRODU&Ccedil;&Atilde;O</button>
+      <button data-m="CHAME NO SAMBAH">CHAME NO SAMBAH</button>
+    </div>
+
+    <button class="send" id="send">Enviar simula&ccedil;&atilde;o</button>
+
+    <div class="history" id="history"></div>
+
+  </div>
+
 </section>
-</main><footer>Central dos Painéis v0.1 • Central dos Letreiros = módulo ESP32/CAN</footer>
+
+</main>
+
+<footer>
+  Central dos Pain&eacute;is v0.2 &bull;
+  Central dos Letreiros = m&oacute;dulo ESP32/CAN
+</footer>
+
 <script>
-const dados=[["TV Salão 1","Salão principal","cliente",1,"▣"],["TV Salão 2","Área de mesas","cliente",1,"▣"],["TV Área Externa","Fachada","cliente",0,"▣"],["TV Produção","Cozinha","funcionario",1,"▤"],["TV Caixa","Caixa","funcionario",1,"▤"],["Monitor Estoque","Estoque","funcionario",0,"▤"],["Painel de Chamadas","Salão","cliente",1,"⌁"],["Central dos Letreiros","ESP32 / CAN","letreiro",1,"▦"]];
-let hist=JSON.parse(localStorage.getItem("cpHist")||"[]");const q=s=>document.querySelector(s);
-function render(f="todos"){q("#devices").innerHTML=dados.filter(x=>f==="todos"||x[2]===f).map(x=>`<div class="device"><div class="ico">${x[4]}</div><div><b>${x[0]}</b><br><small>${x[1]}</small></div><span class="badge ${x[3]?"":"offline"}">${x[3]?"ONLINE":"OFFLINE"}</span></div>`).join("")}
-function h(){q("#count").textContent=hist.length;q("#history").innerHTML=hist.slice(0,4).map(x=>`<div class="item"><b>${x.m}</b><small>${x.t} • ${x.d} • ${x.p}</small></div>`).join("")}
-document.querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{document.querySelectorAll("[data-f]").forEach(x=>x.classList.remove("active"));b.classList.add("active");render(b.dataset.f)});
-document.querySelectorAll("[data-m]").forEach(b=>b.onclick=()=>q("#mensagem").value=b.dataset.m);
-q("#send").onclick=()=>{const m=q("#mensagem").value.trim();if(!m)return alert("Digite ou escolha uma mensagem.");hist.unshift({m,d:q("#destino").value,p:q("#prioridade").value,t:new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})});hist=hist.slice(0,20);localStorage.setItem("cpHist",JSON.stringify(hist));h();alert("Mensagem registrada na simulação.");};render();h();
+const dados = [
+  ["TV Sal&atilde;o 1","Sal&atilde;o principal","cliente",1,"TV"],
+  ["TV Sal&atilde;o 2","&Aacute;rea de mesas","cliente",1,"TV"],
+  ["TV &Aacute;rea Externa","Fachada","cliente",0,"TV"],
+  ["TV Produ&ccedil;&atilde;o","Cozinha","funcionario",1,"MON"],
+  ["TV Caixa","Caixa","funcionario",1,"MON"],
+  ["Monitor Estoque","Estoque","funcionario",0,"MON"],
+  ["Painel de Chamadas","Sal&atilde;o","cliente",1,"CH"],
+  ["Central dos Letreiros","ESP32 / CAN","letreiro",2,"LED"],
+
+  ["Monitor Divulga&ccedil;&atilde;o 1","Divulga&ccedil;&atilde;o","divulgacao",2,"TV"],
+  ["Monitor Divulga&ccedil;&atilde;o 2","Divulga&ccedil;&atilde;o","divulgacao",2,"TV"],
+  ["Monitor Divulga&ccedil;&atilde;o 3","Divulga&ccedil;&atilde;o","divulgacao",2,"TV"],
+  ["Monitor Divulga&ccedil;&atilde;o 4","Divulga&ccedil;&atilde;o","divulgacao",2,"TV"],
+  ["Monitor Divulga&ccedil;&atilde;o 5","Divulga&ccedil;&atilde;o","divulgacao",2,"TV"],
+  ["Monitor Divulga&ccedil;&atilde;o 6","Divulga&ccedil;&atilde;o","divulgacao",2,"TV"]
+];
+
+let hist = JSON.parse(localStorage.getItem("cpHist") || "[]");
+
+const q = seletor => document.querySelector(seletor);
+
+function render(filtro = "todos") {
+
+  q("#devices").innerHTML = dados
+    .filter(item => filtro === "todos" || item[2] === filtro)
+    .map(item => {
+
+      let classe = "";
+      let status = "ONLINE";
+
+      if (item[3] === 0) {
+        classe = "offline";
+        status = "OFFLINE";
+      }
+
+      if (item[3] === 2) {
+        classe = "aguardando";
+        status = "AGUARDANDO";
+      }
+
+      return `
+        <div class="device">
+          <div class="ico">${item[4]}</div>
+
+          <div>
+            <b>${item[0]}</b><br>
+            <small>${item[1]}</small>
+          </div>
+
+          <span class="badge ${classe}">
+            ${status}
+          </span>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function atualizarHistorico() {
+
+  q("#count").textContent = hist.length;
+
+  q("#history").innerHTML = hist
+    .slice(0,4)
+    .map(item => `
+      <div class="item">
+        <b>${item.m}</b>
+        <small>${item.t} &bull; ${item.d} &bull; ${item.p}</small>
+      </div>
+    `)
+    .join("");
+}
+
+document.querySelectorAll("[data-f]").forEach(botao => {
+
+  botao.onclick = () => {
+
+    document
+      .querySelectorAll("[data-f]")
+      .forEach(item => item.classList.remove("active"));
+
+    botao.classList.add("active");
+
+    render(botao.dataset.f);
+  };
+});
+
+document.querySelectorAll("[data-m]").forEach(botao => {
+
+  botao.onclick = () => {
+    q("#mensagem").value = botao.dataset.m;
+  };
+});
+
+q("#send").onclick = () => {
+
+  const mensagem = q("#mensagem").value.trim();
+
+  if (!mensagem) {
+    alert("Digite ou escolha uma mensagem.");
+    return;
+  }
+
+  hist.unshift({
+    m: mensagem,
+    d: q("#destino").value,
+    p: q("#prioridade").value,
+    t: new Date().toLocaleTimeString(
+      "pt-BR",
+      {
+        hour:"2-digit",
+        minute:"2-digit"
+      }
+    )
+  });
+
+  hist = hist.slice(0,20);
+
+  localStorage.setItem(
+    "cpHist",
+    JSON.stringify(hist)
+  );
+
+  atualizarHistorico();
+
+  alert("Mensagem registrada na simulacao.");
+};
+
+render();
+atualizarHistorico();
 </script>
-</body></html>
+
+</body>
+</html>
