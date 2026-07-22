@@ -41,8 +41,17 @@ jobs:
           node --check src/whatsappConversationService.js
           node --check src/whatsapp/v2/portalInsanoEngine.js
 
-      - name: Run focused regression tests
-        run: node --test tests/whatsapp-legacy-outbound-dedupe.test.js tests/whatsapp-v2-reset-loop.test.js tests/whatsapp-v2-lab.test.js tests/whatsapp-webhook-meta.test.js
+      - name: Test legacy outbound deduplication
+        run: node --test tests/whatsapp-legacy-outbound-dedupe.test.js
+
+      - name: Test reset-loop protection
+        run: node --test tests/whatsapp-v2-reset-loop.test.js
+
+      - name: Test complete V2 routing
+        run: node --test tests/whatsapp-v2-lab.test.js
+
+      - name: Test Meta webhook integration
+        run: node --test tests/whatsapp-webhook-meta.test.js
 
       - name: Run complete test suite
         run: npm test
