@@ -25,6 +25,7 @@ export class WhatsAppConversationService {
   constructor({ filePath, now = () => new Date() } = {}) {
     this.filePath = filePath;
     this.now = now;
+    this.mutationQueue = Promise.resolve();
   }
 
   async list() {
@@ -115,12 +116,36 @@ export class WhatsAppConversationService {
   }
 
   async addOutgoing(id, body = {}, { runtimeConfig = {}, whatsappProvider = null } = {}) {
+    return this.#serializeMutation(() => this.#addOutgoing(id, body, { runtimeConfig, whatsappProvider }));
+  }
+
+  async #addOutgoing(id, body = {}, { runtimeConfig = {}, whatsappProvider = null } = {}) {
     const data = await this.#read();
     const index = data.conversas.findIndex((item) => item.id === id || item.telefone === normalizePhone(id));
     if (index === -1) return { ok: false, error: "Conversa nao encontrada" };
+
     const now = this.now().toISOString();
     const text = String(body.text || body.message || data.conversas[index].respostaSugerida || "").trim();
     if (!text) return { ok: false, error: "Resposta vazia" };
+
+    const manualSendId = String(body.manualSendId || body.correlationId || "").trim().slice(0, 200);
+    if (manualSendId) {
+      const existingMessage = (data.conversas[index].mensagens || []).find((message) => (
+        message.direction === "out" && message.manualSendId === manualSendId
+      ));
+      if (existingMessage) {
+        return {
+          ok: true,
+          duplicated: true,
+          enviado: Boolean(existingMessage.sent || existingMessage.status === "sent"),
+          reason: existingMessage.status,
+          sendResult: null,
+          conversa: this.#withPriority(data.conversas[index]),
+          message: existingMessage
+        };
+      }
+    }
+
     const enabled = runtimeConfig.whatsappBusiness?.sendEnabled === true;
     const hasCredentials = Boolean(runtimeConfig.whatsappBusiness?.accessToken && runtimeConfig.whatsappBusiness?.phoneNumberId);
     const canSend = enabled && hasCredentials && whatsappProvider && data.conversas[index].telefone;
@@ -137,6 +162,8 @@ export class WhatsAppConversationService {
       direction: "out",
       type: "text",
       text,
+      manualSendId,
+      sent: Boolean(sendResult?.sent),
       createdAt: now,
       status: sendStatus,
       httpStatus: sendResult?.httpStatus || null,
@@ -151,7 +178,15 @@ export class WhatsAppConversationService {
     };
     data.conversas[index] = updated;
     await this.#write(data);
-    return { ok: true, enviado: Boolean(sendResult?.sent), reason: sendStatus, sendResult, conversa: this.#withPriority(updated), message };
+    return {
+      ok: true,
+      duplicated: false,
+      enviado: Boolean(sendResult?.sent),
+      reason: sendStatus,
+      sendResult,
+      conversa: this.#withPriority(updated),
+      message
+    };
   }
 
   async recordOutgoing(id, body = {}) {
@@ -201,6 +236,12 @@ export class WhatsAppConversationService {
     data.conversas[index] = { ...data.conversas[index], status, updatedAt: now };
     await this.#write(data);
     return { ok: true, conversa: this.#withPriority(data.conversas[index]) };
+  }
+
+  async #serializeMutation(operation) {
+    const run = this.mutationQueue.then(operation, operation);
+    this.mutationQueue = run.catch(() => {});
+    return run;
   }
 
   #withPriority(conversation) {

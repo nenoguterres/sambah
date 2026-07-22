@@ -2,7 +2,8 @@ const state = {
   items: [],
   selectedId: "",
   filter: "all",
-  query: ""
+  query: "",
+  sendingReply: false
 };
 
 const listEl = document.querySelector("#conversationList");
@@ -121,6 +122,11 @@ function renderChat(conversa) {
     chatEl.querySelector("#replyText").value = conversa.respostaSugerida || "";
     chatEl.querySelector("#replyText").focus();
   });
+  chatEl.querySelector("#replyText")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.shiftKey) return;
+    event.preventDefault();
+    sendReply(conversa.id);
+  });
   chatEl.querySelector("#sendReply")?.addEventListener("click", () => sendReply(conversa.id));
 }
 
@@ -151,32 +157,67 @@ function renderMessage(message) {
 }
 
 async function sendReply(id) {
-  const textarea = chatEl.querySelector("#replyText");
-  const status = chatEl.querySelector("#replyStatus");
-  const text = textarea?.value.trim();
-  if (!text) {
-    status.textContent = "Escreve uma resposta antes de enviar.";
+  if (state.sendingReply) {
+    const currentStatus = chatEl.querySelector("#replyStatus");
+    if (currentStatus) currentStatus.textContent = "Envio em andamento. Aguarda um instante.";
     return;
   }
-  status.textContent = "Enviando...";
+
+  const textarea = chatEl.querySelector("#replyText");
+  const button = chatEl.querySelector("#sendReply");
+  const status = chatEl.querySelector("#replyStatus");
+  const text = textarea?.value.trim();
+
+  if (!text) {
+    if (status) status.textContent = "Escreve uma resposta antes de enviar.";
+    return;
+  }
+
+  state.sendingReply = true;
+  const oldButtonText = button?.textContent || "Enviar";
+  const manualSendId = typeof crypto?.randomUUID === "function"
+    ? `manual_${crypto.randomUUID()}`
+    : `manual_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Enviando...";
+  }
+  if (textarea) textarea.disabled = true;
+  if (status) status.textContent = "Enviando...";
+
   try {
     const response = await fetch(`/api/conversas/${encodeURIComponent(id)}/responder`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text })
+      body: JSON.stringify({ text, manualSendId })
     });
     const data = await response.json();
     if (!data.ok) throw new Error(data.error || data.reason || "Falha ao enviar");
-    textarea.value = "";
-    if (data.enviado) {
-      status.textContent = "Resposta enviada pelo SamBah.";
-    } else {
-      const metaError = data.sendResult?.response?.error?.message || data.sendResult?.error || data.reason || "sem envio real";
-      status.textContent = `Nao enviado pela Meta: ${metaError}`;
+
+    if (textarea) textarea.value = "";
+    if (status) {
+      if (data.duplicated) {
+        status.textContent = "Envio duplicado bloqueado.";
+      } else if (data.enviado) {
+        status.textContent = "Resposta enviada pelo SamBah.";
+      } else {
+        const metaError = data.sendResult?.response?.error?.message || data.sendResult?.error || data.reason || "sem envio real";
+        status.textContent = `Nao enviado pela Meta: ${metaError}`;
+      }
     }
     await loadConversas();
   } catch (error) {
-    status.textContent = error.message || "Nao foi possivel enviar.";
+    if (status) status.textContent = error.message || "Nao foi possivel enviar.";
+  } finally {
+    state.sendingReply = false;
+    const currentButton = chatEl.querySelector("#sendReply");
+    const currentTextarea = chatEl.querySelector("#replyText");
+    if (currentButton) {
+      currentButton.disabled = false;
+      currentButton.textContent = oldButtonText;
+    }
+    if (currentTextarea) currentTextarea.disabled = false;
   }
 }
 
