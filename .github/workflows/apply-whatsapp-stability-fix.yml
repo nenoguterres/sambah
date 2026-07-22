@@ -16,6 +16,8 @@ jobs:
     if: ${{ github.event_name == 'pull_request' || !contains(github.event.head_commit.message, '[stability-applied]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      WHATSAPP_PROVIDER: meta
     steps:
       - name: Checkout isolated branch
         uses: actions/checkout@v4
@@ -35,6 +37,7 @@ jobs:
       - name: Apply deterministic source and regression patch
         run: |
           node scripts/apply-whatsapp-stability-fix.mjs
+          node scripts/adjust-dedupe-stable-order.mjs
           node scripts/adjust-whatsapp-v2-global-return-test.mjs
 
       - name: Validate JavaScript syntax
@@ -48,6 +51,12 @@ jobs:
 
       - name: Test reset-loop protection
         run: node --test tests/whatsapp-v2-reset-loop.test.js
+
+      - name: Test Central audio order
+        run: node --test tests/audit.test.js
+
+      - name: Test CRM in Meta mode
+        run: node --test tests/crm.test.js
 
       - name: Test complete V2 routing
         shell: bash
@@ -83,7 +92,7 @@ jobs:
           retention-days: 1
 
       - name: Remove temporary patch machinery
-        run: rm -f scripts/apply-whatsapp-stability-fix.mjs scripts/adjust-whatsapp-v2-global-return-test.mjs .github/workflows/apply-whatsapp-stability-fix.yml v2-test.log full-test.log
+        run: rm -f scripts/apply-whatsapp-stability-fix.mjs scripts/adjust-dedupe-stable-order.mjs scripts/adjust-whatsapp-v2-global-return-test.mjs .github/workflows/apply-whatsapp-stability-fix.yml v2-test.log full-test.log
 
       - name: Commit validated fix to isolated branch
         run: |
