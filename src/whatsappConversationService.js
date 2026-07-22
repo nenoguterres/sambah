@@ -119,18 +119,47 @@ export class WhatsAppConversationService {
   }
 
   async addOutgoing(id, body = {}, { runtimeConfig = {}, whatsappProvider = null } = {}) {
+    return this.#serializeMutation(() => this.#addOutgoing(id, body, { runtimeConfig, whatsappProvider }));
+  }
+
+  async #addOutgoing(id, body = {}, { runtimeConfig = {}, whatsappProvider = null } = {}) {
     const data = await this.#read();
     const index = findConversationIndex(data.conversas, id);
     if (index === -1) return { ok: false, error: "Conversa nao encontrada" };
+
     const now = this.now().toISOString();
     const text = String(body.text || body.message || "").trim();
     if (!text) return { ok: false, error: "Resposta vazia" };
+
+    const manualSendId = String(body.manualSendId || body.correlationId || "").trim().slice(0, 200);
+    if (manualSendId) {
+      const existingMessage = (data.conversas[index].mensagens || []).find((message) => (
+        message.direction === "out"
+        && (message.manualSendId === manualSendId || message.correlationId === manualSendId)
+      ));
+      if (existingMessage) {
+        return {
+          ok: true,
+          duplicate: true,
+          duplicated: true,
+          enviado: Boolean(existingMessage.sent || existingMessage.status === "sent"),
+          reason: existingMessage.status,
+          sendResult: null,
+          conversa: this.#withPriority(data.conversas[index]),
+          message: existingMessage
+        };
+      }
+    }
+
     const outgoing = await sendOutgoingIfReady({ conversation: data.conversas[index], runtimeConfig, whatsappProvider, text });
     const message = {
       id: `msg_${crypto.randomUUID()}`,
       direction: "out",
       type: "text",
       text,
+      manualSendId,
+      correlationId: manualSendId,
+      sent: Boolean(outgoing.sendResult?.sent),
       createdAt: now,
       status: outgoing.status,
       httpStatus: outgoing.sendResult?.httpStatus || null,
@@ -148,7 +177,16 @@ export class WhatsAppConversationService {
     };
     data.conversas[index] = updated;
     await this.#write(data);
-    return { ok: true, enviado: Boolean(outgoing.sendResult?.sent), reason: outgoing.status, sendResult: outgoing.sendResult, conversa: this.#withPriority(updated), message };
+    return {
+      ok: true,
+      duplicate: false,
+      duplicated: false,
+      enviado: Boolean(outgoing.sendResult?.sent),
+      reason: outgoing.status,
+      sendResult: outgoing.sendResult,
+      conversa: this.#withPriority(updated),
+      message
+    };
   }
 
   async recordOutgoing(id, body = {}) {
