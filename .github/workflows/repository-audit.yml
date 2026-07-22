@@ -1,0 +1,96 @@
+name: SamBah Repository Audit
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build repository audit
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import re
+          import subprocess
+          from collections import defaultdict
+          from pathlib import Path
+
+          files = subprocess.check_output(['git', 'ls-files'], text=True).splitlines()
+          suspicious_re = re.compile(r'(backup|\.bak$|old|legacy|deprecated|archive|arquiv|copy|copia|temp|tmp|unused|obsolete|rascunho)', re.I)
+          text_extensions = {'.js', '.mjs', '.cjs', '.json', '.html', '.css', '.md', '.yml', '.yaml', '.txt', '.ps1'}
+
+          suspicious = [path for path in files if suspicious_re.search(path)]
+          large = []
+          hashes = defaultdict(list)
+          corpus_parts = []
+
+          for path in files:
+            p = Path(path)
+            if not p.is_file():
+              continue
+            size = p.stat().st_size
+            if size >= 250_000:
+              large.append({'path': path, 'bytes': size})
+            data = p.read_bytes()
+            if size > 0:
+              hashes[hashlib.sha256(data).hexdigest()].append(path)
+            if p.suffix.lower() in text_extensions and size <= 1_000_000:
+              try:
+                corpus_parts.append((path, data.decode('utf-8', errors='ignore')))
+              except Exception:
+                pass
+
+          duplicates = [paths for paths in hashes.values() if len(paths) > 1]
+          public_orphans = []
+          for path in files:
+            if not path.startswith('public/'):
+              continue
+            p = Path(path)
+            if not p.is_file():
+              continue
+            basename = p.name
+            stem = p.stem
+            references = []
+            for other_path, text in corpus_parts:
+              if other_path == path:
+                continue
+              if basename in text or (len(stem) >= 8 and stem in text):
+                references.append(other_path)
+            if not references:
+              public_orphans.append({'path': path, 'bytes': p.stat().st_size})
+
+          generated_data = [
+            path for path in files
+            if path.startswith(('src/data/', 'public/generated/', 'tmp/', 'data/'))
+          ]
+
+          report = {
+            'trackedFiles': len(files),
+            'suspiciousNames': suspicious,
+            'largeFiles': sorted(large, key=lambda item: item['bytes'], reverse=True),
+            'exactDuplicateGroups': sorted(duplicates, key=lambda group: (-len(group), group[0])),
+            'generatedDataCandidates': generated_data,
+            'publicFilesWithoutTextReference': sorted(public_orphans, key=lambda item: item['path'])
+          }
+          Path('repository-audit.json').write_text(json.dumps(report, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+          print(json.dumps({key: len(value) if isinstance(value, list) else value for key, value in report.items()}, indent=2))
+          PY
+
+      - name: Upload audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: sambah-repository-audit
+          path: repository-audit.json
+          if-no-files-found: error
