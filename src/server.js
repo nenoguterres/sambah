@@ -67,10 +67,10 @@ const callCenter = new CallCenterService({
   alertsFile: dataFile("call-center-alerts.json"),
   alertUrl: `${runtimeConfig.publicBaseUrl || runtimeConfig.baseUrl || "https://api.insanofoodtruck.com.br"}/conversas`
 });
-const insanoWorkhub = new InsanoWorkhubService();
+const insanoWorkhub = new InsanoWorkhubService({ dataFile: dataFile("insano-workhub.json") });
 const insanoWorkhubController = new InsanoWorkhubController({ workhubService: insanoWorkhub });
 const instagramPublisher = new InstagramPublisher(runtimeConfig.perolaInstagram);
-const perola = new PerolaService({ workhubService: insanoWorkhub, publisher: instagramPublisher });
+const perola = new PerolaService({ dataDir: runtimeConfig.dataDir, workhubService: insanoWorkhub, publisher: instagramPublisher });
 const perolaRoutes = createPerolaRoutes({ service: perola });
 const sambahPay = createSambahPayModule({ dataDir: runtimeConfig.dataDir, auditService: audit });
 const payPerolaBridge = new PayPerolaBridgeService({

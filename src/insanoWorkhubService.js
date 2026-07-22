@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const defaultDataFile = fileURLToPath(new URL("./data/insano-workhub.json", import.meta.url));
+const defaultDataFile = fileURLToPath(new URL("../data/insano-workhub.json", import.meta.url));
 const SOURCE_MODULES = new Set(["mesa", "sambah", "perola", "pay"]);
 const TARGET_MODULES = new Set(["mesa", "sambah", "perola", "pay", "workhub"]);
 const STATUSES = new Set(["pending", "in_progress", "blocked", "completed"]);
