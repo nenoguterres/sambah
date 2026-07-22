@@ -1,0 +1,127 @@
+name: Cleanup SamBah Runtime Data
+
+on:
+  push:
+    branches:
+      - chore/limpeza-arquivos-sambah
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    env:
+      WHATSAPP_PROVIDER: meta
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: chore/limpeza-arquivos-sambah
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Apply structural cleanup
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFile, writeFile, rm, mkdir } from 'node:fs/promises';
+
+          const perolaPath = 'src/perolaService.js';
+          const serverPath = 'src/server.js';
+          const ignorePath = '.gitignore';
+
+          let perola = await readFile(perolaPath, 'utf8');
+          const oldDefault = 'const defaultDataDir = fileURLToPath(new URL("./data/", import.meta.url));';
+          const newDefault = 'const defaultDataDir = fileURLToPath(new URL("../data/", import.meta.url));';
+          if (!perola.includes(oldDefault) && !perola.includes(newDefault)) {
+            throw new Error('Nao foi possivel localizar defaultDataDir em src/perolaService.js');
+          }
+          perola = perola.replace(oldDefault, newDefault);
+          await writeFile(perolaPath, perola, 'utf8');
+
+          let server = await readFile(serverPath, 'utf8');
+          const oldService = 'const perola = new PerolaService({ workhubService: insanoWorkhub, publisher: instagramPublisher });';
+          const newService = 'const perola = new PerolaService({ dataDir: runtimeConfig.dataDir, workhubService: insanoWorkhub, publisher: instagramPublisher });';
+          if (!server.includes(oldService) && !server.includes(newService)) {
+            throw new Error('Nao foi possivel localizar a criacao do PerolaService em src/server.js');
+          }
+          server = server.replace(oldService, newService);
+          await writeFile(serverPath, server, 'utf8');
+
+          const runtimeFiles = [
+            'src/data/pay-perola-signals.json',
+            'src/data/pay-perola-suggestions.json',
+            'src/data/perola-alerts.json',
+            'src/data/perola-audit.json',
+            'src/data/perola-campaign-distributions.json',
+            'src/data/perola-campaigns.json',
+            'src/data/perola-channels.json',
+            'src/data/perola-ecosystem-signals.json',
+            'src/data/perola-human-approval-queue.json',
+            'src/data/perola-mesa-daily-report.json',
+            'src/data/perola-mesa-interactions.json',
+            'src/data/perola-post-drafts.json',
+            'src/data/perola-posts.json',
+            'src/data/perola-rules.json',
+            'src/data/perola-sales-daily.json',
+            'src/data/perola-visual-briefs.json',
+            'src/data/sambah-perola-signals.json',
+            'src/data/sambah-perola-suggestions.json'
+          ];
+          for (const file of runtimeFiles) await rm(file, { force: true });
+
+          let ignore = await readFile(ignorePath, 'utf8');
+          const removeRules = new Set([
+            'data/',
+            '!src/data/',
+            '!src/data/perola-posts.json',
+            '!src/data/perola-alerts.json',
+            '!src/data/perola-audit.json',
+            '!src/data/perola-rules.json',
+            '!src/data/perola-sales-daily.json',
+            '!src/data/perola-mesa-daily-report.json',
+            'src/data/perola-backups/'
+          ]);
+          const lines = ignore.split(/\r?\n/).filter((line) => !removeRules.has(line.trim()));
+          const additions = [
+            '/data/',
+            '/src/data/perola-*.json',
+            '/src/data/pay-perola-*.json',
+            '/src/data/sambah-perola-*.json',
+            '/src/data/perola-backups/',
+            '/public/generated/perola/'
+          ];
+          const marker = '# Dados operacionais gerados em runtime; nunca versionar.';
+          if (!lines.includes(marker)) lines.push(marker);
+          for (const rule of additions) if (!lines.includes(rule)) lines.push(rule);
+          ignore = `${lines.filter((line, index, all) => line || all[index - 1]).join('\n').trim()}\n`;
+          await writeFile(ignorePath, ignore, 'utf8');
+
+          await mkdir('tests', { recursive: true });
+          await writeFile('tests/perola-runtime-storage.test.js', `import test from "node:test";\nimport assert from "node:assert/strict";\nimport { mkdtemp, readFile, rm } from "node:fs/promises";\nimport { tmpdir } from "node:os";\nimport { join } from "node:path";\nimport { PerolaService } from "../src/perolaService.js";\n\ntest("Perola cria colecoes operacionais no DATA_DIR informado", async (t) => {\n  const dataDir = await mkdtemp(join(tmpdir(), "sambah-perola-runtime-"));\n  t.after(() => rm(dataDir, { recursive: true, force: true }));\n  const service = new PerolaService({ dataDir });\n  await service.ready;\n  const posts = JSON.parse(await readFile(join(dataDir, "perola-posts.json"), "utf8"));\n  const rules = JSON.parse(await readFile(join(dataDir, "perola-rules.json"), "utf8"));\n  assert.ok(Array.isArray(posts));\n  assert.ok(Array.isArray(rules));\n  assert.ok(posts.length >= 1);\n  assert.ok(rules.length >= 1);\n});\n`, 'utf8');
+
+          await rm('.github/workflows/cleanup-sambah-runtime-data.yml', { force: true });
+          NODE
+
+      - name: Check syntax
+        run: |
+          node --check src/perolaService.js
+          node --check src/server.js
+
+      - name: Run complete test suite
+        run: npm test
+
+      - name: Commit validated cleanup
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: separar dados operacionais do codigo-fonte"
+          git push origin HEAD:chore/limpeza-arquivos-sambah
