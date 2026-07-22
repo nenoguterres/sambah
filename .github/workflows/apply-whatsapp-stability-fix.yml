@@ -48,7 +48,19 @@ jobs:
         run: node --test tests/whatsapp-v2-reset-loop.test.js
 
       - name: Test complete V2 routing
-        run: node --test tests/whatsapp-v2-lab.test.js
+        shell: bash
+        run: |
+          set -o pipefail
+          node --test tests/whatsapp-v2-lab.test.js 2>&1 | tee v2-test.log
+
+      - name: Upload V2 failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v2-test-failure
+          path: v2-test.log
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Test Meta webhook integration
         run: node --test tests/whatsapp-webhook-meta.test.js
