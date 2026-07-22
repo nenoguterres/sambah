@@ -7,7 +7,7 @@ export function routePortalInsanoMessage({ state, message, contract = portalInsa
   const routedState = normalizeNavigationState(normalizeLegacyFoodtruckState(state, contract), contract);
   const command = routeNavigationCommand(text);
   if (routedState.mode === "human" || routedState.serviceState === "HUMANO") {
-    if (isHumanReset(text) || command === "inicio" || command === "portal_voltar") {
+    if (command === "inicio" || command === "portal_voltar") {
       return openMenu(resetToPortal(routedState, contract), contract, contract.welcome.menuId, "humanResetToPortal", []);
     }
     return humanState(routedState);
@@ -21,13 +21,16 @@ export function routePortalInsanoMessage({ state, message, contract = portalInsa
   }
   if (isPaymentClaim(text)) return startFlow(routedState, contract, "payment_receipt_review", "paymentSafety");
   if (command) return handleNavigationCommand(routedState, contract, command);
-  if (isWelcome(text)) return openMenu(resetToPortal(routedState, contract), contract, contract.welcome.menuId, "welcomeFlow", []);
+  if (isWelcome(text) && routedState.activeFlow) return resumeActiveFlow(routedState, contract);
   if (routedState.activeFlow) return handleActiveFlow(routedState, contract, text, message.text);
   if (isXeriffeCatalogMenu(routedState.activeMenu)) return handleXeriffeCatalogMessage(routedState, menuCache, text);
   if (isExternalPortalArea(routedState)) {
     const selected = resolveMenuOption(contract.menus[routedState.activeMenu], text);
     if (selected) return executeAction(routedState, contract, selected.action, selected.id, menuCache);
     return openMenu(routedState, contract, routedState.activeMenu, "fallbackMenu", routedState.menuStack || []);
+  }
+  if (isWelcome(text) && isPortalHome(routedState, contract)) {
+    return openMenu(routedState, contract, contract.welcome.menuId, "welcomeFlow", []);
   }
   const currentScreen = currentNavigationScreen(routedState);
   if (!isMenuScreen(currentScreen)) return renderCurrentScreen(routedState, contract, "guidedScreenFallback");
@@ -715,6 +718,22 @@ function routeNavigationCommand(text) {
   if (["cancelar", "parar", "desistir"].includes(text)) return "cancelar";
   if (["insano_humano", "humano", "atendente", "atendimento humano", "pessoa", "falar com alguem"].includes(text)) return "humano";
   return null;
+}
+
+function resumeActiveFlow(state, contract) {
+  const flow = contract.flows[state.activeFlow];
+  const step = flow?.steps?.find((item) => item.id === state.activeStep);
+  const prompt = step?.prompt || flow?.initialMessage || "Seguimos deste ponto. Responde a informacao solicitada para continuar.";
+  return response("activeFlowGreeting", state, prompt);
+}
+
+function isPortalHome(state, contract) {
+  return !state.areaId
+    && !state.activeFlow
+    && state.mode !== "human"
+    && state.serviceState !== "HUMANO"
+    && (state.activeMenu || contract.welcome.menuId) === contract.welcome.menuId
+    && currentNavigationScreen(state) === "PORTAL_INSANO";
 }
 
 function humanState(state) {
