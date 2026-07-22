@@ -68,10 +68,22 @@ jobs:
         run: node --test tests/whatsapp-webhook-meta.test.js
 
       - name: Run complete test suite
-        run: npm test
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee full-test.log
+
+      - name: Upload complete-suite failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-test-failure
+          path: full-test.log
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Remove temporary patch machinery
-        run: rm -f scripts/apply-whatsapp-stability-fix.mjs scripts/adjust-whatsapp-v2-global-return-test.mjs .github/workflows/apply-whatsapp-stability-fix.yml v2-test.log
+        run: rm -f scripts/apply-whatsapp-stability-fix.mjs scripts/adjust-whatsapp-v2-global-return-test.mjs .github/workflows/apply-whatsapp-stability-fix.yml v2-test.log full-test.log
 
       - name: Commit validated fix to isolated branch
         run: |
