@@ -1,0 +1,70 @@
+name: SamBah Asset Reference Audit
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Map asset references
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+
+          targets = [
+            'card-divulgar-sambah.png',
+            'insano-logo-10.png',
+            'insano-logo-home.png',
+            'insano-logo-oficial-crop.png',
+            'sambah-pay-logo-before-clipboard.png',
+            'sambah-pay-logo-original.png',
+            'card-atendimento.png',
+            'card-pedidos-insano.png',
+            'card-xeriffe.png',
+            '01-agendar-foodtruck-beertruck-insano.png',
+            '02-pedidos-insano.png',
+            '02-pedidos-insano-crop.png',
+            '03-pedidos-buteco-xeriffe.png',
+            '03-pedidos-buteco-xeriffe-crop.png',
+            '04-falar-watts-atendimento.png',
+            '04-falar-watts-atendimento-crop.png',
+            'event-insano.html',
+            'quote-insano.html',
+            'mesa.css'
+          ]
+          result = {}
+          for target in targets:
+            proc = subprocess.run(
+              ['git', 'grep', '-n', '-F', target, '--', ':!public/assets', ':!repository-audit.json'],
+              text=True,
+              stdout=subprocess.PIPE,
+              stderr=subprocess.DEVNULL
+            )
+            result[target] = [line for line in proc.stdout.splitlines() if line]
+          result['actionFiles'] = subprocess.check_output(
+            ['git', 'ls-files', 'public/assets/brand/actions/*'], text=True
+          ).splitlines()
+          Path('asset-reference-audit.json').write_text(
+            json.dumps(result, indent=2, ensure_ascii=False) + '\n', encoding='utf-8'
+          )
+          print(json.dumps({key: len(value) for key, value in result.items()}, indent=2))
+          PY
+
+      - name: Upload reference audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: sambah-asset-reference-audit
+          path: asset-reference-audit.json
+          if-no-files-found: error
