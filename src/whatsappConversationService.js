@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import crypto from "node:crypto";
 import { extractWhatsAppMessageText } from "./whatsapp/whatsappWebhookParser.js";
 import { normalizeWhatsAppPhone, sameWhatsAppPhone, whatsappPhoneAliases } from "./whatsapp/phoneNumber.js";
+import { dedupeConversationMessages, mergeConversationMessages, sameConversationMessage } from "./whatsapp/conversationMessageDedupe.js";
 
 export class WhatsAppConversationService {
   constructor({ filePath, messagesFile = "", now = () => new Date() } = {}) {
@@ -39,7 +40,9 @@ export class WhatsAppConversationService {
     if (!conversation && this.messagesFile) {
       conversation = findConversation((await this.#fallbackFromMessageHistory()).conversas, id);
     }
-    return conversation ? { ok: true, conversa: this.#withPriority(conversation) } : { ok: false, error: "Conversa nao encontrada" };
+    return conversation
+      ? { ok: true, conversa: this.#withPriority({ ...conversation, mensagens: dedupeConversationMessages(conversation.mensagens) }) }
+      : { ok: false, error: "Conversa nao encontrada" };
   }
 
   async recordIncoming(payload = {}) {
@@ -367,7 +370,9 @@ export class WhatsAppConversationService {
   }
 
   #listFromData(data = { conversas: [] }) {
-    const conversations = (Array.isArray(data.conversas) ? data.conversas : []).filter(isPlainRecord).map((item) => this.#withPriority(item));
+    const conversations = (Array.isArray(data.conversas) ? data.conversas : [])
+      .filter(isPlainRecord)
+      .map((item) => this.#withPriority({ ...item, mensagens: dedupeConversationMessages(item.mensagens) }));
     return {
       ok: true,
       count: conversations.length,
@@ -403,9 +408,13 @@ export class WhatsAppConversationService {
       const id = `wa_${phone}`;
       const index = findConversationIndex(next.conversas, phone);
       const existing = index >= 0 ? next.conversas[index] : null;
-      const messages = Array.isArray(existing?.mensagens) ? existing.mensagens : [];
+      const rawMessages = Array.isArray(existing?.mensagens) ? existing.mensagens : [];
+      const messages = dedupeConversationMessages(rawMessages);
+      if (index >= 0 && messages.length !== rawMessages.length) {
+        next.conversas[index] = { ...existing, mensagens: messages };
+        changed = true;
+      }
       const messageId = historyMessage.id || historyMessage.messageId || `history_${historyMessage.createdAt}_${phone}`;
-      if (messages.some((message) => sameHistoryMessage(message, historyMessage, messageId))) continue;
       const text = String(historyMessage.text || "").trim();
       const message = {
         id: messageId,
@@ -426,6 +435,16 @@ export class WhatsAppConversationService {
         errorCode: historyMessage.errorCode || "",
         errorMessage: historyMessage.errorMessage || ""
       };
+      const duplicateIndex = messages.findIndex((current) => sameConversationMessage(current, message));
+      if (duplicateIndex >= 0) {
+        const mergedMessages = [...messages];
+        mergedMessages[duplicateIndex] = mergeConversationMessages(mergedMessages[duplicateIndex], message);
+        if (index >= 0 && JSON.stringify(mergedMessages) !== JSON.stringify(rawMessages)) {
+          next.conversas[index] = { ...next.conversas[index], mensagens: mergedMessages };
+          changed = true;
+        }
+        continue;
+      }
       const base = existing || {
         id,
         nome: historyMessage.customerName || "Cliente WhatsApp",
@@ -435,7 +454,7 @@ export class WhatsAppConversationService {
         mensagens: [],
         createdAt: historyMessage.createdAt
       };
-      const updatedMessages = [...messages, message].sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))).slice(-60);
+      const updatedMessages = dedupeConversationMessages([...messages, message]);
       const lastInbound = [...updatedMessages].reverse().find((item) => item.direction === "in");
       const lastMessage = updatedMessages[updatedMessages.length - 1];
       const updated = {
@@ -522,7 +541,7 @@ export class WhatsAppConversationService {
         providerMessageId: historyMessage.providerMessageId || "",
         errorMessage: historyMessage.errorMessage || ""
       };
-      const mensagens = [...(existing.mensagens || []), message].sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))).slice(-60);
+      const mensagens = dedupeConversationMessages([...(existing.mensagens || []), message]);
       const lastInbound = [...mensagens].reverse().find((item) => item.direction === "in");
       const lastMessage = mensagens[mensagens.length - 1];
       byPhone.set(phone, {

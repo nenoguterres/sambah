@@ -58,7 +58,7 @@ test("WhatsApp V2 lab modo humano preserva contexto e bloqueia automacao apos mo
   assert.equal(engine.sender.sent.length, 1);
 });
 
-test("WhatsApp V2 lab permite reiniciar Portal com oi quando conversa estava em humano", async () => {
+test("WhatsApp V2 lab mantem humano com oi e exige comando explicito para reiniciar", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000006";
   const state = createWhatsAppV2State(from);
@@ -67,8 +67,12 @@ test("WhatsApp V2 lab permite reiniciar Portal com oi quando conversa estava em 
   state.navigationStack = ["PORTAL_INSANO", "INSANO_FOODTRUCK"];
   await engine.conversationRepository.save(state);
 
-  const result = await engine.processor.handleIncoming({ messageId: "wamid-v2-human-reset", from, text: "oi" });
+  const greeting = await engine.processor.handleIncoming({ messageId: "wamid-v2-human-greeting", from, text: "oi" });
+  assert.equal(greeting.state.mode, "human");
+  assert.equal(greeting.state.serviceState, "HUMANO");
+  assert.equal(greeting.replies.length, 0);
 
+  const result = await engine.processor.handleIncoming({ messageId: "wamid-v2-human-reset", from, text: "inicio" });
   assert.equal(result.state.mode, "bot");
   assert.equal(result.state.serviceState, "AUTOMATICO");
   assert.equal(result.replies[0].type, "menu");
@@ -444,24 +448,21 @@ test("Portal Insano opcao invalida repete menu atual e comandos voltar/inicio na
   assert.equal(home.state.areaId, null);
 });
 
-test("Portal Insano Evento obedece oi e portal insano como retorno global", async () => {
+test("Portal Insano Evento preserva contexto com oi e aceita retorno global explicito", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000301";
   await engine.processor.handleIncoming({ messageId: "wamid-event-global-1", from, text: "oi" });
   await engine.processor.handleIncoming({ messageId: "wamid-event-global-2", from, text: "PORTAL_INSANO_FOODTRUCK" });
   await engine.processor.handleIncoming({ messageId: "wamid-event-global-3", from, text: "INSANO_EVENTO" });
 
-  const oi = await engine.processor.handleIncoming({ messageId: "wamid-event-global-4", from, text: "oi" });
-  assert.equal(oi.state.activeMenu, "portal_main_menu");
-  assert.equal(oi.state.areaId, null);
-  assert.equal(oi.state.foodtruckSubstate, null);
-  assert.deepEqual(oi.state.navigationStack, ["PORTAL_INSANO"]);
-  assert.equal(oi.replies[0].type, "menu");
-  assert.notEqual(oi.replies[0].type, "url_button");
+  const greeting = await engine.processor.handleIncoming({ messageId: "wamid-event-global-4", from, text: "oi" });
+  assert.equal(greeting.state.activeMenu, "foodtruck_main_menu");
+  assert.equal(greeting.state.areaId, "insano_food_truck");
+  assert.equal(greeting.state.foodtruckSubstate.target, "evento");
+  assert.deepEqual(greeting.state.navigationStack, ["PORTAL_INSANO", "INSANO_FOODTRUCK", "INSANO_EVENTO"]);
+  assert.equal(greeting.replies[0].type, "url_button");
 
-  await engine.processor.handleIncoming({ messageId: "wamid-event-global-5", from, text: "PORTAL_INSANO_FOODTRUCK" });
-  await engine.processor.handleIncoming({ messageId: "wamid-event-global-6", from, text: "INSANO_EVENTO" });
-  const portal = await engine.processor.handleIncoming({ messageId: "wamid-event-global-7", from, text: "portal insano" });
+  const portal = await engine.processor.handleIncoming({ messageId: "wamid-event-global-5", from, text: "portal insano" });
   assert.equal(portal.state.activeMenu, "portal_main_menu");
   assert.equal(portal.state.areaId, null);
   assert.equal(portal.state.foodtruckSubstate, null);
