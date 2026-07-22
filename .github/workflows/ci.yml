@@ -1,0 +1,35 @@
+name: SamBah CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      WHATSAPP_PROVIDER: meta
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Check critical syntax
+        run: |
+          node --check src/server.js
+          node --check src/perolaService.js
+          node --check src/insanoWorkhubService.js
+
+      - name: Run complete test suite
+        run: npm test
