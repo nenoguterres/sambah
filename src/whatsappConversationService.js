@@ -405,7 +405,7 @@ export class WhatsAppConversationService {
       const existing = index >= 0 ? next.conversas[index] : null;
       const messages = Array.isArray(existing?.mensagens) ? existing.mensagens : [];
       const messageId = historyMessage.id || historyMessage.messageId || `history_${historyMessage.createdAt}_${phone}`;
-      if (messages.some((message) => sameInboundHistoryMessage(message, historyMessage, messageId))) continue;
+      if (messages.some((message) => sameHistoryMessage(message, historyMessage, messageId))) continue;
       const text = String(historyMessage.text || "").trim();
       const message = {
         id: messageId,
@@ -416,7 +416,15 @@ export class WhatsAppConversationService {
         mediaId: "",
         rawType: "text",
         createdAt: historyMessage.createdAt,
-        status: normalizeHistoryStatus(historyMessage)
+        status: normalizeHistoryStatus(historyMessage),
+        messageId: historyMessage.messageId || "",
+        providerMessageId: historyMessage.providerMessageId || "",
+        correlationId: historyMessage.correlationId || "",
+        manualSendId: historyMessage.manualSendId || historyMessage.correlationId || "",
+        httpStatus: historyMessage.httpStatus || null,
+        response: historyMessage.response || null,
+        errorCode: historyMessage.errorCode || "",
+        errorMessage: historyMessage.errorMessage || ""
       };
       const base = existing || {
         id,
@@ -584,11 +592,34 @@ function normalizeHistoryStatus(message = {}) {
   return message.status || "recebida";
 }
 
-function sameInboundHistoryMessage(message = {}, historyMessage = {}, messageId = "") {
-  if (message.id === messageId) return true;
-  const historyProviderId = String(historyMessage.messageId || historyMessage.providerMessageId || "").trim();
-  if (!historyProviderId || message.direction === "out") return false;
-  return message.id === historyProviderId || message.messageId === historyProviderId || message.providerMessageId === historyProviderId;
+function sameHistoryMessage(message = {}, historyMessage = {}, messageId = "") {
+  const messageDirection = message.direction === "out" ? "out" : "in";
+  const historyDirection = historyMessage.direction === "out" ? "out" : "in";
+  if (messageDirection !== historyDirection) return false;
+
+  const currentIdentifiers = conversationMessageIdentifiers(message);
+  const historyIdentifiers = conversationMessageIdentifiers(historyMessage, messageId);
+  for (const identifier of currentIdentifiers) {
+    if (historyIdentifiers.has(identifier)) return true;
+  }
+  return false;
+}
+
+function conversationMessageIdentifiers(message = {}, fallbackId = "") {
+  const identifiers = new Set([
+    fallbackId,
+    message.id,
+    message.messageId,
+    message.providerMessageId,
+    message.correlationId,
+    message.manualSendId
+  ].map((value) => String(value || "").trim()).filter(Boolean));
+  const responseMessages = Array.isArray(message.response?.messages) ? message.response.messages : [];
+  for (const item of responseMessages) {
+    const id = String(item?.id || "").trim();
+    if (id) identifiers.add(id);
+  }
+  return identifiers;
 }
 
 async function sendOutgoingIfReady({ conversation = {}, runtimeConfig = {}, whatsappProvider = null, text = "" } = {}) {

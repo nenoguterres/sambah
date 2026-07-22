@@ -117,11 +117,27 @@ export class WhatsAppMessageService {
     return this.#mutateMessages(async () => {
       const messages = await this.readMessages();
       const messageId = String(normalized.messageId || "").trim();
+      const correlationId = String(normalized.correlationId || "").trim();
+      const providerMessageId = String(
+        sendResult?.providerMessageId || sendResult?.response?.messages?.[0]?.id || ""
+      ).trim();
+
       if (direction === "in" && messageId) {
         const existing = messages.find((item) => item.direction === "in" && item.messageId === messageId);
         if (existing) return { ok: true, duplicate: true, message: existing };
       }
-      const providerMessageId = sendResult?.providerMessageId || sendResult?.response?.messages?.[0]?.id || "";
+
+      if (direction === "out" && (messageId || correlationId || providerMessageId)) {
+        const existing = messages.find((item) => (
+          item.direction === "out"
+          && identifiersOverlap(
+            messageIdentifiers(item),
+            new Set([messageId, correlationId, providerMessageId].filter(Boolean))
+          )
+        ));
+        if (existing) return { ok: true, duplicate: true, message: existing };
+      }
+
       const message = {
         id: `${direction}_${this.now().getTime()}_${Math.random().toString(16).slice(2)}`,
         direction,
@@ -130,7 +146,7 @@ export class WhatsAppMessageService {
         customerName: normalized.customer?.name || "",
         messageId,
         providerMessageId,
-        correlationId: normalized.correlationId || "",
+        correlationId,
         text: text || normalized.message,
         status: sendResult?.status || (direction === "out" ? "registrada_sem_envio" : "received"),
         httpStatus: sendResult?.httpStatus || null,
@@ -223,12 +239,32 @@ function sanitizeMessage(message = {}) {
   return { ...message, phone: maskPhone(message.phone) };
 }
 
+function messageIdentifiers(message = {}) {
+  const identifiers = new Set([
+    message.id,
+    message.messageId,
+    message.providerMessageId,
+    message.correlationId,
+    message.manualSendId
+  ].map((value) => String(value || "").trim()).filter(Boolean));
+  const responseMessages = Array.isArray(message.response?.messages) ? message.response.messages : [];
+  for (const item of responseMessages) {
+    const id = String(item?.id || "").trim();
+    if (id) identifiers.add(id);
+  }
+  return identifiers;
+}
+
+function identifiersOverlap(left = new Set(), right = new Set()) {
+  for (const identifier of left) {
+    if (right.has(identifier)) return true;
+  }
+  return false;
+}
+
 function matchesProviderMessageId(message = {}, providerMessageId = "") {
   if (!providerMessageId) return false;
-  if (message.providerMessageId === providerMessageId) return true;
-  if (message.messageId === providerMessageId) return true;
-  const responseMessages = Array.isArray(message.response?.messages) ? message.response.messages : [];
-  return responseMessages.some((item) => item?.id === providerMessageId);
+  return messageIdentifiers(message).has(providerMessageId);
 }
 
 function metaTimestamp(value = "") {

@@ -894,7 +894,13 @@ export function createApp({
           runtimeConfig: appRuntimeConfig || getRuntimeConfig(),
           whatsappProvider: appWhatsappProvider
         });
-        if (result.ok && result.message && whatsappMessageService?.appendMessage) {
+        if (
+          result.ok
+          && result.message
+          && result.duplicate !== true
+          && result.duplicated !== true
+          && whatsappMessageService?.appendMessage
+        ) {
           await whatsappMessageService.appendMessage({
             direction: "out",
             normalized: {
@@ -902,7 +908,7 @@ export function createApp({
               from: result.conversa?.telefone || "",
               customer: { name: result.conversa?.nome || "", phone: result.conversa?.telefone || "" },
               messageId: result.message.id || "",
-              correlationId: result.message.id || "",
+              correlationId: result.message.correlationId || result.message.manualSendId || result.message.id || "",
               message: result.message.text || ""
             },
             text: result.message.text || "",
