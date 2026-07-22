@@ -10,7 +10,7 @@ import {
   buildModuleTimingPayloads
 } from "./ecosystemTimingService.js";
 
-const defaultDataDir = fileURLToPath(new URL("./data/", import.meta.url));
+const defaultDataDir = fileURLToPath(new URL("../data/", import.meta.url));
 const defaultGeneratedMediaDir = fileURLToPath(new URL("../public/generated/perola/", import.meta.url));
 
 const DEFAULT_FILES = {

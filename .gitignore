@@ -4,16 +4,15 @@ coverage/
 .env.local
 *.log
 tmp/
-data/
-!src/data/
-!src/data/perola-posts.json
-!src/data/perola-alerts.json
-!src/data/perola-audit.json
-!src/data/perola-rules.json
-!src/data/perola-sales-daily.json
-!src/data/perola-mesa-daily-report.json
 dist/
 sambah-home-*.png
 System.Object[]
 System.Object[[]]
-src/data/perola-backups/
+
+# Dados operacionais gerados em runtime; nunca versionar.
+/data/
+/src/data/perola-*.json
+/src/data/pay-perola-*.json
+/src/data/sambah-perola-*.json
+/src/data/perola-backups/
+/public/generated/perola/
