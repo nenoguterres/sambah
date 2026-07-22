@@ -4,13 +4,16 @@ on:
   push:
     branches:
       - fix/diagnose-whatsapp-duplicate-api
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
 
 jobs:
   apply-and-validate:
-    if: ${{ !contains(github.event.head_commit.message, '[stability-applied]') }}
+    if: ${{ github.event_name == 'pull_request' || !contains(github.event.head_commit.message, '[stability-applied]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
