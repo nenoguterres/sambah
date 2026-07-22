@@ -14,7 +14,9 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
+      # Mantem o teste de CRM no mesmo provider usado em producao.
       WHATSAPP_PROVIDER: meta
     steps:
       - name: Checkout repository
