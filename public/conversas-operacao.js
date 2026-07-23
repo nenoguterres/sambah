@@ -68,7 +68,17 @@
   function installSafetyObserver() {
     const target = document.querySelector(".app") || document.body;
     if (!target || typeof MutationObserver === "undefined") return;
-    const observer = new MutationObserver(() => updateOperationUi());
+
+    let scheduled = false;
+    const observer = new MutationObserver(() => {
+      if (scheduled) return;
+      scheduled = true;
+      window.requestAnimationFrame(() => {
+        scheduled = false;
+        updateOperationUi();
+      });
+    });
+
     observer.observe(target, { childList: true, subtree: true });
   }
 
@@ -93,7 +103,8 @@
       const button = document.querySelector(`[data-filter="${filter}"]`);
       const counter = document.querySelector(`[data-filter-count="${filter}"]`);
       if (counter) {
-        counter.textContent = String(value);
+        const nextValue = String(value);
+        if (counter.textContent !== nextValue) counter.textContent = nextValue;
         counter.classList.toggle("is-zero", value === 0);
       }
       button?.classList.toggle("has-pending", value > 0 && filter !== "all");
