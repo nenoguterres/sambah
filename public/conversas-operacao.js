@@ -5,11 +5,13 @@
     needs_reply: "Não lidas",
     human: "Humano"
   };
+  let conversationRefreshPromise = null;
 
   prepareRefreshButton();
   prepareFilterButtons();
   installFilterRule();
   installRenderDecorators();
+  installConversationContinuity();
   installSafetyObserver();
   updateOperationUi();
 
@@ -63,6 +65,162 @@
         return result;
       };
     }
+  }
+
+  function installConversationContinuity() {
+    if (typeof loadConversas === "function") {
+      loadConversas = function operationLoadConversas() {
+        if (conversationRefreshPromise) return conversationRefreshPromise;
+        conversationRefreshPromise = refreshConversationsWithoutInterrupting()
+          .finally(() => {
+            conversationRefreshPromise = null;
+          });
+        return conversationRefreshPromise;
+      };
+    }
+
+    if (typeof sendReply === "function") {
+      const originalSendReply = sendReply;
+      sendReply = async function operationSendReply(id) {
+        try {
+          return await originalSendReply(id);
+        } finally {
+          window.requestAnimationFrame(() => focusReplyComposer(id));
+        }
+      };
+    }
+  }
+
+  async function refreshConversationsWithoutInterrupting() {
+    const list = document.querySelector("#conversationList");
+    const hasRenderedConversations = Boolean(list?.querySelector(".conversation-item"));
+    const hasKnownConversations = Array.isArray(state.items) && state.items.length > 0;
+
+    if (!hasRenderedConversations && !hasKnownConversations && list) {
+      list.innerHTML = '<div class="loading">Carregando...</div>';
+    }
+
+    try {
+      const response = await fetch("/api/conversas", { cache: "no-store" });
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.error || "Erro ao carregar conversas");
+
+      state.items = data.items || [];
+      processHumanAlerts(state.items);
+
+      const requestedId = new URLSearchParams(location.search).get("conversationId") || "";
+      if (!state.selectedId && requestedId) state.selectedId = requestedId;
+      if (state.selectedId && !state.items.some((item) => item.id === state.selectedId)) {
+        state.selectedId = "";
+      }
+      if (!state.selectedId && state.items[0]) state.selectedId = state.items[0].id;
+
+      renderHumanAlertPanel();
+      renderList();
+
+      if (state.selectedId) {
+        await refreshSelectedConversation(state.selectedId);
+      }
+    } catch (error) {
+      if (!hasRenderedConversations && !hasKnownConversations && list) {
+        list.innerHTML = `<div class="loading">${escapeOperationHtml(error.message || "Nao foi possivel carregar.")}</div>`;
+      }
+      const replyStatus = document.querySelector("#replyStatus");
+      if (replyStatus && !replyStatus.textContent.trim()) {
+        replyStatus.textContent = "Não foi possível atualizar agora. Tua digitação foi preservada.";
+      }
+    }
+  }
+
+  async function refreshSelectedConversation(id) {
+    try {
+      const response = await fetch(`/api/conversas/${encodeURIComponent(id)}`, { cache: "no-store" });
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.error || "Conversa nao encontrada");
+      if (state.selectedId !== id) return;
+
+      const replyState = captureReplyComposer(id);
+      renderChat(data.conversa);
+      restoreReplyComposer(replyState, id);
+    } catch (error) {
+      if (state.selectedId !== id) return;
+      const replyStatus = document.querySelector("#replyStatus");
+      if (replyStatus && !replyStatus.textContent.trim()) {
+        replyStatus.textContent = error.message || "Não foi possível atualizar esta conversa agora.";
+      }
+    }
+  }
+
+  function captureReplyComposer(id) {
+    const textarea = document.querySelector("#replyText");
+    if (!textarea || state.selectedId !== id) return null;
+
+    const messages = document.querySelector("#messageList");
+    const distanceFromBottom = messages
+      ? messages.scrollHeight - messages.scrollTop - messages.clientHeight
+      : 0;
+
+    return {
+      value: textarea.value,
+      focused: document.activeElement === textarea,
+      selectionStart: textarea.selectionStart ?? textarea.value.length,
+      selectionEnd: textarea.selectionEnd ?? textarea.value.length,
+      selectionDirection: textarea.selectionDirection || "none",
+      messageScrollTop: messages?.scrollTop || 0,
+      messageAtBottom: distanceFromBottom < 48
+    };
+  }
+
+  function restoreReplyComposer(snapshot, id) {
+    if (!snapshot || state.selectedId !== id) return;
+    const textarea = document.querySelector("#replyText");
+    if (!textarea) return;
+
+    textarea.value = snapshot.value;
+    const selectionStart = Math.min(snapshot.selectionStart, textarea.value.length);
+    const selectionEnd = Math.min(snapshot.selectionEnd, textarea.value.length);
+
+    const restoreSelectionAndFocus = () => {
+      if (state.selectedId !== id) return;
+      const currentTextarea = document.querySelector("#replyText");
+      if (!currentTextarea || currentTextarea.disabled) return;
+      if (snapshot.focused) {
+        try {
+          currentTextarea.focus({ preventScroll: true });
+        } catch {
+          currentTextarea.focus();
+        }
+        currentTextarea.setSelectionRange(selectionStart, selectionEnd, snapshot.selectionDirection);
+      }
+    };
+
+    const restoreMessageScroll = () => {
+      if (state.selectedId !== id) return;
+      const messages = document.querySelector("#messageList");
+      if (!messages) return;
+      messages.scrollTop = snapshot.messageAtBottom ? messages.scrollHeight : snapshot.messageScrollTop;
+    };
+
+    restoreSelectionAndFocus();
+    restoreMessageScroll();
+    window.requestAnimationFrame(() => {
+      restoreSelectionAndFocus();
+      restoreMessageScroll();
+    });
+    window.setTimeout(restoreMessageScroll, 120);
+  }
+
+  function focusReplyComposer(id) {
+    if (state.selectedId !== id) return;
+    const textarea = document.querySelector("#replyText");
+    if (!textarea || textarea.disabled) return;
+    try {
+      textarea.focus({ preventScroll: true });
+    } catch {
+      textarea.focus();
+    }
+    const cursor = textarea.value.length;
+    textarea.setSelectionRange(cursor, cursor);
   }
 
   function installSafetyObserver() {
