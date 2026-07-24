@@ -3,50 +3,44 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Inbox WhatsApp SamBah</title>
+    <title>SamBah Central</title>
+    <link rel="manifest" href="/sambah-conversas.webmanifest">
     <link rel="stylesheet" href="/conversas.css">
-    <link rel="stylesheet" href="/conversas-operacao.css">
     <link rel="stylesheet" href="/admin/assets/sambah-shell.css">
-    <link rel="stylesheet" href="/conversas-atendimento.css">
   </head>
   <body>
-    <main class="app" aria-label="Inbox WhatsApp SamBah">
+    <main class="app" aria-label="SamBah Central">
       <aside class="sidebar">
         <header class="sidebar-header">
           <div>
-            <p>SamBah</p>
-            <h1>WhatsApp</h1>
+            <p>SamBah Central</p>
+            <h1>Conversas</h1>
           </div>
-          <button class="icon-button" id="refreshButton" type="button" title="Atualizar conversas">↻</button>
+          <button class="icon-button" id="refreshButton" type="button" title="Atualizar">↻</button>
         </header>
-
         <div class="search-row">
           <input id="searchInput" type="search" placeholder="Pesquisar conversa">
         </div>
-
         <section class="connection-status" id="connectionStatus" aria-live="polite"></section>
         <section class="human-alert-panel" id="humanAlertPanel" aria-live="assertive"></section>
-
+        <section class="push-panel" id="pushPanel"></section>
         <nav class="filters" aria-label="Filtros">
-          <button class="active" type="button" data-filter="all">Tudo</button>
-          <button type="button" data-filter="needs_reply">Responder</button>
-          <button type="button" data-filter="human">Humano</button>
+          <button class="active" type="button" data-filter="all">Tudo <span data-count="all">0</span></button>
+          <button type="button" data-filter="unread">Não lidas <span data-count="unread">0</span></button>
+          <button type="button" data-filter="human">Humano <span data-count="human">0</span></button>
+          <button type="button" data-filter="inProgress">Em atendimento <span data-count="inProgress">0</span></button>
+          <button type="button" data-filter="resolved">Resolvidas <span data-count="resolved">0</span></button>
         </nav>
-
         <section class="conversation-list" id="conversationList" aria-label="Conversas"></section>
       </aside>
-
       <section class="chat" id="chatPane" aria-live="polite">
         <div class="empty-state">
           <strong>Selecione uma conversa</strong>
-          <span>As mensagens do WhatsApp chegam aqui para tu acompanhar e responder pelo SamBah.</span>
+          <span>Atendimentos do WhatsApp aparecem aqui.</span>
         </div>
       </section>
     </main>
-
     <script src="/conversas.js"></script>
-    <script src="/conversas-operacao.js"></script>
-    <script src="/conversas-atendimento.js"></script>
     <script src="/admin/assets/sambah-shell.js"></script>
     <script>
       renderSambahShell("atendimento");

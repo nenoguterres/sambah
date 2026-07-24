@@ -5,23 +5,34 @@ import { dirname } from "node:path";
 const VALID_STATUSES = new Set(["online", "offline", "available", "busy"]);
 const AVAILABLE_STATUSES = new Set(["online", "available"]);
 const ALERT_SPAM_WINDOW_MS = 5 * 60 * 1000;
+let webPushModule = null;
 
 export class CallCenterService {
   constructor({
     operatorsFile,
     alertsFile,
+    subscriptionsFile = "",
     now = () => new Date(),
     principal = { name: "Neno Gutterres", phone: "5551980413745" },
-    alertUrl = "https://api.insanofoodtruck.com.br/conversas"
+    alertUrl = "https://api.insanofoodtruck.com.br/conversas",
+    vapidPublicKey = process.env.WEB_PUSH_VAPID_PUBLIC_KEY || "",
+    vapidPrivateKey = process.env.WEB_PUSH_VAPID_PRIVATE_KEY || "",
+    vapidSubject = process.env.WEB_PUSH_SUBJECT || "https://api.insanofoodtruck.com.br",
+    webPushProvider = null
   } = {}) {
     this.operatorsFile = operatorsFile;
     this.alertsFile = alertsFile;
+    this.subscriptionsFile = subscriptionsFile || alertsFile.replace(/alerts\.json$/, "push-subscriptions.json");
     this.now = now;
     this.principal = {
       name: principal.name || "Responsavel principal",
       phone: normalizePhone(principal.phone || "")
     };
     this.alertUrl = alertUrl;
+    this.vapidPublicKey = vapidPublicKey;
+    this.vapidPrivateKey = vapidPrivateKey;
+    this.vapidSubject = vapidSubject;
+    this.webPushProvider = webPushProvider;
   }
 
   async login({ name = "", phone = "", pin = "" } = {}) {
@@ -107,13 +118,17 @@ export class CallCenterService {
     const data = await this.#readAlerts();
     const nowDate = this.now();
     const now = nowDate.toISOString();
+    const eventKey = buildHumanEventKey(conversation);
+    const existingEvent = eventKey ? data.alerts.find((alert) => alert.eventKey === eventKey) : null;
+    if (existingEvent) return { ok: true, alert: existingEvent, suppressed: true, duplicate: true, channel: existingEvent.channel || "web_push" };
+
     const active = [...data.alerts].reverse().find((alert) => (
       alert.conversationId === conversation.id
       && alert.operatorPhone === operatorPhone
       && alert.status !== "read"
     ));
     const message = buildAlertMessage(conversation, this.alertUrl);
-    if (active && nowDate.getTime() - new Date(active.lastSentAt || active.createdAt || 0).getTime() < ALERT_SPAM_WINDOW_MS) {
+    if (active && !eventKey && nowDate.getTime() - new Date(active.lastSentAt || active.createdAt || 0).getTime() < ALERT_SPAM_WINDOW_MS) {
       active.unreadCount = Number(active.unreadCount || 1) + 1;
       active.count = Number(active.count || 1) + 1;
       active.updatedAt = now;
@@ -121,13 +136,15 @@ export class CallCenterService {
       active.message = message;
       active.suppressed = true;
       await this.#writeAlerts(data);
-      return { ok: true, alert: active, suppressed: true, channel: "simulated_local" };
+      return { ok: true, alert: active, suppressed: true, channel: active.channel || "web_push" };
     }
 
     const alert = {
       id: `alert_${crypto.randomUUID()}`,
-      channel: "simulated_local",
+      channel: "web_push",
       status: "unread",
+      eventKey,
+      type: "human_request",
       conversationId: conversation.id || "",
       operatorPhone,
       operatorName: operator.name || "Atendente",
@@ -141,11 +158,14 @@ export class CallCenterService {
       createdAt: now,
       updatedAt: now,
       lastSentAt: now,
-      realIntegrated: false
+      realIntegrated: false,
+      deliveryStatus: "pending",
+      deliveries: []
     };
     data.alerts.push(alert);
     await this.#writeAlerts(data);
-    return { ok: true, alert, suppressed: false, channel: "simulated_local" };
+    const delivered = await this.#deliverPush(alert);
+    return { ok: true, alert: delivered.alert, suppressed: false, channel: "web_push" };
   }
 
   async listAlerts({ phone = "", unreadOnly = false } = {}) {
@@ -165,6 +185,70 @@ export class CallCenterService {
     data.alerts[index] = { ...data.alerts[index], status: "read", readAt: this.now().toISOString(), updatedAt: this.now().toISOString() };
     await this.#writeAlerts(data);
     return { ok: true, alert: data.alerts[index] };
+  }
+
+  async publicPushKey() {
+    return { ok: true, publicKey: this.vapidPublicKey || "", configured: Boolean(this.vapidPublicKey && this.vapidPrivateKey) };
+  }
+
+  async savePushSubscription(subscription = {}, actor = {}, userAgent = "") {
+    const endpoint = String(subscription.endpoint || "").trim();
+    const deviceId = String(subscription.deviceId || subscription.device_id || "").trim();
+    if (!endpoint || !endpoint.startsWith("https://")) return { ok: false, statusCode: 400, error: "push_endpoint_invalid" };
+    if (!deviceId) return { ok: false, statusCode: 400, error: "device_id_required" };
+    const data = await this.#readSubscriptions();
+    const now = this.now().toISOString();
+    const index = data.subscriptions.findIndex((item) => item.deviceId === deviceId || item.endpoint === endpoint);
+    const current = index >= 0 ? data.subscriptions[index] : {};
+    const record = {
+      id: current.id || `push_${crypto.randomUUID()}`,
+      deviceId,
+      operatorId: actor.id || actor.username || current.operatorId || "",
+      operatorPhone: normalizePhone(actor.phone || actor.operatorPhone || current.operatorPhone || ""),
+      operatorName: actor.displayName || actor.name || actor.username || current.operatorName || "",
+      endpoint,
+      keys: {
+        p256dh: subscription.keys?.p256dh || "",
+        auth: subscription.keys?.auth || ""
+      },
+      enabled: true,
+      userAgent: userAgent || current.userAgent || "",
+      createdAt: current.createdAt || now,
+      updatedAt: now,
+      lastSuccessAt: current.lastSuccessAt || null,
+      lastFailureAt: current.lastFailureAt || null
+    };
+    if (index >= 0) data.subscriptions[index] = record;
+    else data.subscriptions.push(record);
+    await this.#writeSubscriptions(data);
+    return { ok: true, subscription: publicSubscription(record) };
+  }
+
+  async removePushSubscription(deviceId = "", actor = {}) {
+    const data = await this.#readSubscriptions();
+    const isAdmin = String(actor.role || "").toUpperCase() === "ADMIN";
+    const actorPhone = normalizePhone(actor.phone || actor.operatorPhone || "");
+    const before = data.subscriptions.length;
+    data.subscriptions = data.subscriptions.filter((item) => {
+      if (item.deviceId !== deviceId) return true;
+      return !(isAdmin || !item.operatorPhone || samePhone(item.operatorPhone, actorPhone));
+    });
+    await this.#writeSubscriptions(data);
+    return { ok: true, removed: before - data.subscriptions.length };
+  }
+
+  async listPushSubscriptions(actor = {}) {
+    const isAdmin = String(actor.role || "").toUpperCase() === "ADMIN";
+    const actorPhone = normalizePhone(actor.phone || actor.operatorPhone || "");
+    const data = await this.#readSubscriptions();
+    const subscriptions = data.subscriptions
+      .filter((item) => isAdmin || !actorPhone || samePhone(item.operatorPhone, actorPhone))
+      .map(publicSubscription);
+    return { ok: true, count: subscriptions.length, subscriptions };
+  }
+
+  async acknowledgeAlert(id = "", actor = {}) {
+    return this.markAlertRead(id, actor);
   }
 
   async #resolveOperator(conversation = {}) {
@@ -231,6 +315,66 @@ export class CallCenterService {
     await mkdir(dirname(this.alertsFile), { recursive: true });
     await writeFile(this.alertsFile, `${JSON.stringify(data, null, 2)}\n`, "utf8");
   }
+
+  async #readSubscriptions() {
+    try {
+      const raw = await readFile(this.subscriptionsFile, "utf8");
+      const parsed = JSON.parse(stripBom(raw) || "{}");
+      return { subscriptions: Array.isArray(parsed.subscriptions) ? parsed.subscriptions : [] };
+    } catch (error) {
+      if (error.code === "ENOENT") return { subscriptions: [] };
+      throw error;
+    }
+  }
+
+  async #writeSubscriptions(data) {
+    await mkdir(dirname(this.subscriptionsFile), { recursive: true });
+    await writeFile(this.subscriptionsFile, `${JSON.stringify(data, null, 2)}\n`, "utf8");
+  }
+
+  async #deliverPush(alert = {}) {
+    const alertsData = await this.#readAlerts();
+    const index = alertsData.alerts.findIndex((item) => item.id === alert.id);
+    if (index === -1) return { alert };
+    if (!this.vapidPublicKey || !this.vapidPrivateKey) {
+      alertsData.alerts[index] = { ...alertsData.alerts[index], deliveryStatus: "configuration_missing", realIntegrated: false };
+      await this.#writeAlerts(alertsData);
+      return { alert: alertsData.alerts[index] };
+    }
+    const webPush = this.webPushProvider || await loadWebPush();
+    webPush.setVapidDetails(this.vapidSubject, this.vapidPublicKey, this.vapidPrivateKey);
+    const subscriptionsData = await this.#readSubscriptions();
+    const activeSubscriptions = subscriptionsData.subscriptions.filter((item) => item.enabled !== false);
+    const payload = JSON.stringify(buildPushPayload(alert));
+    const deliveries = [];
+    for (const subscription of activeSubscriptions) {
+      const attemptedAt = this.now().toISOString();
+      const delivery = { deviceId: subscription.deviceId, status: "attempted", attemptedAt, deliveredAt: null, errorCode: "" };
+      try {
+        await webPush.sendNotification({ endpoint: subscription.endpoint, keys: subscription.keys }, payload);
+        subscription.lastSuccessAt = this.now().toISOString();
+        delivery.status = "delivered";
+        delivery.deliveredAt = subscription.lastSuccessAt;
+      } catch (error) {
+        const code = Number(error?.statusCode || 0);
+        delivery.status = "failed";
+        delivery.errorCode = String(code || error?.code || "push_failed");
+        subscription.lastFailureAt = this.now().toISOString();
+        if (code === 404 || code === 410) subscription.enabled = false;
+      }
+      subscription.updatedAt = this.now().toISOString();
+      deliveries.push(delivery);
+    }
+    await this.#writeSubscriptions(subscriptionsData);
+    alertsData.alerts[index] = {
+      ...alertsData.alerts[index],
+      deliveries,
+      deliveryStatus: deliveries.some((item) => item.status === "delivered") ? "delivered" : "not_delivered",
+      realIntegrated: deliveries.some((item) => item.status === "delivered")
+    };
+    await this.#writeAlerts(alertsData);
+    return { alert: alertsData.alerts[index] };
+  }
 }
 
 export function normalizeOperatorPhone(value = "") {
@@ -247,6 +391,53 @@ function publicOperator(operator = {}) {
     activeConversationId: operator.activeConversationId || "",
     fallback: Boolean(operator.fallback)
   };
+}
+
+function publicSubscription(subscription = {}) {
+  return {
+    id: subscription.id || "",
+    deviceId: subscription.deviceId || "",
+    operatorId: subscription.operatorId || "",
+    operatorPhone: subscription.operatorPhone || "",
+    operatorName: subscription.operatorName || "",
+    endpoint: subscription.endpoint || "",
+    enabled: subscription.enabled !== false,
+    userAgent: subscription.userAgent || "",
+    createdAt: subscription.createdAt || "",
+    updatedAt: subscription.updatedAt || "",
+    lastSuccessAt: subscription.lastSuccessAt || null,
+    lastFailureAt: subscription.lastFailureAt || null
+  };
+}
+
+async function loadWebPush() {
+  if (!webPushModule) webPushModule = await import("web-push");
+  return webPushModule.default || webPushModule;
+}
+
+function buildHumanEventKey(conversation = {}) {
+  const conversationId = conversation.id || "";
+  const lastInboundMessageId = conversation.lastInboundMessageId || "";
+  if (!conversationId || !lastInboundMessageId) return "";
+  return `human_request:${conversationId}:${lastInboundMessageId}`;
+}
+
+function buildPushPayload(alert = {}) {
+  return {
+    type: "human_request",
+    alertId: alert.id || "",
+    eventKey: alert.eventKey || "",
+    conversationId: alert.conversationId || "",
+    clientName: alert.clientName || "",
+    clientPhoneMasked: maskPhone(alert.clientPhone || ""),
+    messagePreview: sanitizePreview(alert.lastMessage || ""),
+    url: `/conversas?conversationId=${encodeURIComponent(alert.conversationId || "")}`,
+    createdAt: alert.createdAt || ""
+  };
+}
+
+function sanitizePreview(value = "") {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, 140);
 }
 
 function buildAlertMessage(conversation = {}, url = "") {
@@ -273,6 +464,16 @@ function normalizePhone(value = "") {
   if (digits.startsWith("55")) return digits;
   if (digits.length >= 10) return `55${digits}`;
   return digits;
+}
+
+function samePhone(a = "", b = "") {
+  return normalizePhone(a) === normalizePhone(b);
+}
+
+function maskPhone(phone = "") {
+  const digits = normalizePhone(phone);
+  if (!digits) return "";
+  return `${"*".repeat(Math.max(0, digits.length - 4))}${digits.slice(-4)}`;
 }
 
 function stripBom(value = "") {

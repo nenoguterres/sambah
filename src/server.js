@@ -65,6 +65,7 @@ const tracking = new OrderTrackingService({ filePath: dataFile("order-tracking.j
 const callCenter = new CallCenterService({
   operatorsFile: dataFile("call-center-operators.json"),
   alertsFile: dataFile("call-center-alerts.json"),
+  subscriptionsFile: dataFile("call-center-push-subscriptions.json"),
   alertUrl: `${runtimeConfig.publicBaseUrl || runtimeConfig.baseUrl || "https://api.insanofoodtruck.com.br"}/conversas`
 });
 const insanoWorkhub = new InsanoWorkhubService({ dataFile: dataFile("insano-workhub.json") });
@@ -721,7 +722,7 @@ export function createApp({
         return serveStatic(res, "insano-workhub.js");
       }
 
-      if (req.method === "GET" && ["/site.css", "/site.js", "/crm.css", "/crm.js", "/conteudo.css", "/platform.css", "/platform.js", "/insano-eventos.css", "/insano-eventos.js", "/oportunidades.css", "/oportunidades.js", "/conversas.css", "/conversas.js", "/conversas-operacao.css", "/conversas-operacao.js", "/portal.css", "/portal.js", "/perola.css", "/perola.js", "/voice-pay.css", "/voice-pay.js", "/sambah-ecosystem.css", "/sambah-central.js", "/sambah-pay.js", "/sambah-autoserve.js", "/sambah-devices.js", "/sambah-locker.js", "/sambah-weight.js", "/sambah-events.js", "/sambah-observability.js", "/sambah-security.js", "/sambah-lgpd.js", "/sambah-database.js", "/sambah-messaging.js", "/sambah-shell.css", "/sambah-shell.js", "/admin-permissoes.css", "/admin-permissoes.js", "/admin-usuarios.css", "/admin-usuarios.js", "/admin-auditoria.css", "/admin-auditoria.js", "/insano-catalog-admin.css", "/insano-catalog-admin.js", "/login.css", "/login.js", "/auth-ui.js"].includes(url.pathname)) {
+      if (req.method === "GET" && ["/site.css", "/site.js", "/crm.css", "/crm.js", "/conteudo.css", "/platform.css", "/platform.js", "/insano-eventos.css", "/insano-eventos.js", "/oportunidades.css", "/oportunidades.js", "/conversas.css", "/conversas.js", "/sambah-conversas-sw.js", "/sambah-conversas.webmanifest", "/portal.css", "/portal.js", "/perola.css", "/perola.js", "/voice-pay.css", "/voice-pay.js", "/sambah-ecosystem.css", "/sambah-central.js", "/sambah-pay.js", "/sambah-autoserve.js", "/sambah-devices.js", "/sambah-locker.js", "/sambah-weight.js", "/sambah-events.js", "/sambah-observability.js", "/sambah-security.js", "/sambah-lgpd.js", "/sambah-database.js", "/sambah-messaging.js", "/sambah-shell.css", "/sambah-shell.js", "/admin-permissoes.css", "/admin-permissoes.js", "/admin-usuarios.css", "/admin-usuarios.js", "/admin-auditoria.css", "/admin-auditoria.js", "/insano-catalog-admin.css", "/insano-catalog-admin.js", "/login.css", "/login.js", "/auth-ui.js"].includes(url.pathname)) {
         return serveStatic(res, url.pathname.slice(1));
       }
 
@@ -823,9 +824,39 @@ export function createApp({
         }));
       }
 
+      if (req.method === "GET" && url.pathname === "/api/call-center/push/public-key") {
+        if (activeAuthMode === "session" && !req.sambahUser) return sendJson(res, 401, { ok: false, error: "auth_required" });
+        return sendJson(res, 200, await callCenterService.publicPushKey());
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/call-center/push/subscriptions") {
+        if (activeAuthMode === "session" && !req.sambahUser) return sendJson(res, 401, { ok: false, error: "auth_required" });
+        const result = await callCenterService.savePushSubscription(await readJson(req, { requireBody: true }), actorFromRequest(req), req.headers["user-agent"] || "");
+        return sendJson(res, result.statusCode || (result.ok ? 200 : 400), result);
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/call-center/push/subscriptions") {
+        if (activeAuthMode === "session" && !req.sambahUser) return sendJson(res, 401, { ok: false, error: "auth_required" });
+        return sendJson(res, 200, await callCenterService.listPushSubscriptions(actorFromRequest(req)));
+      }
+
+      const callCenterPushDeviceMatch = url.pathname.match(/^\/api\/call-center\/push\/subscriptions\/([^/]+)$/);
+      if (req.method === "DELETE" && callCenterPushDeviceMatch) {
+        if (activeAuthMode === "session" && !req.sambahUser) return sendJson(res, 401, { ok: false, error: "auth_required" });
+        const result = await callCenterService.removePushSubscription(decodeURIComponent(callCenterPushDeviceMatch[1]), actorFromRequest(req));
+        return sendJson(res, result.ok ? 200 : result.statusCode || 400, result);
+      }
+
       const callCenterAlertReadMatch = url.pathname.match(/^\/api\/call-center\/alerts\/([^/]+)\/read$/);
       if (req.method === "POST" && callCenterAlertReadMatch) {
         const result = await callCenterService.markAlertRead(decodeURIComponent(callCenterAlertReadMatch[1]));
+        return sendJson(res, result.ok ? 200 : result.statusCode || 404, result);
+      }
+
+      const callCenterAlertAckMatch = url.pathname.match(/^\/api\/call-center\/alerts\/([^/]+)\/acknowledge$/);
+      if (req.method === "POST" && callCenterAlertAckMatch) {
+        if (activeAuthMode === "session" && !req.sambahUser) return sendJson(res, 401, { ok: false, error: "auth_required" });
+        const result = await callCenterService.acknowledgeAlert(decodeURIComponent(callCenterAlertAckMatch[1]), actorFromRequest(req));
         return sendJson(res, result.ok ? 200 : result.statusCode || 404, result);
       }
 
@@ -918,9 +949,69 @@ export function createApp({
         return sendJson(res, result.ok ? 200 : 404, result);
       }
 
+      const conversaActionMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/(read|unread|claim|release|transfer|resolve|reopen)$/);
+      if (req.method === "POST" && conversaActionMatch) {
+        if (activeAuthMode === "session" && !req.sambahUser) return sendJson(res, 401, { ok: false, error: "auth_required" });
+        const conversationId = decodeURIComponent(conversaActionMatch[1]);
+        const action = conversaActionMatch[2];
+        const body = await readJson(req, { requireBody: false });
+        const actor = actorFromRequest(req);
+        const before = await whatsappConversationService.get(conversationId);
+        const previousVersion = before.conversa?.version || null;
+        const expectedVersion = body.expectedVersion ?? null;
+        const targetOperatorPhone = body.targetOperatorPhone || "";
+        const result = await runConversationAction(whatsappConversationService, action, conversationId, actor, { expectedVersion, targetOperatorPhone });
+        if (result.ok) {
+          await safeAuditRecord(auditService, {
+            type: auditTypeForConversationAction(action),
+            status: "info",
+            source: "conversas",
+            message: "Acao de conversa registrada",
+            context: {
+              conversationId,
+              actorUser: safeAuditUsername(actor.username || actor.name || "mock"),
+              actorRole: actor.role || "ADMIN",
+              previousVersion,
+              nextVersion: result.conversa?.version || null,
+              timestamp: new Date().toISOString()
+            }
+          });
+        }
+        return sendJson(res, result.statusCode || (result.ok ? 200 : 400), result);
+      }
+
+      const conversaMessagesMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/messages$/);
+      if (req.method === "DELETE" && conversaMessagesMatch) {
+        const adminCheck = requireAdminUser(req, activeAuthMode);
+        if (!adminCheck.ok) return sendJson(res, adminCheck.statusCode, { ok: false, error: adminCheck.error });
+        const conversationId = decodeURIComponent(conversaMessagesMatch[1]);
+        const actor = actorFromRequest(req);
+        const before = await whatsappConversationService.get(conversationId);
+        const result = await whatsappConversationService.clearConversationHistory(conversationId, actor);
+        if (result.ok) {
+          await safeAuditRecord(auditService, {
+            type: "conversation_history_cleared",
+            status: "warning",
+            source: "conversas",
+            message: "Historico da conversa limpo",
+            context: {
+              conversationId,
+              actorUser: safeAuditUsername(actor.username || "mock"),
+              actorRole: actor.role || "ADMIN",
+              previousVersion: before.conversa?.version || null,
+              nextVersion: result.conversa?.version || null,
+              timestamp: new Date().toISOString(),
+              removedMessages: result.removedMessages || 0
+            }
+          });
+        }
+        return sendJson(res, result.statusCode || (result.ok ? 200 : 400), result);
+      }
+
       const conversaHumanoMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/humano$/);
       if (req.method === "POST" && conversaHumanoMatch) {
         const result = await whatsappConversationService.markHuman(decodeURIComponent(conversaHumanoMatch[1]));
+        if (result.ok) await maybeCreateHumanAlert(result, { whatsappConversationService, callCenterService, auditService });
         return sendJson(res, result.ok ? 200 : 404, result);
       }
 
@@ -1780,14 +1871,16 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
         const results = [];
         for (const messagePayload of messagePayloads) {
           try {
-            results.push(await whatsappMaintenanceHandler(messagePayload, {
+            const itemResult = await whatsappMaintenanceHandler(messagePayload, {
               conversationService: whatsappConversationService,
               messageService: whatsappMessageService,
               auditService,
               menuService,
               whatsappProvider: appWhatsappProvider,
               runtimeConfig: appRuntimeConfig || getRuntimeConfig()
-            }));
+            });
+            await maybeCreateHumanAlert(itemResult, { whatsappConversationService, callCenterService, auditService });
+            results.push(itemResult);
           } catch (error) {
             results.push({ ok: false, handled: false, error: "message_processing_failed" });
             await safeAuditRecord(auditService, {
@@ -1818,6 +1911,7 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
         whatsappProvider: appWhatsappProvider,
         runtimeConfig: appRuntimeConfig || getRuntimeConfig()
       });
+      await maybeCreateHumanAlert(maintenanceResult, { whatsappConversationService, callCenterService, auditService });
       return sendJson(res, 200, maintenanceResult);
     }
 
@@ -3066,6 +3160,71 @@ function normalizeEventDate(value = "") {
   const br = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (!br) return text;
   return `${br[3]}-${br[2].padStart(2, "0")}-${br[1].padStart(2, "0")}`;
+}
+
+function actorFromRequest(req = {}) {
+  const user = req.sambahUser || {};
+  return {
+    id: user.id || user.username || "mock",
+    username: user.username || "mock",
+    name: user.displayName || user.name || user.username || "mock",
+    displayName: user.displayName || user.name || user.username || "mock",
+    role: user.role || "ADMIN",
+    phone: user.phone || user.operatorPhone || "5551980413745"
+  };
+}
+
+async function runConversationAction(service, action, id, actor, { expectedVersion = null, targetOperatorPhone = "" } = {}) {
+  if (action === "read") return service.markRead(id, actor);
+  if (action === "unread") return service.markUnread(id, actor);
+  if (action === "claim") return service.claimConversation(id, actor, { expectedVersion });
+  if (action === "release") return service.releaseConversation(id, actor);
+  if (action === "transfer") return service.transferConversation(id, actor, { phone: targetOperatorPhone }, { expectedVersion });
+  if (action === "resolve") return service.resolveConversation(id, actor, { expectedVersion });
+  if (action === "reopen") return service.reopenConversation(id, actor, { expectedVersion });
+  return { ok: false, statusCode: 404, error: "conversation_action_not_found" };
+}
+
+function auditTypeForConversationAction(action = "") {
+  return {
+    read: "conversation_read",
+    unread: "conversation_marked_unread",
+    claim: "conversation_claimed",
+    release: "conversation_released",
+    transfer: "conversation_transferred",
+    resolve: "conversation_resolved",
+    reopen: "conversation_reopened"
+  }[action] || "conversation_action";
+}
+
+async function maybeCreateHumanAlert(result = {}, { whatsappConversationService, callCenterService, auditService } = {}) {
+  if (!callCenterService || result.duplicate === true) return null;
+  const conversation = result.conversa;
+  if (!conversation || !["humano", "em_atendimento"].includes(conversation.status)) return null;
+  const alert = await callCenterService.createAlert({ conversation, operator: {
+    name: conversation.assignedOperatorName || "Equipe",
+    phone: conversation.assignedOperatorPhone || "5551980413745"
+  } });
+  if (alert?.alert && whatsappConversationService?.patchConversation) {
+    await whatsappConversationService.patchConversation(conversation.id, {
+      assignedOperatorPhone: conversation.assignedOperatorPhone || "",
+      assignedOperatorName: conversation.assignedOperatorName || "",
+      callCenterStatus: alert.alert.deliveryStatus || ""
+    });
+  }
+  await safeAuditRecord(auditService, {
+    type: "conversation_human_alert",
+    status: alert?.alert?.realIntegrated ? "info" : "warning",
+    source: "call_center",
+    message: "Alerta humano processado",
+    context: {
+      conversationId: conversation.id || "",
+      deliveryStatus: alert?.alert?.deliveryStatus || "",
+      realIntegrated: Boolean(alert?.alert?.realIntegrated)
+    },
+    dedupeKey: alert?.alert?.eventKey || undefined
+  });
+  return alert;
 }
 
 function normalizeEventRequestId(value = "", conversationId = "", payload = {}) {

@@ -5,6 +5,10 @@ import { extractWhatsAppMessageText } from "./whatsapp/whatsappWebhookParser.js"
 import { normalizeWhatsAppPhone, sameWhatsAppPhone, whatsappPhoneAliases } from "./whatsapp/phoneNumber.js";
 import { dedupeConversationMessages, mergeConversationMessages, sameConversationMessage } from "./whatsapp/conversationMessageDedupe.js";
 
+const OPERATIONAL_STATUSES = new Set(["aguardando_equipe", "humano", "em_atendimento", "aguardando_cliente", "resolvido"]);
+const HUMAN_STATUSES = new Set(["humano", "em_atendimento"]);
+const MANUAL_SEND_ID_PATTERN = /^[A-Za-z0-9._:-]{8,200}$/;
+
 export class WhatsAppConversationService {
   constructor({ filePath, messagesFile = "", now = () => new Date() } = {}) {
     this.filePath = filePath;
@@ -62,21 +66,31 @@ export class WhatsAppConversationService {
     const existing = findConversation(data.conversas, telefone || id);
     const text = String(incoming.text || incoming.message || incoming.transcricao || "").trim();
     const incomingMessageId = String(incoming.messageId || "").trim();
-    const existingMessage = incomingMessageId && Array.isArray(existing?.mensagens)
-      ? existing.mensagens.find((item) => item.id === incomingMessageId)
-      : null;
+    const provider = String(incoming.provider || "meta").trim() || "meta";
+    const aliases = whatsappPhoneAliases(telefone);
+    const existingMessage = findExistingInboundMessage(data.conversas, {
+      provider,
+      messageId: incomingMessageId,
+      text,
+      telefone,
+      aliases
+    });
     if (existingMessage) {
+      const existingConversation = existingMessage.conversation || existing;
       return {
         ok: true,
         duplicate: true,
-        conversa: this.#withPriority(existing),
-        message: existingMessage,
+        conversa: this.#withPriority(existingConversation),
+        message: existingMessage.message,
         engine: "disabled",
         automaticReplyCreated: false
       };
     }
     const message = {
       id: incomingMessageId || `msg_${crypto.randomUUID()}`,
+      provider,
+      providerMessageId: incomingMessageId || "",
+      messageId: incomingMessageId || "",
       direction: "in",
       type: incoming.tipo || incoming.type || "text",
       text,
@@ -103,10 +117,13 @@ export class WhatsAppConversationService {
       ultimaMensagem: text || describeMessageType(message.type),
       ultimaInteracao: now,
       updatedAt: now,
-      status: base.status || "aguardando_equipe",
+      status: HUMAN_STATUSES.has(base.status) ? base.status : normalizeOperationalStatus(base.status || "aguardando_equipe"),
+      unread: true,
+      lastInboundMessageId: message.id,
       respostaSugerida: "",
       automaticReplyCreated: false,
       whatsappEngine: "disabled",
+      version: Number(base.version || 1) + 1,
       mensagens: [...(base.mensagens || []), message].slice(-60)
     };
     if (existing) data.conversas = data.conversas.map((item) => (item.id === existing.id ? updated : item));
@@ -126,35 +143,35 @@ export class WhatsAppConversationService {
   }
 
   async #addOutgoing(id, body = {}, { runtimeConfig = {}, whatsappProvider = null } = {}) {
-    const data = await this.#read();
-    const index = findConversationIndex(data.conversas, id);
-    if (index === -1) return { ok: false, error: "Conversa nao encontrada" };
-
     const now = this.now().toISOString();
     const text = String(body.text || body.message || "").trim();
     if (!text) return { ok: false, error: "Resposta vazia" };
 
-    const manualSendId = String(body.manualSendId || body.correlationId || "").trim().slice(0, 200);
-    if (manualSendId) {
-      const existingMessage = (data.conversas[index].mensagens || []).find((message) => (
-        message.direction === "out"
-        && (message.manualSendId === manualSendId || message.correlationId === manualSendId)
-      ));
-      if (existingMessage) {
-        return {
-          ok: true,
-          duplicate: true,
-          duplicated: true,
-          enviado: Boolean(existingMessage.sent || existingMessage.status === "sent"),
-          reason: existingMessage.status,
-          sendResult: null,
-          conversa: this.#withPriority(data.conversas[index]),
-          message: existingMessage
-        };
-      }
+    const rawManualSendId = String(body.manualSendId || body.correlationId || "").trim();
+    const manualSendId = (rawManualSendId || `legacy:${crypto.createHash("sha256").update(`${id}:${text}`).digest("hex").slice(0, 24)}`).slice(0, 200);
+    if (!MANUAL_SEND_ID_PATTERN.test(manualSendId)) return { ok: false, statusCode: 400, error: "manual_send_id_invalid" };
+
+    let data = await this.#read();
+    let index = findConversationIndex(data.conversas, id);
+    if (index === -1) return { ok: false, statusCode: 404, error: "conversation_not_found", message: "Conversa nao encontrada" };
+
+    const existingMessage = (data.conversas[index].mensagens || []).find((message) => (
+      message.direction === "out"
+      && (message.manualSendId === manualSendId || message.correlationId === manualSendId)
+    ));
+    if (existingMessage) {
+      return {
+        ok: true,
+        duplicate: true,
+        duplicated: true,
+        enviado: Boolean(existingMessage.sent || existingMessage.status === "sent"),
+        reason: existingMessage.status,
+        sendResult: null,
+        conversa: this.#withPriority(data.conversas[index]),
+        message: existingMessage
+      };
     }
 
-    const outgoing = await sendOutgoingIfReady({ conversation: data.conversas[index], runtimeConfig, whatsappProvider, text });
     const message = {
       id: `msg_${crypto.randomUUID()}`,
       direction: "out",
@@ -162,21 +179,58 @@ export class WhatsAppConversationService {
       text,
       manualSendId,
       correlationId: manualSendId,
-      sent: Boolean(outgoing.sendResult?.sent),
+      sent: false,
       createdAt: now,
-      status: outgoing.status,
-      httpStatus: outgoing.sendResult?.httpStatus || null,
-      response: outgoing.sendResult?.response || null,
-      providerMessageId: outgoing.sendResult?.providerMessageId || outgoing.sendResult?.response?.messages?.[0]?.id || "",
-      errorCode: outgoing.sendResult?.response?.error?.code || outgoing.sendResult?.error || "",
-      errorMessage: outgoing.sendResult?.response?.error?.message || outgoing.sendResult?.error || ""
+      status: "sending",
+      httpStatus: null,
+      response: null,
+      providerMessageId: "",
+      errorCode: "",
+      errorMessage: "",
+      statusUpdatedAt: now
     };
+    data.conversas[index] = {
+      ...data.conversas[index],
+      ultimaInteracao: now,
+      updatedAt: now,
+      version: Number(data.conversas[index].version || 1) + 1,
+      mensagens: [...(data.conversas[index].mensagens || []), message].slice(-60)
+    };
+    await this.#write(data);
+
+    let outgoing = null;
+    try {
+      outgoing = await sendOutgoingIfReady({ conversation: data.conversas[index], runtimeConfig, whatsappProvider, text });
+    } catch (error) {
+      outgoing = { sendResult: { sent: false, status: "send_failed", error: String(error?.message || error) }, status: "send_failed", conversationStatus: data.conversas[index].status };
+    }
+
+    data = await this.#read();
+    index = findConversationIndex(data.conversas, id);
+    const messageIndex = index >= 0 ? (data.conversas[index].mensagens || []).findIndex((item) => item.id === message.id) : -1;
+    if (index === -1 || messageIndex === -1) return { ok: false, statusCode: 409, error: "reserved_message_not_found" };
+    const persisted = data.conversas[index].mensagens[messageIndex];
+    const updatedMessage = {
+      ...persisted,
+      sent: Boolean(outgoing.sendResult?.sent),
+      status: outgoing.sendResult?.sent ? "sent" : outgoing.status || outgoing.sendResult?.status || "send_failed",
+      providerMessageId: outgoing.sendResult?.providerMessageId || outgoing.sendResult?.response?.messages?.[0]?.id || persisted.providerMessageId || "",
+      httpStatus: outgoing.sendResult?.httpStatus || null,
+      response: sanitizeProviderResponse(outgoing.sendResult?.response || null),
+      errorCode: outgoing.sendResult?.response?.error?.code || outgoing.sendResult?.error || "",
+      errorMessage: outgoing.sendResult?.response?.error?.message || outgoing.sendResult?.error || "",
+      statusUpdatedAt: this.now().toISOString()
+    };
+    const updatedMessages = [...(data.conversas[index].mensagens || [])];
+    updatedMessages[messageIndex] = updatedMessage;
+    const finalNow = this.now().toISOString();
     const updated = {
       ...data.conversas[index],
       status: outgoing.conversationStatus || data.conversas[index].status,
-      ultimaInteracao: now,
-      updatedAt: now,
-      mensagens: [...(data.conversas[index].mensagens || []), message].slice(-60)
+      ultimaInteracao: finalNow,
+      updatedAt: finalNow,
+      version: Number(data.conversas[index].version || 1) + 1,
+      mensagens: updatedMessages
     };
     data.conversas[index] = updated;
     await this.#write(data);
@@ -185,10 +239,10 @@ export class WhatsAppConversationService {
       duplicate: false,
       duplicated: false,
       enviado: Boolean(outgoing.sendResult?.sent),
-      reason: outgoing.status,
+      reason: updatedMessage.status,
       sendResult: outgoing.sendResult,
       conversa: this.#withPriority(updated),
-      message
+      message: updatedMessage
     };
   }
 
@@ -261,7 +315,7 @@ export class WhatsAppConversationService {
           statusPayload: sanitizeMetaStatus(status)
         };
       });
-      if (!conversationTouched && !hasPhoneMatch) return conversation;
+      if (!conversationTouched) return conversation;
       updated = true;
       return { ...conversation, updatedAt: conversationTouched ? now : conversation.updatedAt, mensagens: conversationTouched ? nextMessages : messages };
     });
@@ -274,11 +328,155 @@ export class WhatsAppConversationService {
   }
 
   async markAutomatic(id) {
-    return this.#updateStatus(id, "aguardando_equipe");
+    return this.releaseConversation(id, { role: "ADMIN", username: "compat" });
   }
 
   async markResolved(id) {
-    return this.#updateStatus(id, "resolvido");
+    return this.resolveConversation(id, { role: "ADMIN", username: "compat" });
+  }
+
+  async markRead(id, actor = {}) {
+    return this.#serializeMutation(() => this.#mutateConversation(id, (conversation, now) => ({
+      ...conversation,
+      unread: false,
+      lastReadMessageId: conversation.lastInboundMessageId || lastInboundMessage(conversation)?.id || "",
+      readAt: now,
+      readBy: actorName(actor),
+      markedUnreadAt: null,
+      markedUnreadBy: "",
+      updatedAt: now,
+      version: Number(conversation.version || 1) + 1
+    })));
+  }
+
+  async markUnread(id, actor = {}) {
+    return this.#serializeMutation(() => this.#mutateConversation(id, (conversation, now) => ({
+      ...conversation,
+      unread: true,
+      markedUnreadAt: now,
+      markedUnreadBy: actorName(actor),
+      updatedAt: now,
+      version: Number(conversation.version || 1) + 1
+    })));
+  }
+
+  async claimConversation(id, actor = {}, { expectedVersion = null } = {}) {
+    return this.#serializeMutation(() => this.#mutateConversation(id, (conversation, now) => {
+      const conflict = checkVersion(conversation, expectedVersion);
+      if (conflict) return conflict;
+      const actorPhone = normalizePhone(actor.phone || actor.operatorPhone || "");
+      if (!actorPhone) return { ok: false, statusCode: 401, error: "operator_required" };
+      if (conversation.assignedOperatorPhone && !sameWhatsAppPhone(conversation.assignedOperatorPhone, actorPhone)) {
+        return { ok: false, statusCode: 409, error: "conversation_already_claimed", conversa: this.#withPriority(conversation) };
+      }
+      if (conversation.assignedOperatorPhone && sameWhatsAppPhone(conversation.assignedOperatorPhone, actorPhone)) return { ...conversation };
+      return {
+        ...conversation,
+        status: "em_atendimento",
+        assignedOperatorId: actor.id || "",
+        assignedOperatorPhone: actorPhone,
+        assignedOperatorName: actor.displayName || actor.name || actor.username || "",
+        assignedAt: now,
+        updatedAt: now,
+        version: Number(conversation.version || 1) + 1
+      };
+    }));
+  }
+
+  async releaseConversation(id, actor = {}) {
+    return this.#serializeMutation(() => this.#mutateConversation(id, (conversation, now) => {
+      const actorPhone = normalizePhone(actor.phone || actor.operatorPhone || "");
+      const isAdmin = String(actor.role || "").toUpperCase() === "ADMIN";
+      if (conversation.assignedOperatorPhone && !isAdmin && !sameWhatsAppPhone(conversation.assignedOperatorPhone, actorPhone)) {
+        return { ok: false, statusCode: 403, error: "conversation_release_forbidden" };
+      }
+      return {
+        ...conversation,
+        status: conversation.status === "em_atendimento" || conversation.status === "humano" ? "humano" : "aguardando_equipe",
+        assignedOperatorId: "",
+        assignedOperatorPhone: "",
+        assignedOperatorName: "",
+        assignedAt: null,
+        updatedAt: now,
+        version: Number(conversation.version || 1) + 1
+      };
+    }));
+  }
+
+  async transferConversation(id, actor = {}, targetOperator = {}, { expectedVersion = null } = {}) {
+    return this.#serializeMutation(() => this.#mutateConversation(id, (conversation, now) => {
+      const conflict = checkVersion(conversation, expectedVersion);
+      if (conflict) return conflict;
+      const actorPhone = normalizePhone(actor.phone || actor.operatorPhone || "");
+      const isAdmin = String(actor.role || "").toUpperCase() === "ADMIN";
+      if (conversation.assignedOperatorPhone && !isAdmin && !sameWhatsAppPhone(conversation.assignedOperatorPhone, actorPhone)) {
+        return { ok: false, statusCode: 403, error: "conversation_transfer_forbidden" };
+      }
+      const targetPhone = normalizePhone(targetOperator.phone || targetOperator.operatorPhone || "");
+      if (!targetPhone) return { ok: false, statusCode: 400, error: "target_operator_required" };
+      return {
+        ...conversation,
+        status: "em_atendimento",
+        assignedOperatorId: targetOperator.id || "",
+        assignedOperatorPhone: targetPhone,
+        assignedOperatorName: targetOperator.name || targetOperator.displayName || targetOperator.username || "",
+        assignedAt: now,
+        updatedAt: now,
+        version: Number(conversation.version || 1) + 1
+      };
+    }));
+  }
+
+  async resolveConversation(id, actor = {}, { expectedVersion = null } = {}) {
+    return this.#serializeMutation(() => this.#mutateConversation(id, (conversation, now) => {
+      const conflict = checkVersion(conversation, expectedVersion);
+      if (conflict) return conflict;
+      return {
+        ...conversation,
+        status: "resolvido",
+        unread: false,
+        resolvedAt: now,
+        resolvedBy: actorName(actor),
+        updatedAt: now,
+        version: Number(conversation.version || 1) + 1
+      };
+    }));
+  }
+
+  async reopenConversation(id, actor = {}, { expectedVersion = null } = {}) {
+    return this.#serializeMutation(() => this.#mutateConversation(id, (conversation, now) => {
+      const conflict = checkVersion(conversation, expectedVersion);
+      if (conflict) return conflict;
+      return {
+        ...conversation,
+        status: conversation.assignedOperatorPhone ? "humano" : "aguardando_equipe",
+        resolvedAt: null,
+        resolvedBy: "",
+        reopenedAt: now,
+        reopenedBy: actorName(actor),
+        updatedAt: now,
+        version: Number(conversation.version || 1) + 1
+      };
+    }));
+  }
+
+  async clearConversationHistory(id, actor = {}) {
+    if (String(actor.role || "").toUpperCase() !== "ADMIN") return { ok: false, statusCode: 403, error: "admin_required" };
+    return this.#serializeMutation(() => this.#mutateConversation(id, (conversation, now) => {
+      const removed = Array.isArray(conversation.mensagens) ? conversation.mensagens.length : 0;
+      return {
+        ...conversation,
+        mensagens: [],
+        unread: false,
+        lastInboundMessageId: "",
+        lastReadMessageId: "",
+        ultimaMensagem: "",
+        ultimaInteracao: now,
+        updatedAt: now,
+        version: Number(conversation.version || 1) + 1,
+        removedMessages: removed
+      };
+    }, { clearHistory: true }));
   }
 
   async patchConversation(id, patch = {}) {
@@ -292,7 +490,10 @@ export class WhatsAppConversationService {
       callCenterStatus: patch.callCenterStatus || data.conversas[index].callCenterStatus || "",
       updatedAt: now
     };
-    data.conversas[index] = { ...data.conversas[index], ...allowedPatch };
+    const updated = { ...data.conversas[index], ...allowedPatch };
+    if (!updated.assignedOperatorId) delete updated.assignedOperatorId;
+    if (!updated.assignedAt) delete updated.assignedAt;
+    data.conversas[index] = updated;
     await this.#write(data);
     return { ok: true, conversa: this.#withPriority(data.conversas[index]) };
   }
@@ -342,9 +543,26 @@ export class WhatsAppConversationService {
     const index = findConversationIndex(data.conversas, id);
     if (index === -1) return { ok: false, error: "Conversa nao encontrada" };
     const now = this.now().toISOString();
-    data.conversas[index] = { ...data.conversas[index], status, updatedAt: now };
+    data.conversas[index] = { ...data.conversas[index], status: normalizeOperationalStatus(status), updatedAt: now, version: Number(data.conversas[index].version || 1) + 1 };
     await this.#write(data);
     return { ok: true, conversa: this.#withPriority(data.conversas[index]) };
+  }
+
+  async #mutateConversation(id, mutator, options = {}) {
+    const data = await this.#read();
+    const index = findConversationIndex(data.conversas, id);
+    if (index === -1) return { ok: false, statusCode: 404, error: "conversation_not_found", message: "Conversa nao encontrada" };
+    const now = this.now().toISOString();
+    const result = mutator(data.conversas[index], now);
+    if (result?.ok === false) return result;
+    const removedMessages = Number(result?.removedMessages || 0);
+    const next = { ...result };
+    delete next.removedMessages;
+    data.conversas[index] = next;
+    await this.#write(data);
+    const response = { ok: true, conversa: this.#withPriority(next) };
+    if (options.clearHistory) response.removedMessages = removedMessages;
+    return response;
   }
 
   #withPriority(conversation) {
@@ -373,9 +591,11 @@ export class WhatsAppConversationService {
     const conversations = (Array.isArray(data.conversas) ? data.conversas : [])
       .filter(isPlainRecord)
       .map((item) => this.#withPriority({ ...item, mensagens: dedupeConversationMessages(item.mensagens) }));
+    const summary = buildConversationSummary(conversations);
     return {
       ok: true,
       count: conversations.length,
+      summary,
       items: conversations.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))
     };
   }
@@ -707,6 +927,72 @@ function sanitizeMetaStatus(status = {}) {
   };
 }
 
+function sanitizeProviderResponse(response = null) {
+  if (!response || typeof response !== "object") return response;
+  return JSON.parse(JSON.stringify(response));
+}
+
+function findExistingInboundMessage(conversations = [], { provider = "meta", messageId = "", text = "", telefone = "", aliases = [] } = {}) {
+  const normalizedMessageId = String(messageId || "").trim();
+  const phoneAliases = aliases.length ? aliases : whatsappPhoneAliases(telefone);
+  const targetConversations = conversations.filter((conversation) => (
+    phoneAliases.length === 0 || phoneAliases.some((alias) => sameWhatsAppPhone(conversation.telefone, alias) || conversation.id === `wa_${alias}`)
+  ));
+  for (const conversation of targetConversations) {
+    for (const message of Array.isArray(conversation.mensagens) ? conversation.mensagens : []) {
+      if (message.direction !== "in") continue;
+      if (normalizedMessageId) {
+        const sameProvider = String(message.provider || "meta") === provider;
+        if (sameProvider && (message.id === normalizedMessageId || message.messageId === normalizedMessageId || message.providerMessageId === normalizedMessageId)) {
+          return { conversation, message };
+        }
+      }
+      if (!normalizedMessageId && text && message.text === text && message.createdAt) {
+        return { conversation, message };
+      }
+    }
+  }
+  return null;
+}
+
+function lastInboundMessage(conversation = {}) {
+  return [...(Array.isArray(conversation.mensagens) ? conversation.mensagens : [])].reverse().find((message) => message.direction === "in") || null;
+}
+
+function normalizeOperationalStatus(status = "") {
+  const normalized = String(status || "").trim();
+  if (OPERATIONAL_STATUSES.has(normalized)) return normalized;
+  if (normalized === "lida" || normalized === "automatico" || normalized === "auto") return "aguardando_equipe";
+  return "aguardando_equipe";
+}
+
+function actorName(actor = {}) {
+  return actor.username || actor.displayName || actor.name || actor.phone || actor.operatorPhone || "sistema";
+}
+
+function checkVersion(conversation = {}, expectedVersion = null) {
+  if (expectedVersion === null || expectedVersion === undefined || expectedVersion === "") return null;
+  const expected = Number(expectedVersion);
+  if (!Number.isFinite(expected) || expected <= 0) return null;
+  if (Number(conversation.version || 1) === expected) return null;
+  return {
+    ok: false,
+    statusCode: 409,
+    error: "conversation_version_conflict",
+    conversa: conversation
+  };
+}
+
+function buildConversationSummary(conversations = []) {
+  return {
+    all: conversations.length,
+    unread: conversations.filter((item) => item.unread === true).length,
+    human: conversations.filter((item) => item.status === "humano").length,
+    inProgress: conversations.filter((item) => item.status === "em_atendimento").length,
+    resolved: conversations.filter((item) => item.status === "resolvido").length
+  };
+}
+
 function normalizeText(value = "") {
   return String(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, " ").replace(/\s+/g, " ").trim();
 }
@@ -728,7 +1014,79 @@ function parseConversationStore(raw = "") {
 }
 
 function normalizeConversationStore(parsed = {}) {
-  return { conversas: Array.isArray(parsed.conversas) ? parsed.conversas.filter(isPlainRecord) : [] };
+  const input = Array.isArray(parsed.conversas) ? parsed.conversas.filter(isPlainRecord) : [];
+  const byPhone = new Map();
+  const loose = [];
+  for (const item of input) {
+    const normalized = normalizeConversationRecord(item);
+    const phone = normalizePhone(normalized.telefone || normalized.id?.replace(/^wa_/, "") || "");
+    if (!phone) {
+      loose.push(normalized);
+      continue;
+    }
+    const aliases = whatsappPhoneAliases(phone);
+    const existingKey = [...byPhone.keys()].find((key) => aliases.some((alias) => sameWhatsAppPhone(key, alias)));
+    if (!existingKey) {
+      byPhone.set(phone, { ...normalized, telefone: normalized.telefone || phone, id: normalized.id || `wa_${phone}` });
+      continue;
+    }
+    byPhone.set(existingKey, mergeConversationRecords(byPhone.get(existingKey), normalized));
+  }
+  return { conversas: [...byPhone.values(), ...loose] };
+}
+
+function normalizeConversationRecord(item = {}) {
+  const messages = dedupeConversationMessages(Array.isArray(item.mensagens) ? item.mensagens : []);
+  const lastInbound = [...messages].reverse().find((message) => message.direction === "in");
+  const lastMessage = messages[messages.length - 1];
+  const status = normalizeOperationalStatus(item.status);
+  const unread = typeof item.unread === "boolean"
+    ? item.unread
+    : Boolean(lastInbound && item.lastReadMessageId !== (item.lastInboundMessageId || lastInbound.id));
+  return {
+    ...item,
+    id: item.id || (item.telefone ? `wa_${normalizePhone(item.telefone)}` : `wa_${crypto.randomUUID()}`),
+    nome: item.nome || "Cliente WhatsApp",
+    telefone: item.telefone || "",
+    status,
+    unread,
+    lastInboundMessageId: item.lastInboundMessageId || lastInbound?.id || "",
+    lastReadMessageId: item.lastReadMessageId || "",
+    readAt: item.readAt || null,
+    readBy: item.readBy || "",
+    markedUnreadAt: item.markedUnreadAt || null,
+    markedUnreadBy: item.markedUnreadBy || "",
+    assignedOperatorId: item.assignedOperatorId || "",
+    assignedOperatorPhone: item.assignedOperatorPhone || "",
+    assignedOperatorName: item.assignedOperatorName || "",
+    assignedAt: item.assignedAt || null,
+    resolvedAt: item.resolvedAt || null,
+    resolvedBy: item.resolvedBy || "",
+    reopenedAt: item.reopenedAt || null,
+    reopenedBy: item.reopenedBy || "",
+    ultimaMensagem: item.ultimaMensagem || lastInbound?.text || lastMessage?.text || "",
+    ultimaInteracao: item.ultimaInteracao || lastMessage?.createdAt || item.updatedAt || item.createdAt || "",
+    createdAt: item.createdAt || item.updatedAt || new Date(0).toISOString(),
+    updatedAt: item.updatedAt || item.ultimaInteracao || item.createdAt || new Date(0).toISOString(),
+    version: Number.isFinite(Number(item.version)) && Number(item.version) > 0 ? Number(item.version) : 1,
+    mensagens: messages
+  };
+}
+
+function mergeConversationRecords(a = {}, b = {}) {
+  const messages = dedupeConversationMessages([...(a.mensagens || []), ...(b.mensagens || [])])
+    .sort((left, right) => String(left.createdAt || "").localeCompare(String(right.createdAt || "")));
+  const newer = String(b.updatedAt || b.ultimaInteracao || "").localeCompare(String(a.updatedAt || a.ultimaInteracao || "")) > 0 ? b : a;
+  return normalizeConversationRecord({
+    ...a,
+    ...newer,
+    id: a.id || b.id,
+    telefone: a.telefone || b.telefone,
+    nome: a.nome && a.nome !== "Cliente WhatsApp" ? a.nome : b.nome || a.nome,
+    unread: a.unread === true || b.unread === true,
+    version: Math.max(Number(a.version || 1), Number(b.version || 1)),
+    mensagens: messages
+  });
 }
 
 function extractJsonErrorPosition(error = {}) {

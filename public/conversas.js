@@ -1,15 +1,17 @@
 const state = {
   items: [],
+  summary: {},
   selectedId: "",
+  selectedConversation: null,
   filter: "all",
   query: "",
   activeRole: "",
   activeUser: "",
-  humanAlertsReady: false,
-  humanAlertKeys: new Set(),
-  humanAlertQueue: [],
-  whatsappStatus: null,
-  sendingReply: false
+  refreshing: false,
+  sending: false,
+  drafts: new Map(),
+  pushSubscription: null,
+  pendingManualSendId: ""
 };
 
 const listEl = document.querySelector("#conversationList");
@@ -17,14 +19,22 @@ const chatEl = document.querySelector("#chatPane");
 const searchInput = document.querySelector("#searchInput");
 const refreshButton = document.querySelector("#refreshButton");
 const connectionStatusEl = document.querySelector("#connectionStatus");
-const humanAlertPanelEl = document.querySelector("#humanAlertPanel");
-
+const pushPanelEl = document.querySelector("#pushPanel");
+const ACTION_ENDPOINTS = {
+  read: "/read",
+  unread: "/unread",
+  claim: "/claim",
+  release: "/release",
+  transfer: "/transfer",
+  resolve: "/resolve",
+  reopen: "/reopen",
+  messages: "/messages"
+};
 refreshButton?.addEventListener("click", refreshInbox);
 searchInput?.addEventListener("input", (event) => {
   state.query = event.target.value;
   renderList();
 });
-
 document.querySelectorAll("[data-filter]").forEach((button) => {
   button.addEventListener("click", () => {
     state.filter = button.dataset.filter;
@@ -38,54 +48,60 @@ setInterval(refreshInbox, 30000);
 
 async function init() {
   await loadActiveUser();
-  await refreshInbox();
-}
-
-async function refreshInbox() {
-  await loadWhatsappStatus();
-  await loadConversas();
+  await registerServiceWorker();
+  await refreshInbox({ initial: true });
 }
 
 async function loadActiveUser() {
   try {
-    const response = await fetch("/api/auth/me");
+    const response = await fetch("/api/auth/me", { cache: "no-store" });
     if (!response.ok) return;
     const data = await response.json();
-    state.activeRole = data.user?.role || "";
-    state.activeUser = data.user?.username || data.user?.displayName || "";
-    restoreHumanAlertKeys();
+    state.activeRole = data.user?.role || "ADMIN";
+    state.activeUser = data.user?.username || data.user?.displayName || "operador";
   } catch {
     state.activeRole = "";
     state.activeUser = "";
   }
 }
 
-async function loadConversas() {
-  listEl.innerHTML = `<div class="loading">Carregando...</div>`;
+async function refreshInbox({ initial = false } = {}) {
+  if (state.refreshing) return;
+  state.refreshing = true;
+  refreshButton?.classList.add("spinning");
+  if (initial && !state.items.length) listEl.innerHTML = `<div class="loading">Carregando...</div>`;
+  const listScroll = listEl.scrollTop;
+  const messageEl = chatEl.querySelector("#messageList");
+  const wasNearBottom = messageEl ? messageEl.scrollHeight - messageEl.scrollTop - messageEl.clientHeight < 120 : true;
+  const messageScroll = messageEl?.scrollTop || 0;
   try {
-    const response = await fetch("/api/conversas");
+    await loadWhatsappStatus();
+    const response = await fetch("/api/conversas", { cache: "no-store" });
     const data = await response.json();
     if (!data.ok) throw new Error(data.error || "Erro ao carregar conversas");
     state.items = data.items || [];
-    processHumanAlerts(state.items);
+    state.summary = data.summary || {};
+    updateCounters();
     const requestedId = new URLSearchParams(location.search).get("conversationId") || "";
     if (!state.selectedId && requestedId) state.selectedId = requestedId;
-    if (!state.selectedId && state.items[0]) state.selectedId = state.items[0].id;
-    renderHumanAlertPanel();
     renderList();
-    if (state.selectedId) await openConversation(state.selectedId, { silent: true });
+    listEl.scrollTop = listScroll;
+    if (state.selectedId) await openConversation(state.selectedId, { silent: true, wasNearBottom, messageScroll });
+    renderPushPanel();
   } catch (error) {
-    listEl.innerHTML = `<div class="loading">${escapeHtml(error.message || "Nao foi possivel carregar.")}</div>`;
+    if (!state.items.length) listEl.innerHTML = `<div class="loading">${escapeHtml(error.message || "Nao foi possivel carregar.")}</div>`;
+  } finally {
+    state.refreshing = false;
+    refreshButton?.classList.remove("spinning");
   }
 }
 
 async function loadWhatsappStatus() {
   try {
-    const response = await fetch("/admin/whatsapp/status");
-    if (!response.ok) throw new Error("status_unavailable");
-    state.whatsappStatus = await response.json();
+    const response = await fetch("/admin/whatsapp/status", { cache: "no-store" });
+    state.whatsappStatus = response.ok ? await response.json() : {};
   } catch {
-    state.whatsappStatus = { provider: "desconhecido", configured: false, sendEnabled: false, error: "status_unavailable" };
+    state.whatsappStatus = {};
   }
   renderConnectionStatus();
 }
@@ -93,53 +109,16 @@ async function loadWhatsappStatus() {
 function renderConnectionStatus() {
   if (!connectionStatusEl) return;
   const status = state.whatsappStatus || {};
-  const provider = status.provider || "desconhecido";
-  const healthy = status.configured === true && status.sendEnabled === true;
-  const partial = status.configured === true && status.sendEnabled !== true;
-  const missing = [];
-  if (provider === "meta" && status.phoneNumberIdConfigured !== true) missing.push("ID do telefone");
-  if (provider === "meta" && status.accessTokenConfigured !== true) missing.push("token Meta");
-  if (provider === "meta" && status.verifyTokenConfigured !== true) missing.push("token de verificacao");
-  const label = healthy
-    ? "Meta pronto para envio real"
-    : partial
-      ? "Meta configurado, envio real desligado"
-      : provider === "meta"
-        ? `Meta incompleto${missing.length ? `: falta ${missing.join(", ")}` : ""}`
-        : "Modo local/mock";
-  connectionStatusEl.className = `connection-status ${healthy ? "ok" : partial ? "warn" : "error"}`;
-  connectionStatusEl.innerHTML = `
-    <strong>${escapeHtml(label)}</strong>
-    <span>${escapeHtml(`motor=${status.engine || "disabled"} | envio=${Boolean(status.sendEnabled)} | auto=${Boolean(status.autoReplyEnabled)} | IA=${Boolean(status.aiEnabled)} | inbox=${Boolean(status.receivingActive)}`)}</span>
-  `;
+  const ready = status.configured === true && status.sendEnabled === true;
+  connectionStatusEl.className = `connection-status ${ready ? "ok" : "warn"}`;
+  connectionStatusEl.innerHTML = `<strong>${ready ? "Meta pronto" : "Meta em atenção"}</strong><span>envio=${Boolean(status.sendEnabled)} | inbox=${Boolean(status.receivingActive)}</span>`;
 }
 
-function renderHumanAlertPanel() {
-  if (!humanAlertPanelEl) return;
-  const humanItems = state.items.filter((item) => item.status === "humano");
-  if (!humanItems.length && !state.humanAlertQueue.length) {
-    humanAlertPanelEl.innerHTML = "";
-    return;
+function updateCounters() {
+  for (const [key, value] of Object.entries(state.summary || {})) {
+    const el = document.querySelector(`[data-count="${key}"]`);
+    if (el) el.textContent = String(value || 0);
   }
-  const latest = state.humanAlertQueue.at(-1);
-  const notificationAllowed = typeof Notification !== "undefined" && Notification.permission === "granted";
-  const notificationBlocked = typeof Notification !== "undefined" && Notification.permission === "denied";
-  humanAlertPanelEl.innerHTML = `
-    <div>
-      <strong>${humanItems.length} atendimento${humanItems.length === 1 ? "" : "s"} humano${humanItems.length === 1 ? "" : "s"} aberto${humanItems.length === 1 ? "" : "s"}</strong>
-      <span>${escapeHtml(latest ? `Novo chamado: ${latest.nome || latest.telefone || latest.id}` : "Monitorando chamados humanos em tempo real.")}</span>
-    </div>
-    <div class="human-alert-actions">
-      <button type="button" data-human-filter>Ver humanos</button>
-      ${!notificationAllowed && !notificationBlocked ? `<button type="button" data-enable-human-alerts>Ativar avisos</button>` : ""}
-    </div>
-  `;
-  humanAlertPanelEl.querySelector("[data-human-filter]")?.addEventListener("click", () => {
-    state.filter = "human";
-    document.querySelectorAll("[data-filter]").forEach((item) => item.classList.toggle("active", item.dataset.filter === "human"));
-    renderList();
-  });
-  humanAlertPanelEl.querySelector("[data-enable-human-alerts]")?.addEventListener("click", enableHumanNotifications);
 }
 
 function renderList() {
@@ -148,92 +127,77 @@ function renderList() {
     listEl.innerHTML = `<div class="loading">Nenhuma conversa neste filtro.</div>`;
     return;
   }
-  listEl.innerHTML = items.map((item) => {
-    const selected = item.id === state.selectedId ? " selected" : "";
-    const humanOpen = item.status === "humano" ? " human-open" : "";
-    const initials = initialsFor(item.nome || item.telefone || "WA");
-    return `
-      <button class="conversation-item${selected}${humanOpen}" type="button" data-id="${escapeAttr(item.id)}">
-        <span class="avatar">${escapeHtml(initials)}</span>
-        <span class="conversation-main">
-          <span class="conversation-top">
-            <strong>${escapeHtml(item.nome || "Cliente WhatsApp")}</strong>
-            <small>${formatTime(item.ultimaInteracao || item.updatedAt || item.createdAt)}</small>
-          </span>
-          <span class="conversation-preview">${escapeHtml(item.ultimaMensagem || "Sem mensagem")}</span>
-          <span class="conversation-tags">
-            <em>${escapeHtml(labelStatus(item.status))}</em>
-            <em>${escapeHtml(item.intencao || "desconhecido")}</em>
-          </span>
+  listEl.innerHTML = items.map((item) => `
+    <button class="conversation-item${item.id === state.selectedId ? " selected" : ""}${item.unread ? " unread" : ""}" type="button" data-id="${escapeAttr(item.id)}">
+      <span class="avatar">${escapeHtml(initialsFor(item.nome || item.telefone || "WA"))}</span>
+      <span class="conversation-main">
+        <span class="conversation-top"><strong>${escapeHtml(item.nome || "Cliente WhatsApp")}</strong><small>${formatTime(item.ultimaInteracao || item.updatedAt || item.createdAt)}</small></span>
+        <span class="conversation-preview">${escapeHtml(item.ultimaMensagem || "Sem mensagem")}</span>
+        <span class="conversation-tags">
+          <em>${escapeHtml(labelStatus(item.status))}</em>
+          ${item.unread ? "<em class=\"tag-unread\">Não lida</em>" : ""}
+          ${item.assignedOperatorName ? `<em>${escapeHtml(item.assignedOperatorName)}</em>` : ""}
         </span>
-      </button>
-    `;
-  }).join("");
-  listEl.querySelectorAll("[data-id]").forEach((button) => {
-    button.addEventListener("click", () => openConversation(button.dataset.id));
-  });
+      </span>
+    </button>
+  `).join("");
+  listEl.querySelectorAll("[data-id]").forEach((button) => button.addEventListener("click", () => openConversation(button.dataset.id)));
 }
 
-async function openConversation(id, { silent = false } = {}) {
+async function openConversation(id, { silent = false, wasNearBottom = true, messageScroll = 0 } = {}) {
   state.selectedId = id;
   renderList();
   if (!silent) chatEl.innerHTML = `<div class="empty-state"><strong>Carregando conversa...</strong></div>`;
   try {
-    const response = await fetch(`/api/conversas/${encodeURIComponent(id)}`);
+    const response = await fetch(`/api/conversas/${encodeURIComponent(id)}`, { cache: "no-store" });
     const data = await response.json();
     if (!data.ok) throw new Error(data.error || "Conversa nao encontrada");
-    renderChat(data.conversa);
+    state.selectedConversation = data.conversa;
+    renderChat(data.conversa, { wasNearBottom, messageScroll });
+    if (data.conversa.unread) await postConversationAction(id, "read", { quiet: true });
+    await acknowledgeOpenAlert(id);
   } catch (error) {
     chatEl.innerHTML = `<div class="empty-state"><strong>${escapeHtml(error.message || "Falha ao abrir conversa")}</strong></div>`;
   }
 }
 
-function renderChat(conversa) {
+function renderChat(conversa, { wasNearBottom = true, messageScroll = 0 } = {}) {
   const messages = conversa.mensagens || [];
-  const humanNotice = conversa.status === "humano"
-    ? `<div class="human-chat-notice"><strong>Atendimento humano ativo</strong><span>O bot esta quieto. Responde por aqui para continuar na mesma conversa do WhatsApp.</span></div>`
-    : "";
+  const draft = loadDraft(conversa.id);
   chatEl.innerHTML = `
     <header class="chat-header">
       <span class="avatar large">${escapeHtml(initialsFor(conversa.nome || conversa.telefone || "WA"))}</span>
-      <div>
+      <div class="chat-title">
         <strong>${escapeHtml(conversa.nome || "Cliente WhatsApp")}</strong>
-        <small>${escapeHtml(conversa.telefone || "")} · ${escapeHtml(labelStatus(conversa.status))}</small>
+        <small>${escapeHtml(conversa.telefone || "")} · ${escapeHtml(labelStatus(conversa.status))} · Responsável: ${escapeHtml(conversa.assignedOperatorName || "sem responsável")} · Lida por: ${escapeHtml(conversa.readBy || "-")}</small>
       </div>
       <div class="chat-actions">
-        <button type="button" data-action="human">Humano</button>
-        <button type="button" data-action="automatico">Automático</button>
-        <button type="button" data-action="resolved">Resolvido</button>
-        ${state.activeRole === "ADMIN" ? `<button class="danger-action" type="button" data-action="delete-conversation">Excluir conversa</button>` : ""}
+        ${canClaim(conversa) ? `<button type="button" data-action="claim">Assumir atendimento</button>` : ""}
+        <button type="button" data-focus-reply>Enviar</button>
+        ${conversa.status !== "resolvido" ? `<button type="button" data-action="resolve">Concluir</button>` : ""}
+        <button type="button" data-toggle-menu>⋮ Ações</button>
+        <div class="action-menu" id="actionMenu">${renderActionMenu(conversa)}</div>
       </div>
     </header>
-    ${humanNotice}
-
-    <section class="message-list" id="messageList">
-      ${messages.map(renderMessage).join("") || `<div class="day-marker">Sem histórico ainda</div>`}
-    </section>
-
+    <section class="message-list" id="messageList">${messages.map(renderMessage).join("") || `<div class="day-marker">Sem histórico ainda</div>`}</section>
     <section class="reply-panel">
-      <button class="suggestion-button" type="button" id="useSuggestion">Usar sugestão</button>
-      <textarea id="replyText" rows="2" placeholder="Escreve tua resposta pelo SamBah..."></textarea>
-      <button class="send-button" type="button" id="sendReply">Enviar</button>
+      <textarea id="replyText" rows="2" placeholder="Escreve tua resposta pelo SamBah...">${escapeHtml(draft)}</textarea>
+      <button class="send-button" type="button" id="sendReply"${state.sending ? " disabled" : ""}>Enviar</button>
     </section>
-    <p class="reply-status" id="replyStatus">${escapeHtml(conversa.respostaSugerida || "")}</p>
+    <p class="reply-status" id="replyStatus"></p>
   `;
+  bindChat(conversa);
+  const messageEl = chatEl.querySelector("#messageList");
+  if (messageEl) messageEl.scrollTop = wasNearBottom ? messageEl.scrollHeight : messageScroll;
+}
 
-  scrollMessagesToBottom();
-  chatEl.querySelectorAll("[data-delete-message]").forEach((button) => {
-    button.addEventListener("click", () => deleteMessage(conversa.id, button.dataset.deleteMessage));
-  });
-  chatEl.querySelector("[data-action='human']")?.addEventListener("click", () => postAction(conversa.id, "humano"));
-  chatEl.querySelector("[data-action='automatico']")?.addEventListener("click", () => postAction(conversa.id, "automatico"));
-  chatEl.querySelector("[data-action='resolved']")?.addEventListener("click", () => postAction(conversa.id, "resolvido"));
-  chatEl.querySelector("[data-action='delete-conversation']")?.addEventListener("click", () => deleteConversation(conversa.id));
-  chatEl.querySelector("#useSuggestion")?.addEventListener("click", () => {
-    chatEl.querySelector("#replyText").value = conversa.respostaSugerida || "";
-    chatEl.querySelector("#replyText").focus();
-  });
-  chatEl.querySelector("#replyText")?.addEventListener("keydown", (event) => {
+function bindChat(conversa) {
+  chatEl.querySelector("[data-focus-reply]")?.addEventListener("click", () => chatEl.querySelector("#replyText")?.focus());
+  chatEl.querySelector("[data-toggle-menu]")?.addEventListener("click", () => chatEl.querySelector("#actionMenu")?.classList.toggle("open"));
+  chatEl.querySelectorAll("[data-action]").forEach((button) => button.addEventListener("click", () => handleAction(conversa, button.dataset.action)));
+  const reply = chatEl.querySelector("#replyText");
+  reply?.addEventListener("input", () => saveDraft(conversa.id, reply.value));
+  reply?.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" || event.shiftKey) return;
     event.preventDefault();
     sendReply(conversa.id);
@@ -241,319 +205,212 @@ function renderChat(conversa) {
   chatEl.querySelector("#sendReply")?.addEventListener("click", () => sendReply(conversa.id));
 }
 
-function processHumanAlerts(items = []) {
-  const openHumanItems = items.filter((item) => item.status === "humano");
-  const currentKeys = openHumanItems.map(humanAlertKey).filter(Boolean);
-  if (!state.humanAlertsReady) {
-    currentKeys.forEach((key) => state.humanAlertKeys.add(key));
-    state.humanAlertsReady = true;
-    persistHumanAlertKeys();
-    return;
-  }
-  const newAlerts = [];
-  for (const item of openHumanItems) {
-    const key = humanAlertKey(item);
-    if (!key || state.humanAlertKeys.has(key)) continue;
-    state.humanAlertKeys.add(key);
-    newAlerts.push(item);
-  }
-  if (!newAlerts.length) {
-    persistHumanAlertKeys();
-    return;
-  }
-  state.humanAlertQueue = [...state.humanAlertQueue, ...newAlerts].slice(-5);
-  persistHumanAlertKeys();
-  for (const item of newAlerts) notifyHumanMonitor(item);
+function renderActionMenu(conversa) {
+  const actions = [];
+  if (conversa.unread) actions.push(["read", "Marcar como lida"]);
+  else actions.push(["unread", "Marcar como não lida"]);
+  if (canClaim(conversa)) actions.push(["claim", "Assumir atendimento"]);
+  if (conversa.assignedOperatorPhone) actions.push(["release", "Liberar atendimento"], ["transfer", "Transferir atendimento"]);
+  if (conversa.status !== "resolvido") actions.push(["resolve", "Marcar como atendida"]);
+  if (conversa.status === "resolvido") actions.push(["reopen", "Reabrir atendimento"]);
+  if (state.activeRole === "ADMIN") actions.push(["clear", "Limpar histórico"], ["delete-conversation", "Excluir conversa"]);
+  return actions.map(([action, label]) => {
+    if (action === "delete-conversation") return `<button type="button" data-action="delete-conversation">${escapeHtml(label)}</button>`;
+    return `<button type="button" data-action="${action}">${escapeHtml(label)}</button>`;
+  }).join("");
 }
 
-function humanAlertKey(item = {}) {
-  if (item.status !== "humano") return "";
-  const messages = Array.isArray(item.mensagens) ? item.mensagens : [];
-  const inbound = [...messages].reverse().find((message) => message.direction === "in");
-  const marker = inbound?.id || inbound?.createdAt || inbound?.text || item.updatedAt || item.ultimaInteracao || "humano";
-  return `${item.id || item.telefone || "wa"}:${marker}`;
+async function handleAction(conversa, action) {
+  if (action === "delete" || action === "delete-conversation") return deleteConversation(conversa.id);
+  if (action === "clear") return clearHistory(conversa.id);
+  const body = { expectedVersion: conversa.version || 0 };
+  if (action === "transfer") {
+    const target = window.prompt("Telefone do operador destino");
+    if (!target) return;
+    body.targetOperatorPhone = target;
+  }
+  await postConversationAction(conversa.id, action, { body });
 }
 
-function restoreHumanAlertKeys() {
+async function postConversationAction(id, action, { body = {}, quiet = false } = {}) {
+  const status = chatEl.querySelector("#replyStatus");
   try {
-    const storageKey = humanAlertStorageKey();
-    const raw = sessionStorage.getItem(storageKey);
-    const parsed = raw ? JSON.parse(raw) : [];
-    state.humanAlertKeys = new Set(Array.isArray(parsed) ? parsed.filter(Boolean) : []);
-  } catch {
-    state.humanAlertKeys = new Set();
-  }
-}
-
-function persistHumanAlertKeys() {
-  try {
-    sessionStorage.setItem(humanAlertStorageKey(), JSON.stringify([...state.humanAlertKeys].slice(-200)));
-  } catch {
-    // O alerta continua funcionando mesmo sem sessionStorage.
-  }
-}
-
-function humanAlertStorageKey() {
-  return `sambah-human-alerts:${state.activeUser || "local"}`;
-}
-
-function notifyHumanMonitor(item = {}) {
-  playHumanAlertSound();
-  showHumanBrowserNotification(item);
-  if (state.filter !== "human") {
-    humanAlertPanelEl?.classList.add("pulse");
-    setTimeout(() => humanAlertPanelEl?.classList.remove("pulse"), 1800);
-  }
-}
-
-async function enableHumanNotifications() {
-  playHumanAlertSound();
-  if (typeof Notification !== "undefined" && Notification.permission === "default") {
-    await Notification.requestPermission();
-  }
-  renderHumanAlertPanel();
-}
-
-function showHumanBrowserNotification(item = {}) {
-  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
-  const title = "SamBah: atendimento humano";
-  const body = `${item.nome || "Cliente WhatsApp"} precisa de atendimento humano.`;
-  try {
-    const notification = new Notification(title, { body, tag: `sambah-human-${item.id || item.telefone || "wa"}` });
-    notification.onclick = () => {
-      window.focus();
-      if (item.id) openConversation(item.id);
-    };
-  } catch {
-    // Navegadores podem bloquear notificacoes sem permissao do sistema.
-  }
-}
-
-function playHumanAlertSound() {
-  try {
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContext) return;
-    const context = new AudioContext();
-    const gain = context.createGain();
-    gain.gain.setValueAtTime(0.0001, context.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.16, context.currentTime + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.34);
-    gain.connect(context.destination);
-    [660, 880].forEach((frequency, index) => {
-      const oscillator = context.createOscillator();
-      oscillator.type = "sine";
-      oscillator.frequency.value = frequency;
-      oscillator.connect(gain);
-      oscillator.start(context.currentTime + index * 0.12);
-      oscillator.stop(context.currentTime + 0.16 + index * 0.12);
+    const response = await fetch(`/api/conversas/${encodeURIComponent(id)}${ACTION_ENDPOINTS[action] || `/${action}`}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
     });
-    setTimeout(() => context.close(), 520);
-  } catch {
-    // Sem som se o navegador bloquear audio automatico.
+    const data = await response.json();
+    if (!data.ok) throw new Error(data.error || "action_failed");
+    if (!quiet && status) status.textContent = "Ação salva.";
+    await refreshInbox({ initial: false });
+  } catch (error) {
+    if (status) status.textContent = error.message || "Falha na ação.";
   }
+}
+
+async function sendReply(id) {
+  if (state.sending) return;
+  const textarea = chatEl.querySelector("#replyText");
+  const status = chatEl.querySelector("#replyStatus");
+  const text = textarea?.value.trim() || "";
+  if (!text) return;
+  state.sending = true;
+  state.pendingManualSendId ||= `manual:${id}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+  try {
+    const response = await fetch(`/api/conversas/${encodeURIComponent(id)}/responder`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, manualSendId: state.pendingManualSendId })
+    });
+    const data = await response.json();
+    if (!data.ok) throw new Error(data.error || data.reason || "send_failed");
+    if (data.enviado === true || data.duplicate === true) {
+      textarea.value = "";
+      clearDraft(id);
+      state.pendingManualSendId = "";
+    }
+    if (status) status.textContent = data.enviado ? "Mensagem enviada." : `Mensagem registrada: ${data.reason || "sem envio real"}`;
+    await refreshInbox({ initial: false });
+  } catch (error) {
+    if (status) status.textContent = error.message || "Falha real no envio.";
+  } finally {
+    state.sending = false;
+  }
+}
+
+async function clearHistory(id) {
+  if (!window.confirm("Limpar todo o histórico desta conversa?")) return;
+  const response = await fetch(`/api/conversas/${encodeURIComponent(id)}${ACTION_ENDPOINTS.messages}`, { method: "DELETE" });
+  const data = await response.json();
+  if (!data.ok) window.alert(data.error || "Falha ao limpar histórico.");
+  await refreshInbox({ initial: false });
+}
+
+async function deleteConversation(id) {
+  if (!window.confirm("Tem certeza que deseja excluir esta conversa sem uso?")) return;
+  const response = await fetch(`/api/conversas/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const data = await response.json();
+  if (!data.ok) window.alert(data.error || "Falha ao excluir conversa.");
+  state.selectedId = "";
+  await refreshInbox({ initial: false });
+}
+
+async function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+  try {
+    await navigator.serviceWorker.register("/sambah-conversas-sw.js");
+  } catch {}
+}
+
+function renderPushPanel() {
+  if (!pushPanelEl) return;
+  pushPanelEl.innerHTML = `<button type="button" id="enablePush">Ativar alertas neste celular</button>`;
+  pushPanelEl.querySelector("#enablePush")?.addEventListener("click", enablePush);
 }
 
 function scrollMessagesToBottom() {
   const list = chatEl.querySelector("#messageList");
-  if (!list) return;
-  const scroll = () => {
-    if (list.scrollHeight > list.clientHeight + 8) {
-      list.scrollTop = list.scrollHeight;
-      return;
-    }
-    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "auto" });
-  };
-  scroll();
-  requestAnimationFrame(scroll);
-  setTimeout(scroll, 80);
+  if (list) list.scrollTop = list.scrollHeight;
+  window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
 }
 
-function renderMessage(message) {
-  const outgoing = message.direction === "out";
-  const text = message.text || message.transcricao || describeMessage(message);
-  const messageId = message.id || "";
-  const statusText = `${formatTime(message.createdAt)} · ${labelMessageStatus(message.status)}${message.errorMessage ? ` · ${message.errorMessage}` : ""}`;
-  return `
-    <article class="message ${outgoing ? "out" : "in"}">
-      <p>${escapeHtml(text)}</p>
-      ${messageId ? `<button class="message-delete" type="button" data-delete-message="${escapeAttr(messageId)}" title="Excluir mensagem; somente ADMIN">Excluir</button>` : ""}
-      <span>${escapeHtml(statusText)}</span>
-    </article>
-  `;
-}
-
-async function sendReply(id) {
-  if (state.sendingReply) {
-    const currentStatus = chatEl.querySelector("#replyStatus");
-    if (currentStatus) currentStatus.textContent = "Envio em andamento. Aguarda um instante.";
-    return;
-  }
-
-  const textarea = chatEl.querySelector("#replyText");
-  const button = chatEl.querySelector("#sendReply");
-  const status = chatEl.querySelector("#replyStatus");
-  const text = textarea?.value.trim();
-
-  if (!text) {
-    if (status) status.textContent = "Escreve uma resposta antes de enviar.";
-    return;
-  }
-
-  state.sendingReply = true;
-  const oldButtonText = button?.textContent || "Enviar";
-  const manualSendId = typeof globalThis.crypto?.randomUUID === "function"
-    ? `manual_${globalThis.crypto.randomUUID()}`
-    : `manual_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-
-  if (button) {
-    button.disabled = true;
-    button.textContent = "Enviando...";
-  }
-  if (textarea) textarea.disabled = true;
-  if (status) status.textContent = "Enviando...";
-
+function playHumanAlertSound() {
   try {
-    const response = await fetch(`/api/conversas/${encodeURIComponent(id)}/responder`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text, manualSendId })
-    });
-    const data = await response.json();
-    if (!data.ok) throw new Error(data.error || data.reason || "Falha ao enviar");
-
-    if (textarea) textarea.value = "";
-    if (status) {
-      if (data.duplicated || data.duplicate) {
-        status.textContent = "Envio duplicado bloqueado.";
-      } else if (data.enviado) {
-        status.textContent = "Resposta enviada pelo SamBah.";
-      } else {
-        const metaError = data.message?.errorMessage || data.sendResult?.error || data.reason || "sem envio real";
-        status.textContent = `Nao enviado pela Meta: ${metaError}`;
-      }
-    }
-    await loadConversas();
-  } catch (error) {
-    if (status) status.textContent = error.message || "Nao foi possivel enviar.";
-  } finally {
-    state.sendingReply = false;
-    const currentButton = chatEl.querySelector("#sendReply");
-    const currentTextarea = chatEl.querySelector("#replyText");
-    if (currentButton) {
-      currentButton.disabled = false;
-      currentButton.textContent = oldButtonText;
-    }
-    if (currentTextarea) currentTextarea.disabled = false;
-  }
+    const audio = new Audio();
+    audio.volume = 0.15;
+  } catch {}
 }
 
-async function postAction(id, action) {
-  await fetch(`/api/conversas/${encodeURIComponent(id)}/${action}`, { method: "POST" });
-  await loadConversas();
+async function enablePush() {
+  if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) return;
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") return;
+  const keyResult = await (await fetch("/api/call-center/push/public-key")).json();
+  if (!keyResult.publicKey) return window.alert("Chave Web Push não configurada.");
+  const registration = await navigator.serviceWorker.ready;
+  const subscription = await registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(keyResult.publicKey)
+  });
+  const payload = subscription.toJSON();
+  payload.deviceId = deviceId();
+  const response = await fetch("/api/call-center/push/subscriptions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const data = await response.json();
+  window.alert(data.ok ? "Alertas ativados neste celular." : "Não foi possível ativar alertas.");
 }
 
-async function deleteMessage(conversationId, messageId) {
-  const status = chatEl.querySelector("#replyStatus");
-  if (!messageId) return;
-  const confirmed = window.confirm("Excluir esta mensagem do histórico? Apenas ADMIN pode fazer isso.");
-  if (!confirmed) return;
-  if (status) status.textContent = "Excluindo mensagem...";
+async function acknowledgeOpenAlert(conversationId) {
   try {
-    const response = await fetch(`/api/conversas/${encodeURIComponent(conversationId)}/mensagens/${encodeURIComponent(messageId)}`, {
-      method: "DELETE"
-    });
-    const data = await response.json();
-    if (!data.ok) throw new Error(deleteErrorMessage(data.error));
-    if (status) status.textContent = "Mensagem excluída por ADMIN.";
-    await loadConversas();
-  } catch (error) {
-    if (status) status.textContent = error.message || "Nao foi possivel excluir a mensagem.";
-  }
-}
-
-async function deleteConversation(conversationId) {
-  const status = chatEl.querySelector("#replyStatus");
-  const confirmed = window.confirm("Tem certeza que deseja excluir esta conversa sem uso?");
-  if (!confirmed) return;
-  if (status) status.textContent = "Excluindo conversa...";
-  try {
-    const response = await fetch(`/api/conversas/${encodeURIComponent(conversationId)}`, { method: "DELETE" });
-    const data = await response.json();
-    if (!data.ok) throw new Error(conversationDeleteErrorMessage(data.error, data.reason));
-    state.selectedId = "";
-    if (status) status.textContent = "Conversa excluida.";
-    await loadConversas();
-  } catch (error) {
-    if (status) status.textContent = error.message || "Nao foi possivel excluir a conversa.";
-  }
-}
-
-function deleteErrorMessage(error = "") {
-  if (error === "auth_required") return "Entra como ADMIN para excluir mensagens.";
-  if (error === "admin_required") return "Somente ADMIN pode excluir mensagens.";
-  return error || "Nao foi possivel excluir a mensagem.";
-}
-
-function conversationDeleteErrorMessage(error = "", reason = "") {
-  if (error === "auth_required") return "Entra como ADMIN para excluir conversas.";
-  if (error === "admin_required") return "Somente ADMIN pode excluir conversas.";
-  if (error === "conversation_not_deletable") return "Esta conversa ainda esta ativa e nao pode ser excluida.";
-  if (error === "conversation_not_found") return "Conversa nao encontrada.";
-  return reason || error || "Nao foi possivel excluir a conversa.";
+    const result = await (await fetch("/api/call-center/alerts?unreadOnly=true", { cache: "no-store" })).json();
+    const alert = (result.alerts || []).find((item) => item.conversationId === conversationId);
+    if (alert) await fetch(`/api/call-center/alerts/${encodeURIComponent(alert.id)}/acknowledge`, { method: "POST" });
+  } catch {}
 }
 
 function matchesFilter(item) {
+  if (state.filter === "unread") return item.unread === true;
   if (state.filter === "human") return item.status === "humano";
-  if (state.filter === "needs_reply") return !["resolvido", "aguardando_cliente"].includes(item.status);
+  if (state.filter === "inProgress") return item.status === "em_atendimento";
+  if (state.filter === "resolved") return item.status === "resolvido";
   return true;
 }
 
 function matchesSearch(item) {
-  const query = normalize(state.query);
+  const query = normalizeText(state.query);
   if (!query) return true;
-  return normalize(`${item.nome || ""} ${item.telefone || ""} ${item.ultimaMensagem || ""}`).includes(query);
+  return normalizeText(`${item.nome || ""} ${item.telefone || ""} ${item.ultimaMensagem || ""}`).includes(query);
 }
 
-function describeMessage(message = {}) {
-  if (message.type === "audio") return "Audio recebido";
-  if (message.type) return `Mensagem ${message.type}`;
-  return "";
+function canClaim(conversa) {
+  return !conversa.assignedOperatorPhone && conversa.status !== "resolvido";
+}
+
+function draftKey(id) {
+  return `sambah:draft:${state.activeUser || "anon"}:${id}`;
+}
+
+function loadDraft(id) {
+  if (state.drafts.has(id)) return state.drafts.get(id);
+  const value = localStorage.getItem(draftKey(id)) || "";
+  state.drafts.set(id, value);
+  return value;
+}
+
+function saveDraft(id, text) {
+  state.drafts.set(id, text);
+  localStorage.setItem(draftKey(id), text);
+}
+
+function clearDraft(id) {
+  state.drafts.delete(id);
+  localStorage.removeItem(draftKey(id));
+}
+
+function renderMessage(message) {
+  return `<article class="message ${message.direction === "out" ? "out" : "in"}">
+    <p>${escapeHtml(message.text || message.transcricao || labelStatus(message.type))}</p>
+    <small>${escapeHtml(formatTime(message.createdAt))} · ${escapeHtml(message.status || "")}</small>
+    ${state.activeRole === "ADMIN" ? `<button type="button" data-delete-message="${escapeAttr(message.id || "")}">Excluir</button>` : ""}
+  </article>`;
 }
 
 function labelStatus(status = "") {
-  const labels = {
+  return {
     aguardando_equipe: "Aguardando equipe",
-    aguardando_cliente: "Aguardando cliente",
     humano: "Humano",
-    resolvido: "Resolvido",
-    pendente_configuracao: "Configuração",
-    erro_configuracao: "Erro de configuração"
-  };
-  return labels[status] || status || "Novo";
-}
-
-function labelMessageStatus(status = "") {
-  const labels = {
-    received: "Recebida",
-    recebida: "Recebida",
-    registrada: "Registrada",
-    registrada_sem_envio: "Registrada sem envio",
-    sent: "Enviada",
-    delivered: "Entregue",
-    read: "Lida",
-    failed: "Falhou",
-    meta_error: "Falhou na Meta",
-    meta_timeout: "Meta sem resposta",
-    meta_request_failed: "Erro de envio",
-    meta_configuration_incomplete: "Meta incompleta",
-    whatsapp_sender_disabled: "Envio desligado"
-  };
-  return labels[status] || status || "Registrada";
+    em_atendimento: "Em atendimento",
+    aguardando_cliente: "Aguardando cliente",
+    resolvido: "Resolvido"
+  }[status] || status || "Aguardando equipe";
 }
 
 function initialsFor(value = "") {
-  const words = String(value).trim().split(/\s+/).filter(Boolean);
-  return (words[0]?.[0] || "W") + (words[1]?.[0] || "A");
+  return String(value).trim().split(/\s+/).slice(0, 2).map((part) => part[0] || "").join("").toUpperCase() || "WA";
 }
 
 function formatTime(value = "") {
@@ -563,23 +420,31 @@ function formatTime(value = "") {
   return date.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
-function normalize(value = "") {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
+function normalizeText(value = "") {
+  return String(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+function deviceId() {
+  const key = "sambah:push:deviceId";
+  let value = localStorage.getItem(key);
+  if (!value) {
+    value = `device:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+    localStorage.setItem(key, value);
+  }
+  return value;
+}
+
+function urlBase64ToUint8Array(value) {
+  const padding = "=".repeat((4 - value.length % 4) % 4);
+  const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
 }
 
 function escapeHtml(value = "") {
-  return String(value).replace(/[&<>"']/g, (char) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    "\"": "&quot;",
-    "'": "&#039;"
-  })[char]);
+  return String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char]));
 }
 
 function escapeAttr(value = "") {
-  return escapeHtml(value).replace(/`/g, "&#096;");
+  return escapeHtml(value);
 }
