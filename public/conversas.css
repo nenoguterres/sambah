@@ -462,9 +462,10 @@ body.sambah-shell-mounted .app {
 
 .chat {
   display: grid;
-  grid-template-rows: auto auto auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   min-width: 0;
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
   background:
     linear-gradient(rgba(11, 20, 26, 0.92), rgba(11, 20, 26, 0.92)),
     radial-gradient(circle at 20% 20%, rgba(0, 168, 132, 0.12), transparent 28%),
@@ -535,7 +536,8 @@ body.sambah-shell-mounted .app {
   flex-direction: column;
   gap: 8px;
   min-height: 0;
-  overflow: visible;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 18px clamp(14px, 3vw, 54px);
 }
 
@@ -601,17 +603,18 @@ body.sambah-shell-mounted .app {
 
 .reply-panel {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
-  align-items: end;
+  align-items: center;
   padding: 10px 14px;
   background: var(--panel-2);
 }
 
 .reply-panel textarea {
   width: 100%;
-  max-height: 140px;
+  min-width: 0;
   min-height: 46px;
+  max-height: 140px;
   resize: vertical;
   border: 0;
   border-radius: 8px;
@@ -629,8 +632,13 @@ body.sambah-shell-mounted .app {
 }
 
 .send-button {
+  width: auto;
+  min-width: 110px;
+  min-height: 44px;
+  padding: 0 18px;
   background: var(--green);
   color: #062b23;
+  font-weight: 800;
 }
 
 .reply-status {
