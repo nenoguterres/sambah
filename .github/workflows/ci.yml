@@ -37,5 +37,8 @@ jobs:
           node --check src/perolaService.js
           node --check src/insanoWorkhubService.js
 
+      - name: Run focused human recovery tests
+        run: node --test tests/whatsapp-v2-human-operational-recovery.test.js
+
       - name: Run complete test suite
-        run: npm test
+        run: node --test --test-reporter=dot tests/*.test.js
