@@ -110,11 +110,10 @@ test("Central de Conversas remove mensagem especifica do historico", async () =>
   }
 });
 
-test("Central de Conversas reconcilia mensagens Meta do historico bruto", async () => {
+test("Central de Conversas importa o histórico somente quando o arquivo oficial não existe", async () => {
   const dir = await mkdtemp(join(tmpdir(), "sambha-conversation-sync-history-"));
   const filePath = join(dir, "conversas.json");
   const messagesFile = join(dir, "messages.json");
-  await writeFile(filePath, JSON.stringify({ conversas: [] }), "utf8");
   await writeFile(messagesFile, JSON.stringify([
     {
       id: "in-meta-1",
@@ -150,6 +149,91 @@ test("Central de Conversas reconcilia mensagens Meta do historico bruto", async 
     assert.equal(result.items[0].mensagens[1].status, "nao_enviada_configuracao_meta");
     const saved = JSON.parse(await readFile(filePath, "utf8"));
     assert.equal(saved.conversas.length, 1);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("arquivo oficial vazio permanece vazio mesmo com histórico secundário", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-conversation-official-empty-"));
+  const filePath = join(dir, "conversas.json");
+  const messagesFile = join(dir, "messages.json");
+  await writeFile(filePath, JSON.stringify({ conversas: [] }), "utf8");
+  await writeFile(messagesFile, JSON.stringify([{
+    id: "history-only",
+    direction: "in",
+    phone: "5551980413999",
+    text: "Não deve reaparecer",
+    createdAt: "2026-07-01T12:00:00.000Z"
+  }]), "utf8");
+  try {
+    const service = new WhatsAppConversationService({ filePath, messagesFile });
+    const result = await service.list();
+    assert.equal(result.count, 0);
+    assert.deepEqual(JSON.parse(await readFile(filePath, "utf8")), { conversas: [] });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("mensagem excluída não reaparece após listagem nem nova instância", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-conversation-message-stays-deleted-"));
+  const filePath = join(dir, "conversas.json");
+  const messagesFile = join(dir, "messages.json");
+  const conversation = {
+    id: "wa_5551980413745",
+    telefone: "5551980413745",
+    status: "aguardando_equipe",
+    mensagens: [{ id: "msg-delete", direction: "in", text: "Excluir", createdAt: "2026-07-01T12:00:00.000Z" }],
+    createdAt: "2026-07-01T12:00:00.000Z",
+    updatedAt: "2026-07-01T12:00:00.000Z"
+  };
+  await writeFile(filePath, JSON.stringify({ conversas: [conversation] }), "utf8");
+  await writeFile(messagesFile, JSON.stringify([{
+    id: "msg-delete",
+    messageId: "msg-delete",
+    direction: "in",
+    phone: conversation.telefone,
+    text: "Excluir",
+    createdAt: "2026-07-01T12:00:00.000Z"
+  }]), "utf8");
+  try {
+    const service = new WhatsAppConversationService({ filePath, messagesFile });
+    assert.equal((await service.deleteMessage(conversation.id, "msg-delete")).ok, true);
+    assert.equal((await service.list()).items[0].mensagens.length, 0);
+    const restarted = new WhatsAppConversationService({ filePath, messagesFile });
+    assert.equal((await restarted.list()).items[0].mensagens.length, 0);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("conversa excluída não reaparece após listagem nem nova instância", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambha-conversation-stays-deleted-"));
+  const filePath = join(dir, "conversas.json");
+  const messagesFile = join(dir, "messages.json");
+  const conversation = {
+    id: "wa_5551980413745",
+    telefone: "5551980413745",
+    status: "resolvido",
+    mensagens: [{ id: "msg-old", direction: "in", text: "Teste", createdAt: "2026-07-01T12:00:00.000Z" }],
+    createdAt: "2026-07-01T12:00:00.000Z",
+    updatedAt: "2026-07-01T12:00:00.000Z"
+  };
+  await writeFile(filePath, JSON.stringify({ conversas: [conversation] }), "utf8");
+  await writeFile(messagesFile, JSON.stringify([{
+    id: "msg-old",
+    direction: "in",
+    phone: conversation.telefone,
+    text: "Teste",
+    createdAt: "2026-07-01T12:00:00.000Z"
+  }]), "utf8");
+  try {
+    const service = new WhatsAppConversationService({ filePath, messagesFile });
+    assert.equal((await service.deleteConversation(conversation.id)).ok, true);
+    assert.equal((await service.list()).count, 0);
+    const restarted = new WhatsAppConversationService({ filePath, messagesFile });
+    assert.equal((await restarted.list()).count, 0);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

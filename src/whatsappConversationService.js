@@ -3,7 +3,7 @@ import { dirname } from "node:path";
 import crypto from "node:crypto";
 import { extractWhatsAppMessageText } from "./whatsapp/whatsappWebhookParser.js";
 import { normalizeWhatsAppPhone, sameWhatsAppPhone, whatsappPhoneAliases } from "./whatsapp/phoneNumber.js";
-import { dedupeConversationMessages, mergeConversationMessages, sameConversationMessage } from "./whatsapp/conversationMessageDedupe.js";
+import { dedupeConversationMessages } from "./whatsapp/conversationMessageDedupe.js";
 
 const OPERATIONAL_STATUSES = new Set(["aguardando_equipe", "humano", "em_atendimento", "aguardando_cliente", "resolvido"]);
 const HUMAN_STATUSES = new Set(["humano", "em_atendimento"]);
@@ -19,34 +19,30 @@ export class WhatsAppConversationService {
 
   async list() {
     try {
-      return this.#listFromData(await this.#safeSyncFromMessageHistory(await this.#read()));
+      return this.#listFromData(await this.#read());
     } catch (error) {
       console.info("whatsapp.conversations.list_failed", {
         status: "list_failed",
         error: String(error?.code || error?.message || error)
       });
-      return this.#listFromData(await this.#fallbackFromMessageHistory());
+      return this.#listFromData();
     }
   }
 
   async get(id) {
-    let data;
     try {
-      data = await this.#read();
+      const data = await this.#read();
+      const conversation = findConversation(data.conversas, id);
+      return conversation
+        ? { ok: true, conversa: this.#withPriority({ ...conversation, mensagens: dedupeConversationMessages(conversation.mensagens) }) }
+        : { ok: false, error: "Conversa nao encontrada" };
     } catch (error) {
       console.info("whatsapp.conversations.get_read_failed", {
         status: "get_read_failed",
         error: String(error?.code || error?.message || error)
       });
-      data = await this.#fallbackFromMessageHistory();
+      return { ok: false, error: "Conversa nao encontrada" };
     }
-    let conversation = findConversation(data.conversas, id);
-    if (!conversation && this.messagesFile) {
-      conversation = findConversation((await this.#fallbackFromMessageHistory()).conversas, id);
-    }
-    return conversation
-      ? { ok: true, conversa: this.#withPriority({ ...conversation, mensagens: dedupeConversationMessages(conversation.mensagens) }) }
-      : { ok: false, error: "Conversa nao encontrada" };
   }
 
   async recordIncoming(payload = {}) {
@@ -574,7 +570,15 @@ export class WhatsAppConversationService {
     else if (minutes >= 30) prioridade = "alta";
     else if (minutes >= 15) prioridade = "media";
     else if (minutes >= 5) prioridade = "atencao";
-    return { ...conversation, tempoParadoMinutos: minutes, prioridade, whatsappUrl: conversation.telefone ? `https://wa.me/${conversation.telefone}` : null };
+    const deletion = conversationDeletionEligibility(conversation);
+    return {
+      ...conversation,
+      canDelete: deletion.canDelete,
+      deleteReason: deletion.reason,
+      tempoParadoMinutos: minutes,
+      prioridade,
+      whatsappUrl: conversation.telefone ? `https://wa.me/${conversation.telefone}` : null
+    };
   }
 
   async #read() {
@@ -582,7 +586,11 @@ export class WhatsAppConversationService {
       const raw = await readFile(this.filePath, "utf8");
       return normalizeConversationStore(parseConversationStore(raw));
     } catch (error) {
-      if (error.code === "ENOENT") return { conversas: [] };
+      if (error.code === "ENOENT") {
+        const bootstrapped = await this.#bootstrapFromMessageHistory();
+        await this.#write(bootstrapped);
+        return bootstrapped;
+      }
       throw error;
     }
   }
@@ -613,106 +621,6 @@ export class WhatsAppConversationService {
     return run;
   }
 
-  async #syncFromMessageHistory(data) {
-    if (!this.messagesFile) return data;
-    const history = await this.#readMessageHistory();
-    if (!history.length) return data;
-    const next = { conversas: [...data.conversas] };
-    let changed = false;
-    const ordered = history
-      .filter((message) => message && message.phone && message.createdAt)
-      .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
-    for (const historyMessage of ordered) {
-      const phone = normalizePhone(historyMessage.phone);
-      if (!phone) continue;
-      const id = `wa_${phone}`;
-      const index = findConversationIndex(next.conversas, phone);
-      const existing = index >= 0 ? next.conversas[index] : null;
-      const rawMessages = Array.isArray(existing?.mensagens) ? existing.mensagens : [];
-      const messages = dedupeConversationMessages(rawMessages);
-      if (index >= 0 && messages.length !== rawMessages.length) {
-        next.conversas[index] = { ...existing, mensagens: messages };
-        changed = true;
-      }
-      const messageId = historyMessage.id || historyMessage.messageId || `history_${historyMessage.createdAt}_${phone}`;
-      const text = String(historyMessage.text || "").trim();
-      const message = {
-        id: messageId,
-        direction: historyMessage.direction === "out" ? "out" : "in",
-        type: "text",
-        text,
-        transcricao: "",
-        mediaId: "",
-        rawType: "text",
-        createdAt: historyMessage.createdAt,
-        status: normalizeHistoryStatus(historyMessage),
-        messageId: historyMessage.messageId || "",
-        providerMessageId: historyMessage.providerMessageId || "",
-        correlationId: historyMessage.correlationId || "",
-        manualSendId: historyMessage.manualSendId || historyMessage.correlationId || "",
-        httpStatus: historyMessage.httpStatus || null,
-        response: historyMessage.response || null,
-        errorCode: historyMessage.errorCode || "",
-        errorMessage: historyMessage.errorMessage || ""
-      };
-      const duplicateIndex = messages.findIndex((current) => sameConversationMessage(current, message));
-      if (duplicateIndex >= 0) {
-        const mergedMessages = [...messages];
-        mergedMessages[duplicateIndex] = mergeConversationMessages(mergedMessages[duplicateIndex], message);
-        if (index >= 0 && JSON.stringify(mergedMessages) !== JSON.stringify(rawMessages)) {
-          next.conversas[index] = { ...next.conversas[index], mensagens: mergedMessages };
-          changed = true;
-        }
-        continue;
-      }
-      const base = existing || {
-        id,
-        nome: historyMessage.customerName || "Cliente WhatsApp",
-        telefone: phone,
-        operation: "Insano",
-        origem: "whatsapp",
-        mensagens: [],
-        createdAt: historyMessage.createdAt
-      };
-      const updatedMessages = dedupeConversationMessages([...messages, message]);
-      const lastInbound = [...updatedMessages].reverse().find((item) => item.direction === "in");
-      const lastMessage = updatedMessages[updatedMessages.length - 1];
-      const updated = {
-        ...base,
-        nome: base.nome || historyMessage.customerName || "Cliente WhatsApp",
-        telefone: phone || base.telefone || "",
-        id: phone ? `wa_${phone}` : base.id,
-        ultimaMensagem: lastInbound?.text || lastMessage?.text || "Mensagem recebida",
-        ultimaInteracao: lastInbound?.createdAt || lastMessage?.createdAt || historyMessage.createdAt,
-        updatedAt: lastMessage?.createdAt || historyMessage.createdAt,
-        status: base.status || "aguardando_equipe",
-        respostaSugerida: base.respostaSugerida || "",
-        automaticReplyCreated: false,
-        whatsappEngine: "disabled",
-        configuracaoPendente: Boolean(base.configuracaoPendente),
-        audio: base.audio || null,
-        mensagens: updatedMessages
-      };
-      if (index >= 0) next.conversas[index] = updated;
-      else next.conversas.push(updated);
-      changed = true;
-    }
-    if (changed) await this.#write(next);
-    return next;
-  }
-
-  async #safeSyncFromMessageHistory(data) {
-    try {
-      return await this.#syncFromMessageHistory(data);
-    } catch (error) {
-      console.info("whatsapp.conversations.sync_history_failed", {
-        status: "sync_history_failed",
-        error: String(error?.code || error?.message || error)
-      });
-      return data;
-    }
-  }
-
   async #readMessageHistory() {
     try {
       const raw = await readFile(this.messagesFile, "utf8");
@@ -724,7 +632,7 @@ export class WhatsAppConversationService {
     }
   }
 
-  async #fallbackFromMessageHistory() {
+  async #bootstrapFromMessageHistory() {
     const history = await this.#readMessageHistory();
     const byPhone = new Map();
     const ordered = history

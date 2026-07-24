@@ -566,6 +566,7 @@ export function createApp({
       }
 
       if (req.method === "GET" && url.pathname === "/conversas") {
+        if (activeAuthMode === "session" && !req.sambahUser) return redirectToLogin(res, url.pathname);
         return serveStatic(res, "conversas.html");
       }
 

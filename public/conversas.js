@@ -11,7 +11,8 @@ const state = {
   sending: false,
   drafts: new Map(),
   pushSubscription: null,
-  pendingManualSendId: ""
+  pendingManualSendId: "",
+  deletingMessageIds: new Set()
 };
 
 const listEl = document.querySelector("#conversationList");
@@ -46,22 +47,37 @@ document.querySelectorAll("[data-filter]").forEach((button) => {
 init();
 setInterval(refreshInbox, 30000);
 
+async function authFetch(url, options = {}) {
+  const response = await fetch(url, options);
+  if (response.status !== 401) return response;
+  const loginUrl = "/login?next=/conversas";
+  if (typeof window.__sambahNavigateToLogin === "function") window.__sambahNavigateToLogin(loginUrl);
+  else window.location.assign(loginUrl);
+  const error = new Error("Sessão expirada");
+  error.sessionRedirect = true;
+  throw error;
+}
+
 async function init() {
-  await loadActiveUser();
+  const authenticated = await loadActiveUser();
+  if (!authenticated) return;
   await registerServiceWorker();
   await refreshInbox({ initial: true });
 }
 
 async function loadActiveUser() {
   try {
-    const response = await fetch("/api/auth/me", { cache: "no-store" });
-    if (!response.ok) return;
+    const response = await authFetch("/api/auth/me", { cache: "no-store" });
+    if (!response.ok) return true;
     const data = await response.json();
     state.activeRole = data.user?.role || "ADMIN";
     state.activeUser = data.user?.username || data.user?.displayName || "operador";
-  } catch {
+    return true;
+  } catch (error) {
+    if (error.sessionRedirect) return false;
     state.activeRole = "";
     state.activeUser = "";
+    return true;
   }
 }
 
@@ -76,7 +92,7 @@ async function refreshInbox({ initial = false } = {}) {
   const messageScroll = messageEl?.scrollTop || 0;
   try {
     await loadWhatsappStatus();
-    const response = await fetch("/api/conversas", { cache: "no-store" });
+    const response = await authFetch("/api/conversas", { cache: "no-store" });
     const data = await response.json();
     if (!data.ok) throw new Error(data.error || "Erro ao carregar conversas");
     state.items = data.items || [];
@@ -89,6 +105,7 @@ async function refreshInbox({ initial = false } = {}) {
     if (state.selectedId) await openConversation(state.selectedId, { silent: true, wasNearBottom, messageScroll });
     renderPushPanel();
   } catch (error) {
+    if (error.sessionRedirect) return;
     if (!state.items.length) listEl.innerHTML = `<div class="loading">${escapeHtml(error.message || "Nao foi possivel carregar.")}</div>`;
   } finally {
     state.refreshing = false;
@@ -98,7 +115,7 @@ async function refreshInbox({ initial = false } = {}) {
 
 async function loadWhatsappStatus() {
   try {
-    const response = await fetch("/admin/whatsapp/status", { cache: "no-store" });
+    const response = await authFetch("/admin/whatsapp/status", { cache: "no-store" });
     state.whatsappStatus = response.ok ? await response.json() : {};
   } catch {
     state.whatsappStatus = {};
@@ -149,7 +166,7 @@ async function openConversation(id, { silent = false, wasNearBottom = true, mess
   renderList();
   if (!silent) chatEl.innerHTML = `<div class="empty-state"><strong>Carregando conversa...</strong></div>`;
   try {
-    const response = await fetch(`/api/conversas/${encodeURIComponent(id)}`, { cache: "no-store" });
+    const response = await authFetch(`/api/conversas/${encodeURIComponent(id)}`, { cache: "no-store" });
     const data = await response.json();
     if (!data.ok) throw new Error(data.error || "Conversa nao encontrada");
     state.selectedConversation = data.conversa;
@@ -157,6 +174,7 @@ async function openConversation(id, { silent = false, wasNearBottom = true, mess
     if (data.conversa.unread) await postConversationAction(id, "read", { quiet: true });
     await acknowledgeOpenAlert(id);
   } catch (error) {
+    if (error.sessionRedirect) return;
     chatEl.innerHTML = `<div class="empty-state"><strong>${escapeHtml(error.message || "Falha ao abrir conversa")}</strong></div>`;
   }
 }
@@ -195,6 +213,11 @@ function bindChat(conversa) {
   chatEl.querySelector("[data-focus-reply]")?.addEventListener("click", () => chatEl.querySelector("#replyText")?.focus());
   chatEl.querySelector("[data-toggle-menu]")?.addEventListener("click", () => chatEl.querySelector("#actionMenu")?.classList.toggle("open"));
   chatEl.querySelectorAll("[data-action]").forEach((button) => button.addEventListener("click", () => handleAction(conversa, button.dataset.action)));
+  chatEl.querySelectorAll("[data-delete-message]").forEach((button) => {
+    button.addEventListener("click", () => {
+      deleteMessage(conversa.id, button.dataset.deleteMessage);
+    });
+  });
   const reply = chatEl.querySelector("#replyText");
   reply?.addEventListener("input", () => saveDraft(conversa.id, reply.value));
   reply?.addEventListener("keydown", (event) => {
@@ -213,7 +236,8 @@ function renderActionMenu(conversa) {
   if (conversa.assignedOperatorPhone) actions.push(["release", "Liberar atendimento"], ["transfer", "Transferir atendimento"]);
   if (conversa.status !== "resolvido") actions.push(["resolve", "Marcar como atendida"]);
   if (conversa.status === "resolvido") actions.push(["reopen", "Reabrir atendimento"]);
-  if (state.activeRole === "ADMIN") actions.push(["clear", "Limpar histórico"], ["delete-conversation", "Excluir conversa"]);
+  if (state.activeRole === "ADMIN") actions.push(["clear", "Limpar histórico"]);
+  if (state.activeRole === "ADMIN" && conversa.canDelete === true) actions.push(["delete-conversation", "Excluir conversa"]);
   return actions.map(([action, label]) => {
     if (action === "delete-conversation") return `<button type="button" data-action="delete-conversation">${escapeHtml(label)}</button>`;
     return `<button type="button" data-action="${action}">${escapeHtml(label)}</button>`;
@@ -235,7 +259,7 @@ async function handleAction(conversa, action) {
 async function postConversationAction(id, action, { body = {}, quiet = false } = {}) {
   const status = chatEl.querySelector("#replyStatus");
   try {
-    const response = await fetch(`/api/conversas/${encodeURIComponent(id)}${ACTION_ENDPOINTS[action] || `/${action}`}`, {
+    const response = await authFetch(`/api/conversas/${encodeURIComponent(id)}${ACTION_ENDPOINTS[action] || `/${action}`}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
@@ -245,6 +269,7 @@ async function postConversationAction(id, action, { body = {}, quiet = false } =
     if (!quiet && status) status.textContent = "Ação salva.";
     await refreshInbox({ initial: false });
   } catch (error) {
+    if (error.sessionRedirect) return;
     if (status) status.textContent = error.message || "Falha na ação.";
   }
 }
@@ -258,7 +283,7 @@ async function sendReply(id) {
   state.sending = true;
   state.pendingManualSendId ||= `manual:${id}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
   try {
-    const response = await fetch(`/api/conversas/${encodeURIComponent(id)}/responder`, {
+    const response = await authFetch(`/api/conversas/${encodeURIComponent(id)}/responder`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, manualSendId: state.pendingManualSendId })
@@ -273,6 +298,7 @@ async function sendReply(id) {
     if (status) status.textContent = data.enviado ? "Mensagem enviada." : `Mensagem registrada: ${data.reason || "sem envio real"}`;
     await refreshInbox({ initial: false });
   } catch (error) {
+    if (error.sessionRedirect) return;
     if (status) status.textContent = error.message || "Falha real no envio.";
   } finally {
     state.sending = false;
@@ -281,19 +307,70 @@ async function sendReply(id) {
 
 async function clearHistory(id) {
   if (!window.confirm("Limpar todo o histórico desta conversa?")) return;
-  const response = await fetch(`/api/conversas/${encodeURIComponent(id)}${ACTION_ENDPOINTS.messages}`, { method: "DELETE" });
+  const response = await authFetch(`/api/conversas/${encodeURIComponent(id)}${ACTION_ENDPOINTS.messages}`, { method: "DELETE" });
   const data = await response.json();
   if (!data.ok) window.alert(data.error || "Falha ao limpar histórico.");
   await refreshInbox({ initial: false });
 }
 
+async function deleteMessage(conversationId, messageId) {
+  const operationId = `${conversationId}:${messageId}`;
+  if (!conversationId || !messageId || state.deletingMessageIds.has(operationId)) return;
+  if (!window.confirm("Excluir esta mensagem do histórico? Apenas ADMIN pode fazer isso.")) return;
+  const status = chatEl.querySelector("#replyStatus");
+  state.deletingMessageIds.add(operationId);
+  setDeleteMessageButtonState(messageId, true);
+  if (status) status.textContent = "Excluindo mensagem...";
+  try {
+    const response = await authFetch(`/api/conversas/${encodeURIComponent(conversationId)}/mensagens/${encodeURIComponent(messageId)}`, {
+      method: "DELETE"
+    });
+    const data = await response.json();
+    if (!data.ok) throw new Error(messageDeleteErrorMessage(response.status, data.error));
+    if (status) status.textContent = "Mensagem excluída por ADMIN.";
+    await refreshInbox({ initial: false });
+  } catch (error) {
+    if (error.sessionRedirect) return;
+    if (status) status.textContent = error.message || "Não foi possível excluir a mensagem.";
+  } finally {
+    state.deletingMessageIds.delete(operationId);
+    setDeleteMessageButtonState(messageId, false);
+  }
+}
+
 async function deleteConversation(id) {
-  if (!window.confirm("Tem certeza que deseja excluir esta conversa sem uso?")) return;
-  const response = await fetch(`/api/conversas/${encodeURIComponent(id)}`, { method: "DELETE" });
-  const data = await response.json();
-  if (!data.ok) window.alert(data.error || "Falha ao excluir conversa.");
-  state.selectedId = "";
-  await refreshInbox({ initial: false });
+  if (!window.confirm("Tem certeza que deseja excluir esta conversa inteira?")) return;
+  try {
+    const response = await authFetch(`/api/conversas/${encodeURIComponent(id)}`, { method: "DELETE" });
+    const data = await response.json();
+    if (!data.ok) throw new Error(conversationDeleteErrorMessage(data.error, data.reason));
+    state.selectedId = "";
+    state.selectedConversation = null;
+    await refreshInbox({ initial: false });
+  } catch (error) {
+    if (error.sessionRedirect) return;
+    window.alert(error.message || "Falha ao excluir conversa.");
+  }
+}
+
+function setDeleteMessageButtonState(messageId, disabled) {
+  chatEl.querySelectorAll("[data-delete-message]").forEach((button) => {
+    if (button.dataset.deleteMessage === messageId) button.disabled = disabled;
+  });
+}
+
+function messageDeleteErrorMessage(status, error = "") {
+  if (status === 403 || error === "admin_required") return "Somente administrador pode excluir mensagens";
+  if (status === 404 || error === "message_not_found") return "Mensagem não encontrada";
+  if (status === 409) return "A mensagem foi alterada por outro atendimento. Atualize a conversa e tente novamente.";
+  return "Não foi possível excluir a mensagem.";
+}
+
+function conversationDeleteErrorMessage(error = "", reason = "") {
+  if (reason === "conversa_ativa" || error === "conversation_not_deletable") return "Esta conversa ainda está ativa e não pode ser excluída.";
+  if (error === "admin_required") return "Somente administrador pode excluir a conversa.";
+  if (error === "conversation_not_found") return "Conversa não encontrada.";
+  return "Não foi possível excluir a conversa.";
 }
 
 async function registerServiceWorker() {
@@ -326,7 +403,7 @@ async function enablePush() {
   if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) return;
   const permission = await Notification.requestPermission();
   if (permission !== "granted") return;
-  const keyResult = await (await fetch("/api/call-center/push/public-key")).json();
+  const keyResult = await (await authFetch("/api/call-center/push/public-key")).json();
   if (!keyResult.publicKey) return window.alert("Chave Web Push não configurada.");
   const registration = await navigator.serviceWorker.ready;
   const subscription = await registration.pushManager.subscribe({
@@ -335,7 +412,7 @@ async function enablePush() {
   });
   const payload = subscription.toJSON();
   payload.deviceId = deviceId();
-  const response = await fetch("/api/call-center/push/subscriptions", {
+  const response = await authFetch("/api/call-center/push/subscriptions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
@@ -346,9 +423,9 @@ async function enablePush() {
 
 async function acknowledgeOpenAlert(conversationId) {
   try {
-    const result = await (await fetch("/api/call-center/alerts?unreadOnly=true", { cache: "no-store" })).json();
+    const result = await (await authFetch("/api/call-center/alerts?unreadOnly=true", { cache: "no-store" })).json();
     const alert = (result.alerts || []).find((item) => item.conversationId === conversationId);
-    if (alert) await fetch(`/api/call-center/alerts/${encodeURIComponent(alert.id)}/acknowledge`, { method: "POST" });
+    if (alert) await authFetch(`/api/call-center/alerts/${encodeURIComponent(alert.id)}/acknowledge`, { method: "POST" });
   } catch {}
 }
 

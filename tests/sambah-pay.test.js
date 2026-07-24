@@ -116,11 +116,14 @@ test("Auth interna logout encerra sessao", async () => {
 
 test("Auth interna protege paginas administrativas", async () => {
   await withServer(async ({ baseUrl }) => {
-    for (const path of ["/admin", "/admin/permissoes", "/admin/usuarios", "/admin/auditoria", "/sambah-voice-pay"]) {
+    for (const path of ["/admin", "/admin/permissoes", "/admin/usuarios", "/admin/auditoria", "/sambah-voice-pay", "/conversas"]) {
       const response = await fetch(`${baseUrl}${path}`, { redirect: "manual" });
       assert.equal(response.status, 302);
       assert.match(response.headers.get("location") || "", /^\/login\?next=/);
     }
+    const login = await loginCookie(baseUrl, "admin", "admin123");
+    const conversations = await fetch(`${baseUrl}/conversas`, { headers: { cookie: login.cookie } });
+    assert.equal(conversations.status, 200);
   }, { authMode: "session" });
 });
 
