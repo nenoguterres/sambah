@@ -9,8 +9,8 @@
     return mobileMedia ? mobileMedia.matches : window.innerWidth <= 820;
   }
 
-  function showList() {
-    manualListView = true;
+  function showList({ manual = true } = {}) {
+    manualListView = manual;
     document.body.classList.remove("conversation-mobile-chat-open");
   }
 
@@ -32,7 +32,7 @@
     button.dataset.mobileBack = "true";
     button.setAttribute("aria-label", "Voltar para a lista de conversas");
     button.textContent = "← Conversas";
-    button.addEventListener("click", showList);
+    button.addEventListener("click", () => showList({ manual: true }));
     header.insertBefore(button, header.firstChild);
   }
 
@@ -53,7 +53,7 @@
       document.body.classList.remove("conversation-mobile-chat-open");
       return;
     }
-    if (!chatEl?.querySelector(".chat-header")) showList();
+    if (!chatEl?.querySelector(".chat-header")) showList({ manual: false });
     else ensureBackButton();
   };
 
@@ -63,6 +63,6 @@
   if (isMobile()) {
     const requestedConversation = new URLSearchParams(window.location.search).get("conversationId");
     if (requestedConversation && chatEl?.querySelector(".chat-header")) showChat();
-    else showList();
+    else showList({ manual: false });
   }
 })();
