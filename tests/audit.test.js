@@ -210,7 +210,7 @@ test("Central de Conversas recebe texto e audio do WhatsApp sem envio automatico
     filePath: join(dir, "whatsapp-conversas.json"),
     now: () => new Date("2026-06-13T12:00:00.000Z")
   });
-  const server = createApp({ auditService: audit, crmService, whatsappConversationService });
+  const server = createApp({ auditService: audit, crmService, whatsappConversationService, authMode: "mock" });
   await new Promise((resolve) => server.listen(0, resolve));
   const { port } = server.address();
   const base = `http://127.0.0.1:${port}`;

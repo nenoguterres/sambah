@@ -885,6 +885,10 @@ export function createApp({
         }));
       }
 
+      if (url.pathname.startsWith("/api/conversas") && activeAuthMode === "session" && !req.sambahUser) {
+        return sendJson(res, 401, { ok: false, error: "auth_required" });
+      }
+
       if (req.method === "GET" && url.pathname === "/api/conversas") {
         return sendJson(res, 200, await whatsappConversationService.list());
       }

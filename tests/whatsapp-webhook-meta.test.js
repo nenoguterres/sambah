@@ -1235,6 +1235,7 @@ async function createTestServer({ provider = new MockWhatsAppProvider({ logger: 
     }
   });
   const server = createApp({
+    authMode: "mock",
     auditService,
     menuService,
     draftService,
