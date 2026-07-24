@@ -4,7 +4,7 @@ import vm from "node:vm";
 import { readFile } from "node:fs/promises";
 
 async function loadController() {
-  return readFile("public/conversas-shell.js", "utf8");
+  return readFile("public/sambah-shell-responsive.js", "utf8");
 }
 
 function executeController(source, { width = 1280, matches, withMatchMedia = true } = {}) {
@@ -45,7 +45,7 @@ test("fallback sem matchMedia também protege a largura móvel", async () => {
 test("HTML carrega o controlador responsivo depois do shell", async () => {
   const html = await readFile("public/conversas.html", "utf8");
   const shellIndex = html.indexOf('src="/admin/assets/sambah-shell.js"');
-  const controllerIndex = html.indexOf('src="/conversas-shell.js"');
+  const controllerIndex = html.indexOf('src="/sambah-shell-responsive.js"');
 
   assert.ok(shellIndex >= 0);
   assert.ok(controllerIndex > shellIndex);
