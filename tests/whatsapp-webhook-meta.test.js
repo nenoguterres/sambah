@@ -971,8 +971,12 @@ test("WhatsApp V2 operacional final: idempotencia, HUMANO, manual, status e auto
       body: JSON.stringify(metaPayload({ from: "555180413745", id: "wamid-final-human-followup", type: "text", text: { body: "preciso de alguem" } }))
     });
     const humanFollowupBody = await humanFollowup.json();
-    assert.equal(humanFollowupBody.reason, "human_state_blocks_automation");
-    assert.equal(providerCalls.length, callsAfterHumanCommand);
+    assert.equal(humanFollowupBody.reason, "sent");
+    assert.equal(humanFollowupBody.sent, true);
+    assert.equal(humanFollowupBody.automaticReplyCreated, true);
+    assert.equal(providerCalls.length, callsAfterHumanCommand + 1);
+    assert.equal(providerCalls.at(-1).method, "sendMessage");
+    assert.match(providerCalls.at(-1).input.message.text, /já avisei a equipe/i);
 
     const v2State = JSON.parse(await readFile(v2StateFile, "utf8"));
     assert.equal(v2State.states["5551980413745"].serviceState, "HUMANO");
@@ -1011,10 +1015,10 @@ test("WhatsApp V2 operacional final: idempotencia, HUMANO, manual, status e auto
       headers: { "content-type": "application/json" },
       body: JSON.stringify(metaPayload({ from: "555180413745", id: "wamid-final-after-auto", type: "text", text: { body: "oi" } }))
     });
-    assert.equal(providerCalls.filter((call) => call.method === "sendMessage").length, 3);
+    assert.equal(providerCalls.filter((call) => call.method === "sendMessage").length, 4);
     assert.equal(providerCalls.filter((call) => call.method === "sendText").length, 1);
     assert.equal(providerCalls.filter((call) => call.method === "sendMessage" && call.input.message.type === "menu").length, 2);
-    assert.equal(providerCalls.filter((call) => call.method === "sendMessage" && call.input.message.type === "text").length, 1);
+    assert.equal(providerCalls.filter((call) => call.method === "sendMessage" && call.input.message.type === "text").length, 2);
 
     const status = await (await fetch(`${base}/admin/whatsapp/status`)).json();
     assert.equal(status.engine, "v2");

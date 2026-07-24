@@ -3,6 +3,9 @@ import { assertWhatsAppV2ResponseContract } from "./responseContract.js";
 import { InMemoryWhatsAppV2ConversationRepository, InMemoryWhatsAppV2OutboxRepository } from "./inMemoryRepositories.js";
 import { routePortalInsanoMessage } from "./portalInsanoEngine.js";
 
+const HUMAN_IDLE_TTL_MS = 30 * 60 * 1000;
+const HUMAN_ACKNOWLEDGEMENT_TEXT = "Recebi tua mensagem e já avisei a equipe. O atendimento humano continua aberto. Para consultar cardápio, evento ou orçamento agora, digita início e volta ao Portal Insano.";
+
 export function createWhatsAppV2LabEngine(options = {}) {
   const operationLog = [];
   const conversationRepository = options.conversationRepository || new InMemoryWhatsAppV2ConversationRepository({ operationLog });
@@ -43,7 +46,9 @@ export class WhatsAppV2LabProcessor {
     if (!reserved) return { ok: true, duplicate: true, traceId, repliesSent: 0 };
 
     try {
-      const currentState = await this.conversationRepository.get(message.conversationId);
+      const loadedState = await this.conversationRepository.get(message.conversationId);
+      const humanExpiry = expireHumanStateIfNeeded(loadedState, message.receivedAt);
+      const currentState = humanExpiry.state;
       const nextHistory = [...(currentState.history || []), { messageId: message.messageId, text: message.text, at: message.receivedAt }];
       const menuCache = await this.menuService?.getMenuCache?.() || await this.menuService?.cacheSnapshot?.() || { items: [], categories: [] };
       const routed = routePortalInsanoMessage({
@@ -56,7 +61,7 @@ export class WhatsAppV2LabProcessor {
         message,
         menuCache
       });
-      const result = assertWhatsAppV2ResponseContract(routed);
+      const result = assertWhatsAppV2ResponseContract(addEffectiveHumanAcknowledgement(routed, humanExpiry, this.externalDelivery));
       const nextState = {
         ...result.nextState,
         updatedAt: new Date(message.receivedAt).toISOString(),
@@ -89,6 +94,7 @@ export class WhatsAppV2LabProcessor {
         actions: result.actions,
         repliesSent,
         state: nextState,
+        humanStateExpired: humanExpiry.expired,
         outboxId: outboxItem?.id || null,
         mode: this.externalDelivery ? "operational" : this.observeOnly ? "observe_only" : "lab_send_fake"
       };
@@ -111,6 +117,46 @@ export class WhatsAppV2LabProcessor {
       return { sent: false, status: "failed" };
     }
   }
+}
+
+function addEffectiveHumanAcknowledgement(result = {}, humanExpiry = {}, enabled = false) {
+  if (!enabled || humanExpiry.expired || result.source !== "humanState" || result.replies?.length) return result;
+  return {
+    ...result,
+    replies: [{ type: "text", text: HUMAN_ACKNOWLEDGEMENT_TEXT }],
+    actions: [...(result.actions || []), { type: "human_acknowledgement" }]
+  };
+}
+
+function expireHumanStateIfNeeded(state = {}, receivedAt = "") {
+  if (!isHumanState(state)) return { state, expired: false };
+  const updatedAt = Date.parse(state.updatedAt || "");
+  const receivedTime = Date.parse(receivedAt || "");
+  if (!Number.isFinite(updatedAt) || !Number.isFinite(receivedTime) || receivedTime - updatedAt <= HUMAN_IDLE_TTL_MS) {
+    return { state, expired: false };
+  }
+  return {
+    expired: true,
+    state: {
+      ...state,
+      mode: "bot",
+      serviceState: "AUTOMATICO",
+      areaId: null,
+      activeMenu: "portal_main_menu",
+      menuStack: [],
+      navigationStack: ["PORTAL_INSANO"],
+      activeFlow: null,
+      activeStep: null,
+      awaitingInput: false,
+      foodtruckSubstate: null,
+      humanModeExpiredAt: new Date(receivedTime).toISOString(),
+      humanModePreviousUpdatedAt: state.updatedAt || null
+    }
+  };
+}
+
+function isHumanState(state = {}) {
+  return state.mode === "human" || state.serviceState === "HUMANO";
 }
 
 function normalizeIncoming(payload = {}) {
