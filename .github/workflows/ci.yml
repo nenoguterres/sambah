@@ -16,7 +16,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      # Mantem o teste de CRM no mesmo provider usado em producao.
       WHATSAPP_PROVIDER: meta
     steps:
       - name: Checkout repository
@@ -37,5 +36,23 @@ jobs:
           node --check src/perolaService.js
           node --check src/insanoWorkhubService.js
 
-      - name: Run complete test suite
-        run: npm test
+      - name: Capture complete regression report
+        id: complete
+        shell: bash
+        run: |
+          set +e
+          npm test > complete-test-report.txt 2>&1
+          code=$?
+          cat complete-test-report.txt
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Upload complete report
+        uses: actions/upload-artifact@v4
+        with:
+          name: complete-test-report
+          path: complete-test-report.txt
+
+      - name: Fail when complete suite failed
+        if: steps.complete.outputs.exit_code != '0'
+        run: exit 1
