@@ -8,6 +8,10 @@ on:
     paths:
       - "android/sambah-atendimento/**"
       - ".github/workflows/android-sambah-atendimento.yml"
+  pull_request:
+    paths:
+      - "android/sambah-atendimento/**"
+      - ".github/workflows/android-sambah-atendimento.yml"
 
 jobs:
   build-apk:
