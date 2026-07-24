@@ -23,6 +23,17 @@ export function routePortalInsanoMessage({ state, message, contract = portalInsa
   if (command) return handleNavigationCommand(routedState, contract, command);
   if (isWelcome(text) && routedState.activeFlow) return resumeActiveFlow(routedState, contract);
   if (routedState.activeFlow) return handleActiveFlow(routedState, contract, text, message.text);
+
+  if (isWelcome(text)) {
+    return openMenu(
+      resetToPortal(routedState, contract),
+      contract,
+      contract.welcome.menuId,
+      "welcomeResetToPortal",
+      []
+    );
+  }
+
   if (isXeriffeCatalogMenu(routedState.activeMenu)) return handleXeriffeCatalogMessage(routedState, menuCache, text);
   if (isExternalPortalArea(routedState)) {
     const selected = resolveMenuOption(contract.menus[routedState.activeMenu], text);

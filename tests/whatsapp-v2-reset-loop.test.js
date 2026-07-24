@@ -17,14 +17,14 @@ test("saudacao durante fluxo ativo repete o passo sem reiniciar o Portal", () =>
   assert.match(result.replies[0].text, /data, horario e quantidade de pessoas/i);
 });
 
-test("saudacao em submenu preserva o submenu em vez de voltar ao Portal", () => {
+test("saudacao em submenu retorna ao Portal", () => {
   const state = createWhatsAppV2State("5551980413745");
   state.areaId = "xeriffe_obirici";
   state.activeMenu = "xeriffe_services_menu";
   const result = routePortalInsanoMessage({ state, message: { text: "oi" } });
-  assert.equal(result.nextState.activeMenu, "xeriffe_services_menu");
-  assert.equal(result.nextState.areaId, "xeriffe_obirici");
-  assert.equal(result.replies[0].menu.id, "xeriffe_services_menu");
+  assert.equal(result.nextState.activeMenu, "portal_main_menu");
+  assert.equal(result.nextState.areaId, null);
+  assert.equal(result.replies[0].menu.id, "portal_main_menu");
 });
 
 test("modo humano ignora saudacao e somente inicio retorna ao automatico", () => {
