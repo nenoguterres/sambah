@@ -27,6 +27,7 @@ test("mensagem dentro de 30 minutos preserva HUMANO e recebe confirmacao eficaz"
     receivedAt: "2026-07-24T11:30:00.000Z"
   });
 
+  assert.equal(result.mode, "operational");
   assert.equal(result.humanStateExpired, false);
   assert.equal(result.source, "humanState");
   assert.equal(result.state.mode, "human");
@@ -50,6 +51,7 @@ test("HUMANO expira depois de 30 minutos e oi reabre o Portal Insano", async () 
     receivedAt: "2026-07-24T11:30:00.000Z"
   });
 
+  assert.equal(result.mode, "operational");
   assert.equal(result.humanStateExpired, true);
   assert.equal(result.state.mode, "bot");
   assert.equal(result.state.serviceState, "AUTOMATICO");
@@ -72,6 +74,7 @@ test("nova mensagem depois da expiracao recebe atendimento automatico mesmo sem 
     receivedAt: "2026-07-24T11:30:00.000Z"
   });
 
+  assert.equal(result.mode, "operational");
   assert.equal(result.humanStateExpired, true);
   assert.equal(result.state.mode, "bot");
   assert.equal(result.state.serviceState, "AUTOMATICO");
