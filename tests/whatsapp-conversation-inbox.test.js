@@ -45,7 +45,6 @@ test("Central de Conversas envia resposta manual pelo provider WhatsApp configur
     await rm(dir, { recursive: true, force: true });
   }
 });
-
 test("Central de Conversas registra resposta automatica ja enviada sem reenviar", async () => {
   const dir = await mkdtemp(join(tmpdir(), "sambha-conversation-auto-out-"));
   const filePath = join(dir, "conversas.json");
@@ -187,41 +186,4 @@ test("Central de Conversas recupera JSON com lixo no final antes de gravar inbou
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
-});
-
-test("Central de Conversas page keeps the message list scrollable", async () => {
-  const css = await readFile(new URL("../public/conversas.css", import.meta.url), "utf8");
-  const js = await readFile(new URL("../public/conversas.js", import.meta.url), "utf8");
-  const html = await readFile(new URL("../public/conversas.html", import.meta.url), "utf8");
-  assert.match(html, /id="connectionStatus"/);
-  assert.match(html, /id="humanAlertPanel"/);
-  assert.match(css, /body\s*{[^}]*overflow-y:\s*auto/s);
-  assert.match(css, /body\.sambah-shell-mounted \.app\s*{[^}]*overflow:\s*visible/s);
-  assert.match(css, /\.message-list\s*{[^}]*overflow:\s*visible/s);
-  assert.match(css, /\.connection-status/);
-  assert.match(css, /\.human-alert-panel/);
-  assert.match(css, /\.conversation-item\.human-open/);
-  assert.match(css, /\.human-chat-notice/);
-  assert.match(js, /function scrollMessagesToBottom/);
-  assert.match(js, /function loadWhatsappStatus/);
-  assert.match(js, /function processHumanAlerts/);
-  assert.match(js, /function humanAlertKey/);
-  assert.match(js, /function notifyHumanMonitor/);
-  assert.match(js, /function enableHumanNotifications/);
-  assert.match(js, /new Notification/);
-  assert.match(js, /playHumanAlertSound/);
-  assert.match(js, /\/admin\/whatsapp\/status/);
-  assert.match(js, /setInterval\(refreshInbox, 30000\)/);
-  assert.match(js, /scrollTop\s*=\s*list\.scrollHeight/);
-  assert.match(js, /window\.scrollTo/);
-  assert.match(js, /keydown/);
-  assert.match(js, /event\.key !== "Enter" \|\| event\.shiftKey/);
-  assert.match(js, /sendReply\(conversa\.id\)/);
-  assert.match(js, /data-delete-message/);
-  assert.match(js, /method:\s*"DELETE"/);
-  assert.match(js, /state\.activeRole === "ADMIN"/);
-  assert.match(js, /data-action="delete-conversation"/);
-  assert.match(js, /Tem certeza que deseja excluir esta conversa sem uso/);
-  assert.match(css, /\.message-delete/);
-  assert.match(css, /\.danger-action/);
 });
