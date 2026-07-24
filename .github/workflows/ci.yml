@@ -40,5 +40,17 @@ jobs:
       - name: Run focused human recovery tests
         run: node --test tests/whatsapp-v2-human-operational-recovery.test.js
 
+      - name: Run reset loop regressions
+        run: node --test tests/whatsapp-v2-reset-loop.test.js
+
+      - name: Run V2 lab regressions
+        run: node --test tests/whatsapp-v2-lab.test.js
+
+      - name: Run Meta webhook regressions
+        run: node --test tests/whatsapp-webhook-meta.test.js
+
+      - name: Run WhatsApp session regressions
+        run: node --test tests/whatsapp-session.test.js
+
       - name: Run complete test suite
         run: node --test --test-reporter=dot tests/*.test.js
