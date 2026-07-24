@@ -1,98 +1,41 @@
-name: SamBah One-time Test Alignment
+name: SamBah CI
 
 on:
   pull_request:
     branches:
       - main
+  push:
+    branches:
+      - main
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  align:
-    if: github.head_ref == 'fix/human-operational-recovery'
+  test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Mantem o teste de CRM no mesmo provider usado em producao.
+      WHATSAPP_PROVIDER: meta
     steps:
-      - name: Checkout feature branch
+      - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 0
+          node-version: '20'
+          cache: npm
 
-      - name: Align operational human test
-        shell: bash
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check critical syntax
         run: |
-          python - <<'PY'
-          from pathlib import Path
+          node --check src/server.js
+          node --check src/perolaService.js
+          node --check src/insanoWorkhubService.js
 
-          path = Path('tests/whatsapp-webhook-meta.test.js')
-          text = path.read_text(encoding='utf-8')
-          old = '''    assert.equal(humanFollowupBody.reason, "human_state_blocks_automation");
-              assert.equal(providerCalls.length, callsAfterHumanCommand);'''
-          new = '''    assert.equal(humanFollowupBody.reason, "sent");
-              assert.equal(humanFollowupBody.sent, true);
-              assert.equal(humanFollowupBody.automaticReplyCreated, true);
-              assert.equal(providerCalls.length, callsAfterHumanCommand + 1);
-              assert.equal(providerCalls.at(-1).method, "sendMessage");
-              assert.match(providerCalls.at(-1).input.message.text, /já avisei a equipe/i);'''
-          if old not in text:
-              raise SystemExit('expected test block not found')
-          path.write_text(text.replace(old, new, 1), encoding='utf-8')
-          PY
-
-      - name: Restore standard CI
-        shell: bash
-        run: |
-          cat > .github/workflows/ci.yml <<'YAML'
-          name: SamBah CI
-
-          on:
-            pull_request:
-              branches:
-                - main
-            push:
-              branches:
-                - main
-
-          permissions:
-            contents: read
-
-          jobs:
-            test:
-              runs-on: ubuntu-latest
-              timeout-minutes: 10
-              env:
-                # Mantem o teste de CRM no mesmo provider usado em producao.
-                WHATSAPP_PROVIDER: meta
-              steps:
-                - name: Checkout repository
-                  uses: actions/checkout@v4
-
-                - name: Setup Node
-                  uses: actions/setup-node@v4
-                  with:
-                    node-version: '20'
-                    cache: npm
-
-                - name: Install dependencies
-                  run: npm ci
-
-                - name: Check critical syntax
-                  run: |
-                    node --check src/server.js
-                    node --check src/perolaService.js
-                    node --check src/insanoWorkhubService.js
-
-                - name: Run complete test suite
-                  run: npm test
-          YAML
-
-      - name: Commit aligned test
-        shell: bash
-        run: |
-          git diff --check
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add tests/whatsapp-webhook-meta.test.js .github/workflows/ci.yml
-          git commit -m "test: align effective human operational reply"
-          git push origin HEAD:${{ github.head_ref }}
+      - name: Run complete test suite
+        run: npm test
