@@ -61,7 +61,7 @@ export class WhatsAppV2LabProcessor {
         message,
         menuCache
       });
-      const result = assertWhatsAppV2ResponseContract(addEffectiveHumanAcknowledgement(routed, humanExpiry));
+      const result = assertWhatsAppV2ResponseContract(addEffectiveHumanAcknowledgement(routed, humanExpiry, this.externalDelivery));
       const nextState = {
         ...result.nextState,
         updatedAt: new Date(message.receivedAt).toISOString(),
@@ -119,8 +119,8 @@ export class WhatsAppV2LabProcessor {
   }
 }
 
-function addEffectiveHumanAcknowledgement(result = {}, humanExpiry = {}) {
-  if (humanExpiry.expired || result.source !== "humanState" || result.replies?.length) return result;
+function addEffectiveHumanAcknowledgement(result = {}, humanExpiry = {}, enabled = false) {
+  if (!enabled || humanExpiry.expired || result.source !== "humanState" || result.replies?.length) return result;
   return {
     ...result,
     replies: [{ type: "text", text: HUMAN_ACKNOWLEDGEMENT_TEXT }],
