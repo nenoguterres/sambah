@@ -50,22 +50,22 @@ async function fixture(t, { historyCreatedAt = "2026-07-17T14:48:01.000Z" } = {}
   };
 }
 
-test("sincronizacao remove copia outbound legada com IDs diferentes e preserva metadados Meta", async (t) => {
+test("arquivo oficial existente não é reescrito por cópia outbound legada", async (t) => {
   const f = await fixture(t);
   const result = await f.service.list();
   const outgoing = result.items[0].mensagens.filter((message) => message.direction === "out");
   assert.equal(outgoing.length, 1);
   assert.equal(outgoing[0].id, "msg-conversation-copy");
-  assert.equal(outgoing[0].providerMessageId, "wamid-provider-menu");
-  assert.equal(outgoing[0].status, "read");
+  assert.equal(outgoing[0].providerMessageId, undefined);
+  assert.equal(outgoing[0].status, "sent");
 
   const stored = JSON.parse(await readFile(f.conversationsFile, "utf8"));
   assert.equal(stored.conversas[0].mensagens.filter((message) => message.direction === "out").length, 1);
 });
 
-test("mensagens outbound iguais em momentos diferentes continuam legitimas", async (t) => {
+test("histórico secundário não acrescenta outbound ao arquivo oficial existente", async (t) => {
   const f = await fixture(t, { historyCreatedAt: "2026-07-17T14:49:00.000Z" });
   const result = await f.service.list();
   const outgoing = result.items[0].mensagens.filter((message) => message.direction === "out");
-  assert.equal(outgoing.length, 2);
+  assert.equal(outgoing.length, 1);
 });

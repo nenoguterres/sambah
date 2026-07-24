@@ -111,7 +111,7 @@ test("reiniciar/listar nao recria balao manual ja existente no historico geral",
   assert.equal(outgoing[0].id, "msg_manual_001");
 });
 
-test("mensagens de saida realmente diferentes continuam sendo importadas uma unica vez", async (t) => {
+test("arquivo oficial existente não importa novas saídas do histórico secundário", async (t) => {
   const f = await fixture(t);
   await writeJson(f.conversationsFile, {
     conversas: [baseConversation([manualOutgoing()])]
@@ -131,11 +131,8 @@ test("mensagens de saida realmente diferentes continuam sendo importadas uma uni
 
   const stored = JSON.parse(await readFile(f.conversationsFile, "utf8"));
   const outgoing = stored.conversas[0].mensagens.filter((message) => message.direction === "out");
-  assert.equal(outgoing.length, 2);
-  assert.deepEqual(outgoing.map((message) => message.text).sort(), [
-    "Resposta unica",
-    "Segunda resposta legitima"
-  ]);
+  assert.equal(outgoing.length, 1);
+  assert.equal(outgoing[0].text, "Resposta unica");
 });
 
 test("historico geral bloqueia repeticao do mesmo envio de saida", async (t) => {

@@ -6,11 +6,11 @@ import { JSDOM } from "jsdom";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
 
-function jsonResponse(body, ok = true) {
-  return { ok, async json() { return body; } };
+function jsonResponse(body, ok = true, status = ok ? 200 : 400) {
+  return { ok, status, async json() { return body; } };
 }
 
-async function browserFixture() {
+async function browserFixture(fixtureOptions = {}) {
   const [html, controller] = await Promise.all([
     readFile("public/conversas.html", "utf8"),
     readFile("public/conversas.js", "utf8")
@@ -23,6 +23,7 @@ async function browserFixture() {
   const { window } = dom;
   const calls = [];
   const registrations = [];
+  const redirects = [];
   const conversation = {
     id: "wa_1",
     nome: "Cliente Teste",
@@ -30,6 +31,8 @@ async function browserFixture() {
     status: "humano",
     unread: false,
     version: 3,
+    canDelete: fixtureOptions.canDelete === true,
+    deleteReason: fixtureOptions.canDelete === true ? "sem_vinculo_operacional" : "conversa_ativa",
     ultimaMensagem: "Preciso de atendimento",
     ultimaInteracao: "2026-07-23T12:00:00.000Z",
     mensagens: [{ id: "in_1", direction: "in", text: "Preciso de atendimento", createdAt: "2026-07-23T12:00:00.000Z" }]
@@ -46,10 +49,16 @@ async function browserFixture() {
     }
   });
   window.scrollTo = () => {};
-  window.fetch = async (url, options = {}) => {
+  window.confirm = typeof fixtureOptions.confirm === "function" ? fixtureOptions.confirm : () => fixtureOptions.confirm !== false;
+  window.alert = () => {};
+  window.__sambahNavigateToLogin = (url) => redirects.push(url);
+  window.fetch = async (url, requestOptions = {}) => {
     const path = String(url);
-    calls.push({ path, options });
-    if (path === "/api/auth/me") return jsonResponse({ user: { role: "ADMIN", username: "neno" } });
+    calls.push({ path, options: requestOptions });
+    if (path === "/api/auth/me") {
+      if (fixtureOptions.auth401) return jsonResponse({ ok: false, error: "auth_required" }, false, 401);
+      return jsonResponse({ user: { role: fixtureOptions.role || "ADMIN", username: "neno" } });
+    }
     if (path === "/admin/whatsapp/status") return jsonResponse({ configured: true, sendEnabled: true, receivingActive: true });
     if (path === "/api/conversas") {
       if (deferRefresh) return deferRefresh.promise;
@@ -61,6 +70,12 @@ async function browserFixture() {
       });
     }
     if (path === "/api/conversas/wa_1") return jsonResponse({ ok: true, conversa: conversation });
+    if (path === "/api/conversas/wa_1/mensagens/in_1" && requestOptions.method === "DELETE") {
+      if (fixtureOptions.deleteDeferred) return fixtureOptions.deleteDeferred.promise;
+      const response = fixtureOptions.deleteResponse || jsonResponse({ ok: true });
+      if (response.ok) conversation.mensagens = [];
+      return response;
+    }
     if (path === "/api/conversas/wa_1/responder") return jsonResponse({ ok: true, enviado: true });
     if (path === "/api/call-center/alerts?unreadOnly=true") return jsonResponse({ alerts: [] });
     return jsonResponse({ ok: true });
@@ -72,6 +87,7 @@ async function browserFixture() {
     window,
     calls,
     registrations,
+    redirects,
     conversation,
     deferNextRefresh() {
       let resolve;
@@ -140,6 +156,102 @@ test("abrir conversa não lida usa a API persistente de leitura", async (t) => {
   await tick();
   const read = fixture.calls.find((call) => call.path === "/api/conversas/wa_1/read");
   assert.equal(read.options.method, "POST");
+});
+
+test("exclusão individual respeita permissão, cancelamento e usa somente a rota da mensagem", async (t) => {
+  const cancelled = await browserFixture({ confirm: false });
+  t.after(() => cancelled.dom.window.close());
+  cancelled.window.document.querySelector(".conversation-item").click();
+  await tick();
+  assert.ok(cancelled.window.document.querySelector("[data-delete-message]"));
+  cancelled.window.document.querySelector("[data-delete-message]").click();
+  await tick();
+  assert.equal(cancelled.calls.filter((call) => call.options.method === "DELETE").length, 0);
+
+  const operator = await browserFixture({ role: "OPERADOR" });
+  t.after(() => operator.dom.window.close());
+  operator.window.document.querySelector(".conversation-item").click();
+  await tick();
+  assert.equal(operator.window.document.querySelector("[data-delete-message]"), null);
+
+  const confirmed = await browserFixture();
+  t.after(() => confirmed.dom.window.close());
+  confirmed.window.document.querySelector(".conversation-item").click();
+  await tick();
+  confirmed.window.document.querySelector("[data-delete-message]").click();
+  await tick();
+  const deletes = confirmed.calls.filter((call) => call.options.method === "DELETE");
+  assert.equal(deletes.length, 1);
+  assert.equal(deletes[0].path, "/api/conversas/wa_1/mensagens/in_1");
+  assert.equal(confirmed.window.document.querySelector("[data-delete-message]"), null);
+});
+
+test("clique duplo na exclusão individual gera uma única requisição", async (t) => {
+  let releaseDelete;
+  const deleteDeferred = {
+    promise: new Promise((resolve) => { releaseDelete = resolve; })
+  };
+  const fixture = await browserFixture({ deleteDeferred });
+  t.after(() => fixture.dom.window.close());
+  fixture.window.document.querySelector(".conversation-item").click();
+  await tick();
+  const button = fixture.window.document.querySelector("[data-delete-message]");
+  button.click();
+  button.click();
+  await tick();
+  assert.equal(fixture.calls.filter((call) => call.options.method === "DELETE").length, 1);
+  assert.equal(button.disabled, true);
+  fixture.conversation.mensagens = [];
+  releaseDelete(jsonResponse({ ok: true }));
+  await tick();
+});
+
+for (const [status, error, expected] of [
+  [403, "admin_required", "Somente administrador pode excluir mensagens"],
+  [404, "message_not_found", "Mensagem não encontrada"],
+  [409, "conversation_version_conflict", "A mensagem foi alterada por outro atendimento"],
+  [500, "internal_error", "Não foi possível excluir a mensagem"]
+]) {
+  test(`erro ${status} mantém o balão e apresenta mensagem funcional`, async (t) => {
+    const fixture = await browserFixture({
+      deleteResponse: jsonResponse({ ok: false, error }, false, status)
+    });
+    t.after(() => fixture.dom.window.close());
+    fixture.window.document.querySelector(".conversation-item").click();
+    await tick();
+    fixture.window.document.querySelector("[data-delete-message]").click();
+    await tick();
+    assert.ok(fixture.window.document.querySelector("[data-delete-message]"));
+    assert.match(fixture.window.document.querySelector("#replyStatus").textContent, new RegExp(expected));
+  });
+}
+
+test("menu só oferece exclusão da conversa quando o backend autoriza", async (t) => {
+  const active = await browserFixture({ canDelete: false });
+  t.after(() => active.dom.window.close());
+  active.window.document.querySelector(".conversation-item").click();
+  await tick();
+  assert.equal(active.window.document.querySelector('[data-action="delete-conversation"]'), null);
+
+  const eligible = await browserFixture({ canDelete: true });
+  t.after(() => eligible.dom.window.close());
+  eligible.window.document.querySelector(".conversation-item").click();
+  await tick();
+  const deleteConversationButton = eligible.window.document.querySelector('[data-action="delete-conversation"]');
+  assert.ok(deleteConversationButton);
+  deleteConversationButton.click();
+  await tick();
+  const deletes = eligible.calls.filter((call) => call.options.method === "DELETE");
+  assert.equal(deletes.length, 1);
+  assert.equal(deletes[0].path, "/api/conversas/wa_1");
+});
+
+test("resposta 401 encaminha ao login sem mostrar auth_required", async (t) => {
+  const fixture = await browserFixture({ auth401: true });
+  t.after(() => fixture.dom.window.close());
+  await tick();
+  assert.deepEqual(fixture.redirects, ["/login?next=/conversas"]);
+  assert.doesNotMatch(fixture.window.document.body.textContent, /auth_required/i);
 });
 
 test("service worker mostra push válido e confirma alerta ao clicar", async () => {
