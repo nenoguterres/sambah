@@ -92,7 +92,7 @@
 
   .chat-header {
     display: grid;
-    grid-template-columns: auto auto minmax(0, 1fr);
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
     align-items: center;
     min-height: auto;
     padding: 8px 10px;
@@ -107,18 +107,28 @@
   }
 
   .chat-actions {
-    grid-column: 1 / -1;
-    width: 100%;
+    grid-column: auto;
+    width: auto;
     flex-wrap: nowrap;
-    justify-content: flex-start;
-    overflow-x: auto;
-    padding-bottom: 2px;
-    -webkit-overflow-scrolling: touch;
+    justify-content: flex-end;
+    justify-self: end;
+    overflow: visible;
+    padding-bottom: 0;
   }
 
   .chat-actions button {
     flex: 0 0 auto;
     min-height: 40px;
+  }
+
+  .chat-menu-button {
+    width: 40px;
+    min-width: 40px;
+  }
+
+  .action-menu {
+    right: 0;
+    width: min(260px, calc(100vw - 20px));
   }
 
   .message-list {

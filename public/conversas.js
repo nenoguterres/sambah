@@ -190,10 +190,7 @@ function renderChat(conversa, { wasNearBottom = true, messageScroll = 0 } = {}) 
         <small>${escapeHtml(conversa.telefone || "")} · ${escapeHtml(labelStatus(conversa.status))} · Responsável: ${escapeHtml(conversa.assignedOperatorName || "sem responsável")} · Lida por: ${escapeHtml(conversa.readBy || "-")}</small>
       </div>
       <div class="chat-actions">
-        ${canClaim(conversa) ? `<button type="button" data-action="claim">Assumir atendimento</button>` : ""}
-        <button type="button" data-focus-reply>Enviar</button>
-        ${conversa.status !== "resolvido" ? `<button type="button" data-action="resolve">Concluir</button>` : ""}
-        <button type="button" data-toggle-menu>⋮ Ações</button>
+        <button class="chat-menu-button" type="button" data-toggle-menu title="Acoes">...</button>
         <div class="action-menu" id="actionMenu">${renderActionMenu(conversa)}</div>
       </div>
     </header>
@@ -210,7 +207,6 @@ function renderChat(conversa, { wasNearBottom = true, messageScroll = 0 } = {}) 
 }
 
 function bindChat(conversa) {
-  chatEl.querySelector("[data-focus-reply]")?.addEventListener("click", () => chatEl.querySelector("#replyText")?.focus());
   chatEl.querySelector("[data-toggle-menu]")?.addEventListener("click", () => chatEl.querySelector("#actionMenu")?.classList.toggle("open"));
   chatEl.querySelectorAll("[data-action]").forEach((button) => button.addEventListener("click", () => handleAction(conversa, button.dataset.action)));
   chatEl.querySelectorAll("[data-delete-message]").forEach((button) => {

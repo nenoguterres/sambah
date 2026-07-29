@@ -9,7 +9,19 @@ test("layout móvel mantém lista rolável e conversa em tela separada", async (
   assert.match(css, /\.chat\s*\{[\s\S]*display:\s*none/);
   assert.match(css, /body\.conversation-mobile-chat-open \.sidebar\s*\{[\s\S]*display:\s*none/);
   assert.match(css, /body\.conversation-mobile-chat-open \.chat\s*\{[\s\S]*display:\s*grid/);
+  assert.match(css, /grid-template-columns:\s*auto auto minmax\(0,\s*1fr\) auto/);
+  assert.match(css, /\.chat-actions\s*\{[\s\S]*grid-column:\s*auto/);
   assert.match(css, /touch-action:\s*pan-y/);
+});
+
+test("cabecalho da conversa usa menu compacto em vez de barra de acoes", async () => {
+  const [source, css] = await Promise.all([
+    readFile("public/conversas.js", "utf8"),
+    readFile("public/conversas.css", "utf8")
+  ]);
+  assert.match(source, /chat-menu-button/);
+  assert.doesNotMatch(source, /data-focus-reply/);
+  assert.match(css, /\.chat-actions > button:not\(\.chat-menu-button\)\s*\{[\s\S]*display:\s*none/);
 });
 
 test("controlador móvel oferece abertura do chat e retorno à lista", async () => {

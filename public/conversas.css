@@ -111,6 +111,19 @@ body.sambah-shell-mounted .app {
   justify-content: flex-end;
 }
 
+.chat-actions > button:not(.chat-menu-button) {
+  display: none;
+}
+
+.chat-menu-button {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
+}
+
 .action-menu {
   display: none;
   position: absolute;
