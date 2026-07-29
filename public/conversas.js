@@ -163,6 +163,7 @@ function renderList() {
 
 async function openConversation(id, { silent = false, wasNearBottom = true, messageScroll = 0 } = {}) {
   state.selectedId = id;
+  document.body.classList.add("mobile-chat-open");
   renderList();
   if (!silent) chatEl.innerHTML = `<div class="empty-state"><strong>Carregando conversa...</strong></div>`;
   try {
@@ -184,6 +185,7 @@ function renderChat(conversa, { wasNearBottom = true, messageScroll = 0 } = {}) 
   const draft = loadDraft(conversa.id);
   chatEl.innerHTML = `
     <header class="chat-header">
+      <button class="mobile-back-button" type="button" data-mobile-back>Voltar</button>
       <span class="avatar large">${escapeHtml(initialsFor(conversa.nome || conversa.telefone || "WA"))}</span>
       <div class="chat-title">
         <strong>${escapeHtml(conversa.nome || "Cliente WhatsApp")}</strong>
@@ -210,6 +212,9 @@ function renderChat(conversa, { wasNearBottom = true, messageScroll = 0 } = {}) 
 }
 
 function bindChat(conversa) {
+  chatEl.querySelector("[data-mobile-back]")?.addEventListener("click", () => {
+    document.body.classList.remove("mobile-chat-open");
+  });
   chatEl.querySelector("[data-focus-reply]")?.addEventListener("click", () => chatEl.querySelector("#replyText")?.focus());
   chatEl.querySelector("[data-toggle-menu]")?.addEventListener("click", () => chatEl.querySelector("#actionMenu")?.classList.toggle("open"));
   chatEl.querySelectorAll("[data-action]").forEach((button) => button.addEventListener("click", () => handleAction(conversa, button.dataset.action)));
