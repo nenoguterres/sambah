@@ -45,7 +45,7 @@ test("fallback sem matchMedia também protege a largura móvel", async () => {
 test("HTML carrega o controlador responsivo depois do shell", async () => {
   const html = await readFile("public/conversas.html", "utf8");
   const shellIndex = html.indexOf('src="/admin/assets/sambah-shell.js"');
-  const controllerIndex = html.indexOf('src="/sambah-shell-responsive.js"');
+  const controllerIndex = html.search(/src="\/sambah-shell-responsive\.js(?:\?[^"]*)?"/);
 
   assert.ok(shellIndex >= 0);
   assert.ok(controllerIndex > shellIndex);

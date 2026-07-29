@@ -110,7 +110,7 @@ test("DOM carrega um controlador, contadores do servidor e registra service work
   const fixture = await browserFixture();
   t.after(() => fixture.dom.window.close());
   const scripts = [...fixture.window.document.querySelectorAll("script[src]")].map((node) => node.getAttribute("src"));
-  assert.deepEqual(scripts.filter((src) => src.includes("conversas")), ["/conversas.js"]);
+  assert.deepEqual(scripts.filter((src) => src.includes("conversas")).map((src) => src.split("?")[0]), ["/conversas.js"]);
   assert.equal(fixture.window.document.querySelector('[data-count="human"]').textContent, "1");
   assert.equal(fixture.window.document.querySelectorAll(".conversation-item").length, 1);
   assert.deepEqual(fixture.registrations, ["/sambah-conversas-sw.js"]);
