@@ -28,8 +28,8 @@ async function browserFixture(fixtureOptions = {}) {
     id: "wa_1",
     nome: "Cliente Teste",
     telefone: "5551999999999",
-    status: "humano",
-    unread: false,
+    status: fixtureOptions.status || "humano",
+    unread: fixtureOptions.unread === true,
     version: 3,
     canDelete: fixtureOptions.canDelete === true,
     deleteReason: fixtureOptions.canDelete === true ? "sem_vinculo_operacional" : "conversa_ativa",
@@ -38,7 +38,16 @@ async function browserFixture(fixtureOptions = {}) {
     mensagens: [{ id: "in_1", direction: "in", text: "Preciso de atendimento", createdAt: "2026-07-23T12:00:00.000Z" }]
   };
   let deferRefresh = null;
+  const badgeCalls = [];
   window.setInterval = () => 0;
+  Object.defineProperty(window.navigator, "setAppBadge", {
+    configurable: true,
+    value: async (value) => { badgeCalls.push(["set", value]); }
+  });
+  Object.defineProperty(window.navigator, "clearAppBadge", {
+    configurable: true,
+    value: async () => { badgeCalls.push(["clear"]); }
+  });
   Object.defineProperty(window.navigator, "serviceWorker", {
     configurable: true,
     value: {
@@ -88,6 +97,7 @@ async function browserFixture(fixtureOptions = {}) {
     calls,
     registrations,
     redirects,
+    badgeCalls,
     conversation,
     deferNextRefresh() {
       let resolve;
@@ -115,6 +125,16 @@ test("DOM carrega um controlador, contadores do servidor e registra service work
   assert.equal(fixture.window.document.querySelectorAll(".conversation-item").length, 1);
   assert.deepEqual(fixture.registrations.map((url) => url.split("?")[0]), ["/sambah-conversas-sw.js"]);
   assert.equal(fixture.window.document.querySelector('link[rel="manifest"]').getAttribute("href"), "/sambah-conversas.webmanifest");
+});
+
+test("alerta visual mostra atendimentos pendentes e atualiza badge do app", async (t) => {
+  const fixture = await browserFixture({ unread: true });
+  t.after(() => fixture.dom.window.close());
+  const panel = fixture.window.document.querySelector("#humanAlertPanel");
+  assert.match(fixture.window.document.title, /^\(1\) SamBah Central$/);
+  assert.match(panel.textContent, /1 atendimento precisa de resposta/);
+  assert.match(panel.textContent, /Responder agora/);
+  assert.deepEqual(fixture.badgeCalls.at(-1), ["set", 1]);
 });
 
 test("atualização preserva lista enquanto a API responde e filtro atua nos itens carregados", async (t) => {

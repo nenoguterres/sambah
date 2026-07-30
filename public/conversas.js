@@ -12,15 +12,18 @@ const state = {
   drafts: new Map(),
   pushSubscription: null,
   pendingManualSendId: "",
-  deletingMessageIds: new Set()
+  deletingMessageIds: new Set(),
+  lastAttentionTotal: 0
 };
 
-const SAMBAH_CONVERSAS_VERSION = "20260730-whatsapp-real-1";
+const SAMBAH_CONVERSAS_VERSION = "20260730-whatsapp-alert-1";
+const SAMBAH_CONVERSAS_TITLE = "SamBah Central";
 const listEl = document.querySelector("#conversationList");
 const chatEl = document.querySelector("#chatPane");
 const searchInput = document.querySelector("#searchInput");
 const refreshButton = document.querySelector("#refreshButton");
 const connectionStatusEl = document.querySelector("#connectionStatus");
+const humanAlertPanelEl = document.querySelector("#humanAlertPanel");
 const pushPanelEl = document.querySelector("#pushPanel");
 const ACTION_ENDPOINTS = {
   read: "/read",
@@ -137,6 +140,46 @@ function updateCounters() {
     const el = document.querySelector(`[data-count="${key}"]`);
     if (el) el.textContent = String(value || 0);
   }
+  updateAttentionAlert();
+}
+
+function updateAttentionAlert() {
+  const attentionItems = state.items.filter((item) => item.unread === true || item.status === "humano");
+  const total = attentionItems.length;
+  document.title = total > 0 ? `(${total}) ${SAMBAH_CONVERSAS_TITLE}` : SAMBAH_CONVERSAS_TITLE;
+  updateAppBadge(total);
+  if (!humanAlertPanelEl) return;
+  if (!total) {
+    humanAlertPanelEl.innerHTML = "";
+    humanAlertPanelEl.classList.remove("pulse");
+    state.lastAttentionTotal = 0;
+    return;
+  }
+  const first = attentionItems[0] || {};
+  humanAlertPanelEl.innerHTML = `
+    <strong><span class="human-alert-count">${total}</span> ${total === 1 ? "atendimento precisa" : "atendimentos precisam"} de resposta</strong>
+    <span>${escapeHtml(first.nome || "Cliente WhatsApp")} · ${escapeHtml(first.ultimaMensagem || "Nova conversa aguardando")}</span>
+    <div class="human-alert-actions">
+      <button type="button" data-alert-focus="${escapeAttr(first.id || "")}">Responder agora</button>
+    </div>
+  `;
+  if (total > state.lastAttentionTotal) {
+    humanAlertPanelEl.classList.remove("pulse");
+    void humanAlertPanelEl.offsetWidth;
+    humanAlertPanelEl.classList.add("pulse");
+  }
+  state.lastAttentionTotal = total;
+  humanAlertPanelEl.querySelector("[data-alert-focus]")?.addEventListener("click", (event) => {
+    const id = event.currentTarget.dataset.alertFocus;
+    if (id) openConversation(id);
+  });
+}
+
+function updateAppBadge(total) {
+  try {
+    if (total > 0 && typeof navigator.setAppBadge === "function") navigator.setAppBadge(total);
+    if (total <= 0 && typeof navigator.clearAppBadge === "function") navigator.clearAppBadge();
+  } catch {}
 }
 
 function renderList() {
