@@ -36,6 +36,7 @@ import { AiMetricsService } from "./ai/aiMetricsService.js";
 import { AiAuditService } from "./ai/aiAuditService.js";
 import { AiPerformanceService } from "./ai/aiPerformanceService.js";
 import { AiConversionService } from "./ai/aiConversionService.js";
+import { getFormDefinition, listFormDefinitions } from "./forms/formRepository.js";
 
 const require = createRequire(import.meta.url);
 const packageJson = require("../package.json");
@@ -954,7 +955,32 @@ export function createApp({
         return sendJson(res, result.ok ? 200 : 404, result);
       }
 
-      const conversaActionMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/(read|unread|claim|release|transfer|resolve|reopen)$/);
+      if (req.method === "POST" && url.pathname === "/api/conversas/maintenance/reset-queue") {
+        const adminCheck = requireAdminUser(req, activeAuthMode);
+        if (!adminCheck.ok) return sendJson(res, adminCheck.statusCode, { ok: false, error: adminCheck.error });
+        const result = await whatsappConversationService.resetOperationalQueue(actorFromRequest(req), "2.0.0");
+        if (result.ok && !result.alreadyApplied) await safeAuditRecord(auditService, {
+          type: "conversation_queue_reset",
+          status: "warning",
+          source: "conversas",
+          message: "Fila operacional arquivada com historico preservado",
+          context: { archived: result.archived, resetVersion: result.resetVersion, actorUser: safeAuditUsername(req.sambahUser?.username || "mock") }
+        });
+        return sendJson(res, result.statusCode || (result.ok ? 200 : 400), result);
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/forms") return sendJson(res, 200, { ok: true, items: listFormDefinitions() });
+      const formDefinitionMatch = url.pathname.match(/^\/api\/forms\/([^/]+)$/);
+      if (req.method === "GET" && formDefinitionMatch) {
+        const form = getFormDefinition(decodeURIComponent(formDefinitionMatch[1]));
+        return form ? sendJson(res, 200, { ok: true, form }) : sendJson(res, 404, { ok: false, error: "form_not_found" });
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/releases/current") {
+        return sendJson(res, 200, { ok: true, version: packageJson.version, channel: "stable", publishedAt: "2026-07-30T00:00:00.000Z", reloadRequired: true });
+      }
+
+      const conversaActionMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/(read|unread|claim|release|transfer|resolve|reopen|waiting|archive)$/);
       if (req.method === "POST" && conversaActionMatch) {
         if (activeAuthMode === "session" && !req.sambahUser) return sendJson(res, 401, { ok: false, error: "auth_required" });
         const conversationId = decodeURIComponent(conversaActionMatch[1]);
@@ -3187,6 +3213,8 @@ async function runConversationAction(service, action, id, actor, { expectedVersi
   if (action === "transfer") return service.transferConversation(id, actor, { phone: targetOperatorPhone }, { expectedVersion });
   if (action === "resolve") return service.resolveConversation(id, actor, { expectedVersion });
   if (action === "reopen") return service.reopenConversation(id, actor, { expectedVersion });
+  if (action === "waiting") return service.markWaitingCustomer(id, actor, { expectedVersion });
+  if (action === "archive") return service.archiveConversation(id, actor, { expectedVersion });
   return { ok: false, statusCode: 404, error: "conversation_action_not_found" };
 }
 
@@ -3198,7 +3226,9 @@ function auditTypeForConversationAction(action = "") {
     release: "conversation_released",
     transfer: "conversation_transferred",
     resolve: "conversation_resolved",
-    reopen: "conversation_reopened"
+    reopen: "conversation_reopened",
+    waiting: "conversation_waiting_customer",
+    archive: "conversation_archived"
   }[action] || "conversation_action";
 }
 

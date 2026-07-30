@@ -252,7 +252,7 @@ test("Central de Conversas recebe texto e audio do WhatsApp sem envio automatico
     assert.equal(audioResponse.status, 200);
     assert.equal(audioBody.ok, true);
     assert.equal(audioBody.engine, "disabled");
-    assert.equal(audioBody.conversa.status, "aguardando_equipe");
+    assert.equal(audioBody.conversa.status, "nova");
 
     const conversations = await fetch(`${base}/api/conversas`).then((response) => response.json());
     assert.equal(conversations.ok, true);

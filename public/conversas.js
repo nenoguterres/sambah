@@ -16,12 +16,13 @@ const state = {
   lastAttentionTotal: 0
 };
 
-const SAMBAH_CONVERSAS_VERSION = "20260730-whatsapp-alert-1";
+const SAMBAH_CONVERSAS_VERSION = "2.0.0";
 const SAMBAH_CONVERSAS_TITLE = "SamBah Central";
 const listEl = document.querySelector("#conversationList");
 const chatEl = document.querySelector("#chatPane");
 const searchInput = document.querySelector("#searchInput");
 const refreshButton = document.querySelector("#refreshButton");
+const resetQueueButton = document.querySelector("#resetQueueButton");
 const connectionStatusEl = document.querySelector("#connectionStatus");
 const humanAlertPanelEl = document.querySelector("#humanAlertPanel");
 const pushPanelEl = document.querySelector("#pushPanel");
@@ -33,9 +34,12 @@ const ACTION_ENDPOINTS = {
   transfer: "/transfer",
   resolve: "/resolve",
   reopen: "/reopen",
+  waiting: "/waiting",
+  archive: "/archive",
   messages: "/messages"
 };
 refreshButton?.addEventListener("click", refreshInbox);
+resetQueueButton?.addEventListener("click", resetInitialQueue);
 searchInput?.addEventListener("input", (event) => {
   state.query = event.target.value;
   renderList();
@@ -66,7 +70,25 @@ async function init() {
   const authenticated = await loadActiveUser();
   if (!authenticated) return;
   await registerServiceWorker();
+  await checkForRelease();
   await refreshInbox({ initial: true });
+}
+
+async function checkForRelease() {
+  try {
+    const response = await authFetch("/api/releases/current", { cache: "no-store" });
+    const release = await response.json();
+    if (!release.ok || release.version === SAMBAH_CONVERSAS_VERSION) return;
+    const banner = document.createElement("section");
+    banner.className = "release-update-banner";
+    banner.innerHTML = `<strong>AtualizaÃ§Ã£o ${escapeHtml(release.version)} disponÃ­vel</strong><button type="button">Atualizar agora</button>`;
+    banner.querySelector("button")?.addEventListener("click", async () => {
+      const registration = await navigator.serviceWorker?.getRegistration?.();
+      await registration?.update?.();
+      location.reload();
+    });
+    document.body.prepend(banner);
+  } catch {}
 }
 
 async function loadActiveUser() {
@@ -76,6 +98,7 @@ async function loadActiveUser() {
     const data = await response.json();
     state.activeRole = data.user?.role || "ADMIN";
     state.activeUser = data.user?.username || data.user?.displayName || "operador";
+    if (resetQueueButton) resetQueueButton.hidden = state.activeRole !== "ADMIN";
     return true;
   } catch (error) {
     if (error.sessionRedirect) return false;
@@ -274,8 +297,10 @@ function renderActionMenu(conversa) {
   else actions.push(["unread", "Marcar como não lida"]);
   if (canClaim(conversa)) actions.push(["claim", "Assumir atendimento"]);
   if (conversa.assignedOperatorPhone) actions.push(["release", "Liberar atendimento"], ["transfer", "Transferir atendimento"]);
-  if (conversa.status !== "resolvido") actions.push(["resolve", "Marcar como atendida"]);
-  if (conversa.status === "resolvido") actions.push(["reopen", "Reabrir atendimento"]);
+  if (!["finalizada", "resolvido", "arquivada"].includes(conversa.status)) actions.push(["waiting", "Aguardando cliente"], ["resolve", "Finalizar atendimento"]);
+  if (["finalizada", "resolvido", "arquivada"].includes(conversa.status)) actions.push(["reopen", "Reabrir atendimento"]);
+  if (conversa.status !== "arquivada") actions.push(["archive", "Arquivar"]);
+  actions.push(["event-form", "Abrir formulÃ¡rio de evento"]);
   if (state.activeRole === "ADMIN") actions.push(["clear", "Limpar histórico"]);
   if (state.activeRole === "ADMIN" && conversa.canDelete === true) actions.push(["delete-conversation", "Excluir conversa"]);
   return actions.map(([action, label]) => {
@@ -285,6 +310,10 @@ function renderActionMenu(conversa) {
 }
 
 async function handleAction(conversa, action) {
+  if (action === "event-form") {
+    window.open(`/evento/insano?conversationId=${encodeURIComponent(conversa.id)}&phone=${encodeURIComponent(conversa.telefone || "")}`, "_blank", "noopener");
+    return;
+  }
   if (action === "delete" || action === "delete-conversation") return deleteConversation(conversa.id);
   if (action === "clear") return clearHistory(conversa.id);
   const body = { expectedVersion: conversa.version || 0 };
@@ -470,10 +499,12 @@ async function acknowledgeOpenAlert(conversationId) {
 }
 
 function matchesFilter(item) {
+  if (state.filter === "queue" || state.filter === "all") return !["finalizada", "resolvido", "arquivada"].includes(item.status);
+  if (state.filter === "history") return ["finalizada", "resolvido", "arquivada"].includes(item.status);
   if (state.filter === "unread") return item.unread === true;
   if (state.filter === "human") return item.status === "humano";
   if (state.filter === "inProgress") return item.status === "em_atendimento";
-  if (state.filter === "resolved") return item.status === "resolvido";
+  if (state.filter === "resolved") return ["finalizada", "resolvido"].includes(item.status);
   return true;
 }
 
@@ -484,7 +515,7 @@ function matchesSearch(item) {
 }
 
 function canClaim(conversa) {
-  return !conversa.assignedOperatorPhone && conversa.status !== "resolvido";
+  return !conversa.assignedOperatorPhone && !["finalizada", "resolvido", "arquivada"].includes(conversa.status);
 }
 
 function draftKey(id) {
@@ -518,12 +549,27 @@ function renderMessage(message) {
 
 function labelStatus(status = "") {
   return {
+    nova: "Nova",
+    lida: "Lida",
     aguardando_equipe: "Aguardando equipe",
     humano: "Humano",
     em_atendimento: "Em atendimento",
     aguardando_cliente: "Aguardando cliente",
-    resolvido: "Resolvido"
+    finalizada: "Finalizada",
+    resolvido: "Finalizada",
+    arquivada: "Arquivada"
   }[status] || status || "Aguardando equipe";
+}
+
+async function resetInitialQueue() {
+  if (!window.confirm("Arquivar todas as conversas atuais e deixar a fila vazia? O histÃ³rico serÃ¡ preservado.")) return;
+  const response = await authFetch("/api/conversas/maintenance/reset-queue", { method: "POST" });
+  const data = await response.json();
+  if (!data.ok) return window.alert(data.error || "NÃ£o foi possÃ­vel zerar a fila.");
+  window.alert(data.alreadyApplied ? "A limpeza inicial jÃ¡ foi aplicada." : `${data.archived} conversas foram movidas para o HistÃ³rico.`);
+  state.selectedId = "";
+  state.selectedConversation = null;
+  await refreshInbox({ initial: false });
 }
 
 function initialsFor(value = "") {

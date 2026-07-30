@@ -26,12 +26,13 @@
         <section class="human-alert-panel" id="humanAlertPanel" aria-live="assertive"></section>
         <section class="push-panel" id="pushPanel"></section>
         <nav class="filters" aria-label="Filtros">
-          <button class="active" type="button" data-filter="all">Tudo <span data-count="all">0</span></button>
+          <button class="active" type="button" data-filter="all">Conversas <span data-count="queue">0</span></button>
           <button type="button" data-filter="unread">Não lidas <span data-count="unread">0</span></button>
           <button type="button" data-filter="human">Humano <span data-count="human">0</span></button>
           <button type="button" data-filter="inProgress">Em atendimento <span data-count="inProgress">0</span></button>
-          <button type="button" data-filter="resolved">Resolvidas <span data-count="resolved">0</span></button>
+          <button type="button" data-filter="history">Histórico <span data-count="history">0</span></button>
         </nav>
+        <button class="admin-reset-queue" id="resetQueueButton" type="button" hidden>Zerar fila inicial</button>
         <section class="conversation-list" id="conversationList" aria-label="Conversas"></section>
       </aside>
       <section class="chat" id="chatPane" aria-live="polite">
