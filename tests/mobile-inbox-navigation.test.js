@@ -24,6 +24,15 @@ test("cabecalho da conversa usa menu compacto em vez de barra de acoes", async (
   assert.match(css, /\.chat-actions > button:not\(\.chat-menu-button\)\s*\{[\s\S]*display:\s*none/);
 });
 
+test("lista movel fica compacta como inbox de WhatsApp", async () => {
+  const css = await readFile("public/mobile-inbox.css", "utf8");
+  assert.match(css, /\.filters\s*\{[\s\S]*display:\s*flex/);
+  assert.match(css, /\.filters\s*\{[\s\S]*overflow-x:\s*auto/);
+  assert.match(css, /\.push-panel button\s*\{[\s\S]*min-height:\s*36px/);
+  assert.match(css, /\.conversation-item\s*\{[\s\S]*min-height:\s*72px/);
+  assert.match(css, /\.reply-panel textarea\s*\{[\s\S]*border-radius:\s*22px/);
+});
+
 test("controlador móvel oferece abertura do chat e retorno à lista", async () => {
   const source = await readFile("public/mobile-inbox.js", "utf8");
   assert.match(source, /conversation-mobile-chat-open/);
