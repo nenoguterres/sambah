@@ -1,0 +1,60 @@
+name: Apply manual WhatsApp fix
+
+on:
+  push:
+    branches:
+      - fix/manual-whatsapp-active-meta-provider
+    paths:
+      - .github/workflows/apply-manual-whatsapp-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Patch manual Meta provider
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/server.js')
+          text = path.read_text(encoding='utf-8')
+          old = '''      const conversaResponderMatch = url.pathname.match(/^\\/api\\/conversas\\/([^/]+)\\/responder$/);
+      if (req.method === "POST" && conversaResponderMatch) {
+        const body = await readJson(req, { requireBody: true });
+        const result = await whatsappConversationService.addOutgoing(decodeURIComponent(conversaResponderMatch[1]), body, {
+          runtimeConfig: appRuntimeConfig || getRuntimeConfig(),
+          whatsappProvider: appWhatsappProvider
+        });
+'''
+          new = '''      const conversaResponderMatch = url.pathname.match(/^\\/api\\/conversas\\/([^/]+)\\/responder$/);
+      if (req.method === "POST" && conversaResponderMatch) {
+        const body = await readJson(req, { requireBody: true });
+        const activeRuntimeConfig = appRuntimeConfig || getRuntimeConfig();
+        const activeWhatsappProvider = appRuntimeConfig
+          ? appWhatsappProvider
+          : createWhatsAppProvider({
+              config: activeRuntimeConfig.whatsappBusiness,
+              fetchImpl: whatsappSendFetch
+            });
+        const result = await whatsappConversationService.addOutgoing(decodeURIComponent(conversaResponderMatch[1]), body, {
+          runtimeConfig: activeRuntimeConfig,
+          whatsappProvider: activeWhatsappProvider
+        });
+'''
+          if old not in text:
+              raise SystemExit('Expected manual reply block was not found; refusing unsafe patch')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          rm .github/workflows/apply-manual-whatsapp-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/server.js .github/workflows/apply-manual-whatsapp-fix.yml
+          git commit -m "fix: rebuild Meta provider for manual replies"
+          git push
