@@ -44,6 +44,7 @@ test("controlador móvel oferece abertura do chat e retorno à lista", async () 
 
 test("HTML carrega os recursos móveis após o controlador principal", async () => {
   const html = await readFile("public/conversas.html", "utf8");
+  assert.match(html, /20260730-whatsapp-real-1/);
   assert.match(html, /href="\/mobile-inbox\.css(?:\?[^"]*)?"/);
   assert.ok(html.search(/src="\/mobile-inbox\.js(?:\?[^"]*)?"/) > html.search(/src="\/conversas\.js(?:\?[^"]*)?"/));
 });

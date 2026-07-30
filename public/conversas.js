@@ -15,6 +15,7 @@ const state = {
   deletingMessageIds: new Set()
 };
 
+const SAMBAH_CONVERSAS_VERSION = "20260730-whatsapp-real-1";
 const listEl = document.querySelector("#conversationList");
 const chatEl = document.querySelector("#chatPane");
 const searchInput = document.querySelector("#searchInput");
@@ -372,7 +373,7 @@ function conversationDeleteErrorMessage(error = "", reason = "") {
 async function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
   try {
-    await navigator.serviceWorker.register("/sambah-conversas-sw.js");
+    await navigator.serviceWorker.register(`/sambah-conversas-sw.js?v=${SAMBAH_CONVERSAS_VERSION}`);
   } catch {}
 }
 
