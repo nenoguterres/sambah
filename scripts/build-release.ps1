@@ -3,25 +3,13 @@ $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $package = Get-Content -LiteralPath (Join-Path $projectRoot "package.json") -Raw | ConvertFrom-Json
 $version = [string]$package.version
 $distDir = Join-Path $projectRoot "dist"
-$stageDir = Join-Path $distDir ("sambah-" + $version)
 $zipPath = Join-Path $distDir ("sambah-" + $version + ".zip")
 
 if (-not (Test-Path -LiteralPath $distDir)) { New-Item -ItemType Directory -Path $distDir | Out-Null }
-if (Test-Path -LiteralPath $stageDir) { Remove-Item -LiteralPath $stageDir -Recurse -Force }
 if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
-New-Item -ItemType Directory -Path $stageDir | Out-Null
 
-$trackedFiles = git -C $projectRoot ls-files --cached --others --exclude-standard
-foreach ($relative in $trackedFiles) {
-  $source = Join-Path $projectRoot $relative
-  if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { continue }
-  $target = Join-Path $stageDir $relative
-  $targetParent = Split-Path -Parent $target
-  if (-not (Test-Path -LiteralPath $targetParent)) { New-Item -ItemType Directory -Path $targetParent -Force | Out-Null }
-  Copy-Item -LiteralPath $source -Destination $target -Force
-}
-
-Compress-Archive -LiteralPath $stageDir -DestinationPath $zipPath -CompressionLevel Optimal
+git -C $projectRoot archive --format=zip --output=$zipPath HEAD
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $zipPath)) { throw "Falha ao gerar pacote Git da release." }
 $hash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $manifest = [ordered]@{
   version = $version
