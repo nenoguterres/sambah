@@ -17,6 +17,7 @@ const state = {
 };
 
 const SAMBAH_CONVERSAS_VERSION = "2.0.0";
+const SAMBAH_CONVERSAS_ASSET_VERSION = "20260730-operacional-2";
 const SAMBAH_CONVERSAS_TITLE = "SamBah Central";
 const listEl = document.querySelector("#conversationList");
 const chatEl = document.querySelector("#chatPane");
@@ -238,6 +239,7 @@ async function openConversation(id, { silent = false, wasNearBottom = true, mess
     if (!data.ok) throw new Error(data.error || "Conversa nao encontrada");
     state.selectedConversation = data.conversa;
     renderChat(data.conversa, { wasNearBottom, messageScroll });
+    document.dispatchEvent(new CustomEvent("sambah:conversation-opened", { detail: { id: data.conversa.id } }));
     if (data.conversa.unread) await postConversationAction(id, "read", { quiet: true });
     await acknowledgeOpenAlert(id);
   } catch (error) {
@@ -364,7 +366,7 @@ async function sendReply(id) {
       clearDraft(id);
       state.pendingManualSendId = "";
     }
-    if (status) status.textContent = data.enviado ? "Mensagem enviada." : `Mensagem registrada: ${data.reason || "sem envio real"}`;
+    if (status) status.textContent = data.enviado ? "Mensagem enviada." : manualSendFailureText(data);
     await refreshInbox({ initial: false });
   } catch (error) {
     if (error.sessionRedirect) return;
@@ -445,7 +447,7 @@ function conversationDeleteErrorMessage(error = "", reason = "") {
 async function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
   try {
-    await navigator.serviceWorker.register(`/sambah-conversas-sw.js?v=${SAMBAH_CONVERSAS_VERSION}`);
+    await navigator.serviceWorker.register(`/sambah-conversas-sw.js?v=${SAMBAH_CONVERSAS_ASSET_VERSION}`);
   } catch {}
 }
 
@@ -540,11 +542,27 @@ function clearDraft(id) {
 }
 
 function renderMessage(message) {
+  const errorDetail = message.direction === "out" && message.errorMessage
+    ? `<span class="message-error">${escapeHtml(metaErrorLabel(message))}</span>`
+    : "";
   return `<article class="message ${message.direction === "out" ? "out" : "in"}">
     <p>${escapeHtml(message.text || message.transcricao || labelStatus(message.type))}</p>
     <small>${escapeHtml(formatTime(message.createdAt))} · ${escapeHtml(message.status || "")}</small>
+    ${errorDetail}
     ${state.activeRole === "ADMIN" ? `<button class="message-delete" type="button" data-delete-message="${escapeAttr(message.id || "")}" title="Excluir mensagem">Excluir</button>` : ""}
   </article>`;
+}
+
+function manualSendFailureText(data = {}) {
+  const error = data.sendResult?.response?.error || {};
+  const code = error.code || data.message?.errorCode || "";
+  const message = error.message || data.message?.errorMessage || data.sendResult?.error || "";
+  if (message) return `Falha no WhatsApp${code ? ` (${code})` : ""}: ${message}`;
+  return `Mensagem não enviada: ${data.reason || "falha desconhecida"}`;
+}
+
+function metaErrorLabel(message = {}) {
+  return `Erro Meta${message.errorCode ? ` ${message.errorCode}` : ""}: ${message.errorMessage}`;
 }
 
 function labelStatus(status = "") {

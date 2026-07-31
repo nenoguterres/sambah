@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import { createRequire } from "node:module";
 import { dirname, extname, join, normalize } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { AuditService } from "./auditService.js";
+import { AuditService, maskSensitive } from "./auditService.js";
 import { CallCenterService } from "./callCenterService.js";
 import { CrmService } from "./crmService.js";
 import { EventScheduleService } from "./eventScheduleService.js";
@@ -931,6 +931,24 @@ export function createApp({
           runtimeConfig: appRuntimeConfig || getRuntimeConfig(),
           whatsappProvider: appWhatsappProvider
         });
+        if (
+          result.ok
+          && result.duplicate !== true
+          && result.duplicated !== true
+          && result.sendResult
+          && result.enviado !== true
+        ) {
+          const diagnostic = manualSendFailureDiagnostic(result);
+          console.error("whatsapp.manual_send.failed", diagnostic);
+          await safeAuditRecord(auditService, {
+            type: "whatsapp_manual_send_failed",
+            status: "error",
+            source: "conversas",
+            message: "Falha no envio manual pela Meta",
+            context: diagnostic,
+            dedupeKey: `manual-send:${result.message?.manualSendId || result.message?.id || "unknown"}`
+          });
+        }
         if (
           result.ok
           && result.message
@@ -3965,6 +3983,20 @@ async function safeAuditRecord(auditService, event) {
     console.error("[samBah audit]", error);
     return { event: null, duplicated: false, error };
   }
+}
+
+function manualSendFailureDiagnostic(result = {}) {
+  const providerError = result.sendResult?.response?.error || {};
+  return maskSensitive({
+    status: result.reason || result.sendResult?.status || result.message?.status || "send_failed",
+    httpStatus: result.sendResult?.httpStatus || result.message?.httpStatus || null,
+    metaCode: providerError.code || result.message?.errorCode || "",
+    metaSubcode: providerError.error_subcode || "",
+    metaType: providerError.type || "",
+    metaMessage: providerError.message || result.message?.errorMessage || result.sendResult?.error || "",
+    metaDetails: providerError.error_data?.details || "",
+    manualSendId: result.message?.manualSendId || ""
+  });
 }
 
 async function safeCrmRecord(crmService, payload) {

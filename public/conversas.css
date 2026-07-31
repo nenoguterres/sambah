@@ -625,6 +625,14 @@ body.sambah-shell-mounted .app {
   text-align: right;
 }
 
+.message .message-error {
+  display: block;
+  margin-top: 6px;
+  color: #ffb4b4;
+  font-weight: 700;
+  text-align: left;
+}
+
 .day-marker {
   align-self: center;
   border-radius: 8px;
@@ -766,11 +774,11 @@ body.sambah-shell-mounted .app {
     min-height: 0;
   }
 
-  body.mobile-chat-open .sidebar {
+  body.conversation-mobile-chat-open .sidebar {
     display: none;
   }
 
-  body.mobile-chat-open .chat {
+  body.conversation-mobile-chat-open .chat {
     display: grid;
   }
 

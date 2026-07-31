@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import crypto from "node:crypto";
 
@@ -71,6 +71,7 @@ export class AuditService {
   constructor({ filePath = "data/audit-logs.json", now = () => new Date() } = {}) {
     this.filePath = filePath;
     this.now = now;
+    this.mutationQueue = Promise.resolve();
   }
 
   async listLogs({ limit = DEFAULT_LIMIT, offset = 0, type, status } = {}) {
@@ -103,6 +104,10 @@ export class AuditService {
   }
 
   async record(input) {
+    return this.#serializeMutation(() => this.#record(input));
+  }
+
+  async #record(input) {
     const all = await this.readAll();
     const createdAt = this.now().toISOString();
     const event = {
@@ -129,7 +134,7 @@ export class AuditService {
   async readAll() {
     try {
       const raw = await readFile(this.filePath, "utf8");
-      const parsed = JSON.parse(stripBom(raw) || "[]");
+      const parsed = parseAuditStore(raw);
       return Array.isArray(parsed) ? parsed : [];
     } catch (error) {
       if (error.code === "ENOENT") {
@@ -142,7 +147,14 @@ export class AuditService {
 
   async writeAll(events) {
     await mkdir(dirname(this.filePath), { recursive: true });
-    await writeFile(this.filePath, `${JSON.stringify(events, null, 2)}\n`, "utf8");
+    const tempPath = `${this.filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+    try {
+      await writeFile(tempPath, `${JSON.stringify(events, null, 2)}\n`, "utf8");
+      await rename(tempPath, this.filePath);
+    } catch (error) {
+      await rm(tempPath, { force: true }).catch(() => {});
+      throw error;
+    }
   }
 
   isDuplicate(events, event) {
@@ -155,8 +167,86 @@ export class AuditService {
       return Number.isFinite(entryTime) && eventTime - entryTime <= DEDUPE_WINDOW_MS;
     });
   }
+
+  #serializeMutation(operation) {
+    const next = this.mutationQueue.then(operation, operation);
+    this.mutationQueue = next.catch(() => {});
+    return next;
+  }
 }
 
 function stripBom(value = "") {
   return value.charCodeAt(0) === 0xfeff ? value.slice(1) : value;
+}
+
+function parseAuditStore(raw = "") {
+  const text = (stripBom(raw) || "[]").trim() || "[]";
+  try {
+    return JSON.parse(text);
+  } catch (originalError) {
+    const documents = extractCompleteJsonArrays(text);
+    if (documents.length === 0) throw originalError;
+    const events = [];
+    const identifiers = new Set();
+    for (const document of documents) {
+      for (const event of document) {
+        if (!event || typeof event !== "object" || Array.isArray(event)) continue;
+        const identifier = String(event.id || stableStringify(event));
+        if (identifiers.has(identifier)) continue;
+        identifiers.add(identifier);
+        events.push(event);
+      }
+    }
+    events.sort((left, right) => Date.parse(right.createdAt || 0) - Date.parse(left.createdAt || 0));
+    console.info("audit.store.recovered_concatenated_json", {
+      status: "recovered_concatenated_json",
+      documents: documents.length,
+      events: events.length
+    });
+    return events;
+  }
+}
+
+function extractCompleteJsonArrays(text = "") {
+  const documents = [];
+  let index = 0;
+  while (index < text.length) {
+    while (index < text.length && /\s/.test(text[index])) index += 1;
+    if (text[index] !== "[") break;
+    const start = index;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    let end = -1;
+    for (; index < text.length; index += 1) {
+      const character = text[index];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (character === "\\") escaped = true;
+        else if (character === "\"") inString = false;
+        continue;
+      }
+      if (character === "\"") {
+        inString = true;
+        continue;
+      }
+      if (character === "[") depth += 1;
+      else if (character === "]") {
+        depth -= 1;
+        if (depth === 0) {
+          end = index + 1;
+          break;
+        }
+      }
+    }
+    if (end === -1) break;
+    try {
+      const parsed = JSON.parse(text.slice(start, end));
+      if (Array.isArray(parsed)) documents.push(parsed);
+    } catch {
+      break;
+    }
+    index = end;
+  }
+  return documents;
 }

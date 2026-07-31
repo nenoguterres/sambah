@@ -39,12 +39,13 @@ test("controlador móvel oferece abertura do chat e retorno à lista", async () 
   assert.match(source, /data-mobile-back/);
   assert.match(source, /← Conversas/);
   assert.match(source, /closest\("\.conversation-item"\)/);
+  assert.match(source, /sambah:conversation-opened/);
   assert.match(source, /classList\.remove\("conversation-mobile-chat-open"\)/);
 });
 
 test("HTML carrega os recursos móveis após o controlador principal", async () => {
   const html = await readFile("public/conversas.html", "utf8");
-  assert.match(html, /20260730-whatsapp-alert-1/);
+  assert.match(html, /20260730-operacional-2/);
   assert.match(html, /href="\/mobile-inbox\.css(?:\?[^"]*)?"/);
   assert.ok(html.search(/src="\/mobile-inbox\.js(?:\?[^"]*)?"/) > html.search(/src="\/conversas\.js(?:\?[^"]*)?"/));
 });
