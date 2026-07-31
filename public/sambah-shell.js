@@ -16,7 +16,7 @@
       tone: "core",
       commands: [
         { label: "Visão geral", href: "/sambah-central" },
-        { label: "Mesa do Xeriffe", href: "http://127.0.0.1:4173/" },
+        { label: "Mesa do Xeriffe", href: "http://127.0.0.1:4173/", localOnly: true, status: "somente no computador da Mesa" },
         { label: "SamBah CRM", href: "/sambah-crm" },
         { label: "SamBah Pay", href: "/sambah-pay" },
         { label: "Pérola", href: "/perola" }
@@ -45,7 +45,7 @@
       tone: "core",
       commands: [
         { label: "Conversas", href: "/conversas" },
-        { label: "WhatsApp", status: "preparação / integração pendente", disabled: true },
+        { label: "WhatsApp", href: "/conversas", status: "ativo" },
         { label: "Orçamentos", href: "/eventos" },
         { label: "Handoff humano", href: "/sambah-handoff" },
         { label: "Histórico", href: "/admin#auditLogs" }
@@ -72,7 +72,7 @@
       tone: "core",
       commands: [
         { label: "Integração Mesa", href: "/admin#mesaBridge" },
-        { label: "Abrir Mesa", href: "http://127.0.0.1:4173/" },
+        { label: "Abrir Mesa", href: "http://127.0.0.1:4173/", localOnly: true, status: "somente no computador da Mesa" },
         { label: "Pedidos Site → Mesa", href: "/sambah-crm#pedidos" },
         { label: "Pré-comandas", href: "/sambah-crm#precomandas" },
         { label: "Cozinha", href: "/cozinha" },
@@ -126,6 +126,60 @@
     }
   ];
 
+  const DEMO_ACTION_PATTERN = /\b(demo|simular|simulacao|teste|testar|dry-run|seed)\b|publicar mensagem teste|fraude locker|zona nao autorizada|device offline|porta sem pagamento|peso suspeito/i;
+  let usabilityObserverStarted = false;
+
+  function isSmallTouchDevice() {
+    return window.matchMedia("(max-width: 760px)").matches
+      && (navigator.maxTouchPoints || 0) > 0;
+  }
+
+  function normalizedText(value = "") {
+    return String(value)
+      .normalize("NFD")
+      .replace(/\p{Diacritic}/gu, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function enhancePageUsability(root = document) {
+    root.querySelectorAll("button").forEach((button) => {
+      if (button.dataset.sambahUsabilityReady === "true") return;
+      button.dataset.sambahUsabilityReady = "true";
+
+      const label = normalizedText(button.textContent || button.getAttribute("aria-label") || button.title);
+      if (DEMO_ACTION_PATTERN.test(label)) {
+        button.classList.add("sambah-demo-action");
+        if (!button.title) button.title = "Ação de teste ou simulação";
+        button.addEventListener("click", (event) => {
+          const confirmed = window.confirm("Esta é uma ação de teste ou simulação. Deseja continuar?");
+          if (confirmed) return;
+          event.preventDefault();
+          event.stopImmediatePropagation();
+        }, true);
+      }
+    });
+
+    root.querySelectorAll(".eco-notice, .result-line, [id$='Message'], [id$='Status']").forEach((element) => {
+      if (!element.hasAttribute("role")) element.setAttribute("role", "status");
+      if (!element.hasAttribute("aria-live")) element.setAttribute("aria-live", "polite");
+    });
+  }
+
+  function startUsabilityObserver() {
+    if (usabilityObserverStarted || !document.body) return;
+    usabilityObserverStarted = true;
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        mutation.addedNodes.forEach((node) => {
+          if (node.nodeType !== Node.ELEMENT_NODE) return;
+          enhancePageUsability(node);
+        });
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
+
   function readOpenGroups() {
     try {
       return JSON.parse(localStorage.getItem(STORAGE_KEYS.openGroups) || "[]");
@@ -153,17 +207,18 @@
   }
 
   function createLink(command) {
-    if (command.action || command.disabled) {
+    const unavailableLocal = command.localOnly && isSmallTouchDevice();
+    if (command.action || command.disabled || unavailableLocal) {
       const button = document.createElement("button");
       button.className = "sambah-shell-subcommand";
       button.type = "button";
       button.textContent = command.label;
       if (command.action) button.dataset.action = command.action;
       if (command.status) button.dataset.status = command.status;
-      if (command.disabled) {
+      if (command.disabled || unavailableLocal) {
         button.disabled = true;
         button.classList.add("is-disabled");
-        button.title = command.status || "Em preparacao";
+        button.title = command.status || "Indisponível neste dispositivo";
       }
       if (command.action) {
         button.addEventListener("click", () => runShellAction(command.action, button));
@@ -266,7 +321,7 @@
     shell.setAttribute("aria-label", "Navegacao integrada SamBah");
     shell.dataset.activeModule = activeModule;
 
-    const collapsed = readCollapsedState();
+    const collapsed = isSmallTouchDevice() ? true : readCollapsedState();
     shell.classList.toggle("is-collapsed", collapsed);
     document.body.classList.add("sambah-shell-mounted");
     document.body.classList.toggle("sambah-shell-collapsed", collapsed);
@@ -302,11 +357,17 @@
 
     const footer = document.createElement("footer");
     footer.className = "sambah-shell-footer";
-    footer.innerHTML = "<span>Status</span><strong>Local</strong>";
+    const footerLabel = document.createElement("span");
+    footerLabel.textContent = "Ambiente";
+    const footerValue = document.createElement("strong");
+    footerValue.textContent = ["localhost", "127.0.0.1"].includes(window.location.hostname) ? "Local" : "Produção";
+    footer.append(footerLabel, footerValue);
 
     shell.append(header, nav, footer);
     document.body.prepend(shell);
     writeOpenGroups(openGroups);
+    enhancePageUsability();
+    startUsabilityObserver();
     return shell;
   }
 
