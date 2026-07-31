@@ -82,7 +82,7 @@ async function checkForRelease() {
     if (!release.ok || release.version === SAMBAH_CONVERSAS_VERSION) return;
     const banner = document.createElement("section");
     banner.className = "release-update-banner";
-    banner.innerHTML = `<strong>AtualizaÃ§Ã£o ${escapeHtml(release.version)} disponÃ­vel</strong><button type="button">Atualizar agora</button>`;
+    banner.innerHTML = `<strong>Atualização ${escapeHtml(release.version)} disponível</strong><button type="button">Atualizar agora</button>`;
     banner.querySelector("button")?.addEventListener("click", async () => {
       const registration = await navigator.serviceWorker?.getRegistration?.();
       await registration?.update?.();
@@ -302,7 +302,7 @@ function renderActionMenu(conversa) {
   if (!["finalizada", "resolvido", "arquivada"].includes(conversa.status)) actions.push(["waiting", "Aguardando cliente"], ["resolve", "Finalizar atendimento"]);
   if (["finalizada", "resolvido", "arquivada"].includes(conversa.status)) actions.push(["reopen", "Reabrir atendimento"]);
   if (conversa.status !== "arquivada") actions.push(["archive", "Arquivar"]);
-  actions.push(["event-form", "Abrir formulÃ¡rio de evento"]);
+  actions.push(["event-form", "Abrir formulário de evento"]);
   if (state.activeRole === "ADMIN") actions.push(["clear", "Limpar histórico"]);
   if (state.activeRole === "ADMIN" && conversa.canDelete === true) actions.push(["delete-conversation", "Excluir conversa"]);
   return actions.map(([action, label]) => {
@@ -580,11 +580,11 @@ function labelStatus(status = "") {
 }
 
 async function resetInitialQueue() {
-  if (!window.confirm("Arquivar todas as conversas atuais e deixar a fila vazia? O histÃ³rico serÃ¡ preservado.")) return;
+  if (!window.confirm("Arquivar todas as conversas atuais e deixar a fila vazia? O histórico será preservado.")) return;
   const response = await authFetch("/api/conversas/maintenance/reset-queue", { method: "POST" });
   const data = await response.json();
-  if (!data.ok) return window.alert(data.error || "NÃ£o foi possÃ­vel zerar a fila.");
-  window.alert(data.alreadyApplied ? "A limpeza inicial jÃ¡ foi aplicada." : `${data.archived} conversas foram movidas para o HistÃ³rico.`);
+  if (!data.ok) return window.alert(data.error || "Não foi possível zerar a fila.");
+  window.alert(data.alreadyApplied ? "A limpeza inicial já foi aplicada." : `${data.archived} conversas foram movidas para o Histórico.`);
   state.selectedId = "";
   state.selectedConversation = null;
   await refreshInbox({ initial: false });
