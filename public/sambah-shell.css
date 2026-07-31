@@ -262,3 +262,87 @@ body.sambah-shell-mounted.sambah-shell-collapsed:not(.sambah-admin-shell):not(.s
     padding-left: var(--sambah-shell-collapsed-width);
   }
 }
+
+/* Camada compartilhada de usabilidade — 31/07/2026 */
+.sambah-shell :where(button, a, input, select, textarea):focus-visible,
+body :where(button, a, input, select, textarea):focus-visible {
+  outline: 3px solid #fbbf24;
+  outline-offset: 2px;
+}
+
+button.sambah-demo-action {
+  border-color: rgba(251, 191, 36, 0.78) !important;
+  box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.2);
+}
+
+button.sambah-demo-action::after {
+  content: " · TESTE";
+  font-size: 0.72em;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+
+@media (max-width: 760px) {
+  :root {
+    --sambah-shell-collapsed-width: 64px;
+  }
+
+  .sambah-shell {
+    width: min(320px, 88vw);
+    max-height: 100dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .sambah-shell.is-collapsed {
+    width: var(--sambah-shell-collapsed-width);
+    padding-inline: 8px;
+  }
+
+  .sambah-shell.is-collapsed .sambah-shell-module-toggle {
+    justify-content: center;
+    min-height: 46px;
+    padding-inline: 4px;
+  }
+
+  .sambah-shell.is-collapsed .sambah-shell-module-toggle span:first-child {
+    max-width: 48px;
+    overflow: visible;
+    font-size: 0;
+    text-align: center;
+  }
+
+  .sambah-shell.is-collapsed .sambah-shell-module-toggle span:first-child::before {
+    content: attr(data-short-label);
+    font-size: 11px;
+    font-weight: 900;
+  }
+
+  .sambah-shell.is-collapsed .sambah-shell-caret {
+    display: none;
+  }
+
+  .sambah-shell-nav {
+    padding-bottom: 60px;
+  }
+
+  .sambah-shell-subcommand,
+  .sambah-shell-module-toggle {
+    min-height: 44px;
+  }
+
+  body.sambah-shell-mounted {
+    overflow-x: hidden;
+  }
+
+  body :where(input, select, textarea) {
+    font-size: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sambah-shell,
+  .sambah-shell-caret {
+    transition: none;
+  }
+}
