@@ -41,6 +41,8 @@
     showChat();
   });
 
+  document.addEventListener("sambah:conversation-opened", () => showChat());
+
   const observer = chatEl ? new MutationObserver(() => {
     ensureBackButton();
     if (!manualListView && isMobile() && chatEl.querySelector(".chat-header")) showChat();

@@ -16,12 +16,14 @@ const state = {
   lastAttentionTotal: 0
 };
 
-const SAMBAH_CONVERSAS_VERSION = "20260730-whatsapp-alert-1";
+const SAMBAH_CONVERSAS_VERSION = "2.0.0";
+const SAMBAH_CONVERSAS_ASSET_VERSION = "20260730-operacional-2";
 const SAMBAH_CONVERSAS_TITLE = "SamBah Central";
 const listEl = document.querySelector("#conversationList");
 const chatEl = document.querySelector("#chatPane");
 const searchInput = document.querySelector("#searchInput");
 const refreshButton = document.querySelector("#refreshButton");
+const resetQueueButton = document.querySelector("#resetQueueButton");
 const connectionStatusEl = document.querySelector("#connectionStatus");
 const humanAlertPanelEl = document.querySelector("#humanAlertPanel");
 const pushPanelEl = document.querySelector("#pushPanel");
@@ -33,9 +35,12 @@ const ACTION_ENDPOINTS = {
   transfer: "/transfer",
   resolve: "/resolve",
   reopen: "/reopen",
+  waiting: "/waiting",
+  archive: "/archive",
   messages: "/messages"
 };
 refreshButton?.addEventListener("click", refreshInbox);
+resetQueueButton?.addEventListener("click", resetInitialQueue);
 searchInput?.addEventListener("input", (event) => {
   state.query = event.target.value;
   renderList();
@@ -66,7 +71,25 @@ async function init() {
   const authenticated = await loadActiveUser();
   if (!authenticated) return;
   await registerServiceWorker();
+  await checkForRelease();
   await refreshInbox({ initial: true });
+}
+
+async function checkForRelease() {
+  try {
+    const response = await authFetch("/api/releases/current", { cache: "no-store" });
+    const release = await response.json();
+    if (!release.ok || release.version === SAMBAH_CONVERSAS_VERSION) return;
+    const banner = document.createElement("section");
+    banner.className = "release-update-banner";
+    banner.innerHTML = `<strong>Atualização ${escapeHtml(release.version)} disponível</strong><button type="button">Atualizar agora</button>`;
+    banner.querySelector("button")?.addEventListener("click", async () => {
+      const registration = await navigator.serviceWorker?.getRegistration?.();
+      await registration?.update?.();
+      location.reload();
+    });
+    document.body.prepend(banner);
+  } catch {}
 }
 
 async function loadActiveUser() {
@@ -76,6 +99,7 @@ async function loadActiveUser() {
     const data = await response.json();
     state.activeRole = data.user?.role || "ADMIN";
     state.activeUser = data.user?.username || data.user?.displayName || "operador";
+    if (resetQueueButton) resetQueueButton.hidden = state.activeRole !== "ADMIN";
     return true;
   } catch (error) {
     if (error.sessionRedirect) return false;
@@ -215,6 +239,7 @@ async function openConversation(id, { silent = false, wasNearBottom = true, mess
     if (!data.ok) throw new Error(data.error || "Conversa nao encontrada");
     state.selectedConversation = data.conversa;
     renderChat(data.conversa, { wasNearBottom, messageScroll });
+    document.dispatchEvent(new CustomEvent("sambah:conversation-opened", { detail: { id: data.conversa.id } }));
     if (data.conversa.unread) await postConversationAction(id, "read", { quiet: true });
     await acknowledgeOpenAlert(id);
   } catch (error) {
@@ -274,8 +299,10 @@ function renderActionMenu(conversa) {
   else actions.push(["unread", "Marcar como não lida"]);
   if (canClaim(conversa)) actions.push(["claim", "Assumir atendimento"]);
   if (conversa.assignedOperatorPhone) actions.push(["release", "Liberar atendimento"], ["transfer", "Transferir atendimento"]);
-  if (conversa.status !== "resolvido") actions.push(["resolve", "Marcar como atendida"]);
-  if (conversa.status === "resolvido") actions.push(["reopen", "Reabrir atendimento"]);
+  if (!["finalizada", "resolvido", "arquivada"].includes(conversa.status)) actions.push(["waiting", "Aguardando cliente"], ["resolve", "Finalizar atendimento"]);
+  if (["finalizada", "resolvido", "arquivada"].includes(conversa.status)) actions.push(["reopen", "Reabrir atendimento"]);
+  if (conversa.status !== "arquivada") actions.push(["archive", "Arquivar"]);
+  actions.push(["event-form", "Abrir formulário de evento"]);
   if (state.activeRole === "ADMIN") actions.push(["clear", "Limpar histórico"]);
   if (state.activeRole === "ADMIN" && conversa.canDelete === true) actions.push(["delete-conversation", "Excluir conversa"]);
   return actions.map(([action, label]) => {
@@ -285,6 +312,10 @@ function renderActionMenu(conversa) {
 }
 
 async function handleAction(conversa, action) {
+  if (action === "event-form") {
+    window.open(`/evento/insano?conversationId=${encodeURIComponent(conversa.id)}&phone=${encodeURIComponent(conversa.telefone || "")}`, "_blank", "noopener");
+    return;
+  }
   if (action === "delete" || action === "delete-conversation") return deleteConversation(conversa.id);
   if (action === "clear") return clearHistory(conversa.id);
   const body = { expectedVersion: conversa.version || 0 };
@@ -335,7 +366,7 @@ async function sendReply(id) {
       clearDraft(id);
       state.pendingManualSendId = "";
     }
-    if (status) status.textContent = data.enviado ? "Mensagem enviada." : `Mensagem registrada: ${data.reason || "sem envio real"}`;
+    if (status) status.textContent = data.enviado ? "Mensagem enviada." : manualSendFailureText(data);
     await refreshInbox({ initial: false });
   } catch (error) {
     if (error.sessionRedirect) return;
@@ -416,7 +447,7 @@ function conversationDeleteErrorMessage(error = "", reason = "") {
 async function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
   try {
-    await navigator.serviceWorker.register(`/sambah-conversas-sw.js?v=${SAMBAH_CONVERSAS_VERSION}`);
+    await navigator.serviceWorker.register(`/sambah-conversas-sw.js?v=${SAMBAH_CONVERSAS_ASSET_VERSION}`);
   } catch {}
 }
 
@@ -470,10 +501,12 @@ async function acknowledgeOpenAlert(conversationId) {
 }
 
 function matchesFilter(item) {
+  if (state.filter === "queue" || state.filter === "all") return !["finalizada", "resolvido", "arquivada"].includes(item.status);
+  if (state.filter === "history") return ["finalizada", "resolvido", "arquivada"].includes(item.status);
   if (state.filter === "unread") return item.unread === true;
   if (state.filter === "human") return item.status === "humano";
   if (state.filter === "inProgress") return item.status === "em_atendimento";
-  if (state.filter === "resolved") return item.status === "resolvido";
+  if (state.filter === "resolved") return ["finalizada", "resolvido"].includes(item.status);
   return true;
 }
 
@@ -484,7 +517,7 @@ function matchesSearch(item) {
 }
 
 function canClaim(conversa) {
-  return !conversa.assignedOperatorPhone && conversa.status !== "resolvido";
+  return !conversa.assignedOperatorPhone && !["finalizada", "resolvido", "arquivada"].includes(conversa.status);
 }
 
 function draftKey(id) {
@@ -509,21 +542,52 @@ function clearDraft(id) {
 }
 
 function renderMessage(message) {
+  const errorDetail = message.direction === "out" && message.errorMessage
+    ? `<span class="message-error">${escapeHtml(metaErrorLabel(message))}</span>`
+    : "";
   return `<article class="message ${message.direction === "out" ? "out" : "in"}">
     <p>${escapeHtml(message.text || message.transcricao || labelStatus(message.type))}</p>
     <small>${escapeHtml(formatTime(message.createdAt))} · ${escapeHtml(message.status || "")}</small>
+    ${errorDetail}
     ${state.activeRole === "ADMIN" ? `<button class="message-delete" type="button" data-delete-message="${escapeAttr(message.id || "")}" title="Excluir mensagem">Excluir</button>` : ""}
   </article>`;
 }
 
+function manualSendFailureText(data = {}) {
+  const error = data.sendResult?.response?.error || {};
+  const code = error.code || data.message?.errorCode || "";
+  const message = error.message || data.message?.errorMessage || data.sendResult?.error || "";
+  if (message) return `Falha no WhatsApp${code ? ` (${code})` : ""}: ${message}`;
+  return `Mensagem não enviada: ${data.reason || "falha desconhecida"}`;
+}
+
+function metaErrorLabel(message = {}) {
+  return `Erro Meta${message.errorCode ? ` ${message.errorCode}` : ""}: ${message.errorMessage}`;
+}
+
 function labelStatus(status = "") {
   return {
+    nova: "Nova",
+    lida: "Lida",
     aguardando_equipe: "Aguardando equipe",
     humano: "Humano",
     em_atendimento: "Em atendimento",
     aguardando_cliente: "Aguardando cliente",
-    resolvido: "Resolvido"
+    finalizada: "Finalizada",
+    resolvido: "Finalizada",
+    arquivada: "Arquivada"
   }[status] || status || "Aguardando equipe";
+}
+
+async function resetInitialQueue() {
+  if (!window.confirm("Arquivar todas as conversas atuais e deixar a fila vazia? O histórico será preservado.")) return;
+  const response = await authFetch("/api/conversas/maintenance/reset-queue", { method: "POST" });
+  const data = await response.json();
+  if (!data.ok) return window.alert(data.error || "Não foi possível zerar a fila.");
+  window.alert(data.alreadyApplied ? "A limpeza inicial já foi aplicada." : `${data.archived} conversas foram movidas para o Histórico.`);
+  state.selectedId = "";
+  state.selectedConversation = null;
+  await refreshInbox({ initial: false });
 }
 
 function initialsFor(value = "") {

@@ -58,6 +58,30 @@ test("gera estatisticas e consulta logs com limite ampliado", async () => {
   });
 });
 
+test("serializa gravacoes concorrentes sem corromper o JSON", async () => {
+  await withAudit(async (audit, filePath) => {
+    await Promise.all(Array.from({ length: 40 }, (_, index) => audit.record({
+      type: "concurrent_event",
+      status: "info",
+      message: `Evento ${index}`
+    })));
+    const parsed = JSON.parse(await readFile(filePath, "utf8"));
+    assert.equal(parsed.length, 40);
+    assert.equal(new Set(parsed.map((event) => event.id)).size, 40);
+  });
+});
+
+test("recupera arrays JSON concatenados e normaliza no proximo registro", async () => {
+  await withAudit(async (audit, filePath) => {
+    await writeFile(filePath, '[{"id":"audit-a","createdAt":"2026-07-30T20:00:00.000Z"}]\n[{"id":"audit-b","createdAt":"2026-07-30T21:00:00.000Z"}]\n', "utf8");
+    const recovered = await audit.listLogs({ limit: 10 });
+    assert.equal(recovered.total, 2);
+    await audit.record({ type: "recovery_confirmed", status: "success", message: "Auditoria recuperada" });
+    const normalized = JSON.parse(await readFile(filePath, "utf8"));
+    assert.equal(normalized.length, 3);
+  });
+});
+
 test("nao duplica processing_error com mesma chave operacional", async () => {
   await withAudit(async (audit) => {
     const first = await audit.record({
@@ -252,7 +276,7 @@ test("Central de Conversas recebe texto e audio do WhatsApp sem envio automatico
     assert.equal(audioResponse.status, 200);
     assert.equal(audioBody.ok, true);
     assert.equal(audioBody.engine, "disabled");
-    assert.equal(audioBody.conversa.status, "aguardando_equipe");
+    assert.equal(audioBody.conversa.status, "nova");
 
     const conversations = await fetch(`${base}/api/conversas`).then((response) => response.json());
     assert.equal(conversations.ok, true);

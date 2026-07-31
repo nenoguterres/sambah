@@ -37,12 +37,26 @@ test("claim conflita com segundo operador, transfere, resolve, reabre e limpa hi
   const stale = await service.resolveConversation(id, { role: "ADMIN", username: "admin" }, { expectedVersion: first.conversa.version });
   assert.equal(stale.statusCode, 409);
   const resolved = await service.resolveConversation(id, { role: "ADMIN", username: "admin" }, { expectedVersion: transfer.conversa.version });
-  assert.equal(resolved.conversa.status, "resolvido");
+  assert.equal(resolved.conversa.status, "finalizada");
   const reopened = await service.reopenConversation(id, { role: "ADMIN", username: "admin" }, { expectedVersion: resolved.conversa.version });
-  assert.equal(reopened.conversa.status, "humano");
+  assert.equal(reopened.conversa.status, "em_atendimento");
   const blocked = await service.clearConversationHistory(id, { role: "OPERADOR", username: "op" });
   assert.equal(blocked.statusCode, 403);
   const cleared = await service.clearConversationHistory(id, { role: "ADMIN", username: "admin" });
   assert.equal(cleared.removedMessages, 1);
   assert.equal(cleared.conversa.mensagens.length, 0);
+});
+
+test("limpeza inicial arquiva fila sem apagar historico e nova mensagem reabre", async (t) => {
+  const { service, id } = await fixture(t);
+  const reset = await service.resetOperationalQueue({ role: "ADMIN", username: "admin" });
+  assert.equal(reset.archived, 1);
+  const archived = await service.get(id);
+  assert.equal(archived.conversa.status, "arquivada");
+  assert.equal(archived.conversa.mensagens.length, 1);
+  const repeated = await service.resetOperationalQueue({ role: "ADMIN", username: "admin" });
+  assert.equal(repeated.alreadyApplied, true);
+  const reopened = await service.recordNeutralIncoming({ telefone: "5551999999999", messageId: "wamid-state-reopen", text: "novo atendimento" });
+  assert.equal(reopened.conversa.status, "nova");
+  assert.equal(reopened.conversa.mensagens.length, 2);
 });

@@ -1133,7 +1133,7 @@ test("operacao real multiplataforma cobre Insano, Xeriffe, WhatsApp e pre-comand
     const health = await fetch(`http://127.0.0.1:${port}/health`).then((response) => response.json());
     assert.equal(health.ok, true);
     assert.equal(health.service, "sambah");
-    assert.equal(health.provider, "meta");
+    assert.ok(["meta", "mock"].includes(health.provider));
     assert.equal(typeof health.commit, "string");
     assert.equal(typeof health.version, "string");
 

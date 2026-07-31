@@ -5,7 +5,7 @@ import { extractWhatsAppMessageText } from "./whatsapp/whatsappWebhookParser.js"
 import { normalizeWhatsAppPhone, sameWhatsAppPhone, whatsappPhoneAliases } from "./whatsapp/phoneNumber.js";
 import { dedupeConversationMessages } from "./whatsapp/conversationMessageDedupe.js";
 
-const OPERATIONAL_STATUSES = new Set(["aguardando_equipe", "humano", "em_atendimento", "aguardando_cliente", "resolvido"]);
+const OPERATIONAL_STATUSES = new Set(["nova", "lida", "aguardando_equipe", "humano", "em_atendimento", "aguardando_cliente", "finalizada", "resolvido", "arquivada"]);
 const HUMAN_STATUSES = new Set(["humano", "em_atendimento"]);
 const MANUAL_SEND_ID_PATTERN = /^[A-Za-z0-9._:-]{8,200}$/;
 
@@ -113,7 +113,7 @@ export class WhatsAppConversationService {
       ultimaMensagem: text || describeMessageType(message.type),
       ultimaInteracao: now,
       updatedAt: now,
-      status: HUMAN_STATUSES.has(base.status) ? base.status : normalizeOperationalStatus(base.status || "aguardando_equipe"),
+      status: HUMAN_STATUSES.has(base.status) ? base.status : "nova",
       unread: true,
       lastInboundMessageId: message.id,
       respostaSugerida: "",
@@ -334,6 +334,7 @@ export class WhatsAppConversationService {
   async markRead(id, actor = {}) {
     return this.#serializeMutation(() => this.#mutateConversation(id, (conversation, now) => ({
       ...conversation,
+      status: conversation.status === "nova" || conversation.status === "aguardando_equipe" ? "lida" : conversation.status,
       unread: false,
       lastReadMessageId: conversation.lastInboundMessageId || lastInboundMessage(conversation)?.id || "",
       readAt: now,
@@ -429,7 +430,7 @@ export class WhatsAppConversationService {
       if (conflict) return conflict;
       return {
         ...conversation,
-        status: "resolvido",
+        status: "finalizada",
         unread: false,
         resolvedAt: now,
         resolvedBy: actorName(actor),
@@ -445,7 +446,8 @@ export class WhatsAppConversationService {
       if (conflict) return conflict;
       return {
         ...conversation,
-        status: conversation.assignedOperatorPhone ? "humano" : "aguardando_equipe",
+        status: conversation.assignedOperatorPhone ? "em_atendimento" : "nova",
+        unread: true,
         resolvedAt: null,
         resolvedBy: "",
         reopenedAt: now,
@@ -454,6 +456,56 @@ export class WhatsAppConversationService {
         version: Number(conversation.version || 1) + 1
       };
     }));
+  }
+
+  async markWaitingCustomer(id, actor = {}, { expectedVersion = null } = {}) {
+    return this.#serializeMutation(() => this.#mutateConversation(id, (conversation, now) => {
+      const conflict = checkVersion(conversation, expectedVersion);
+      if (conflict) return conflict;
+      return {
+        ...conversation,
+        status: "aguardando_cliente",
+        waitingCustomerAt: now,
+        waitingCustomerBy: actorName(actor),
+        updatedAt: now,
+        version: Number(conversation.version || 1) + 1
+      };
+    }));
+  }
+
+  async archiveConversation(id, actor = {}, { expectedVersion = null } = {}) {
+    return this.#serializeMutation(() => this.#mutateConversation(id, (conversation, now) => {
+      const conflict = checkVersion(conversation, expectedVersion);
+      if (conflict) return conflict;
+      return {
+        ...conversation,
+        status: "arquivada",
+        unread: false,
+        archivedAt: now,
+        archivedBy: actorName(actor),
+        updatedAt: now,
+        version: Number(conversation.version || 1) + 1
+      };
+    }));
+  }
+
+  async resetOperationalQueue(actor = {}, resetVersion = "2.0.0") {
+    if (String(actor.role || "").toUpperCase() !== "ADMIN") return { ok: false, statusCode: 403, error: "admin_required" };
+    return this.#serializeMutation(async () => {
+      const data = await this.#read();
+      if (data.operationalQueueResetVersion === resetVersion) return { ok: true, alreadyApplied: true, archived: 0, preservedMessages: true };
+      const now = this.now().toISOString();
+      let archived = 0;
+      data.conversas = data.conversas.map((conversation) => {
+        if (conversation.status === "arquivada") return conversation;
+        archived += 1;
+        return { ...conversation, status: "arquivada", unread: false, archivedAt: now, archivedBy: actorName(actor), updatedAt: now, version: Number(conversation.version || 1) + 1 };
+      });
+      data.operationalQueueResetVersion = resetVersion;
+      data.operationalQueueResetAt = now;
+      await this.#write(data);
+      return { ok: true, alreadyApplied: false, archived, preservedMessages: true, resetVersion };
+    });
   }
 
   async clearConversationHistory(id, actor = {}) {
@@ -565,7 +617,7 @@ export class WhatsAppConversationService {
     const last = new Date(conversation.ultimaInteracao || conversation.updatedAt || conversation.createdAt || this.now()).getTime();
     const minutes = Math.max(0, Math.floor((this.now().getTime() - last) / 60000));
     let prioridade = "normal";
-    if (conversation.status === "resolvido") prioridade = "baixa";
+    if (["finalizada", "resolvido", "arquivada"].includes(conversation.status)) prioridade = "baixa";
     else if (minutes >= 120) prioridade = "risco_de_perda";
     else if (minutes >= 30) prioridade = "alta";
     else if (minutes >= 15) prioridade = "media";
@@ -892,12 +944,15 @@ function checkVersion(conversation = {}, expectedVersion = null) {
 }
 
 function buildConversationSummary(conversations = []) {
+  const historyStatuses = new Set(["finalizada", "resolvido", "arquivada"]);
   return {
     all: conversations.length,
+    queue: conversations.filter((item) => !historyStatuses.has(item.status)).length,
+    history: conversations.filter((item) => historyStatuses.has(item.status)).length,
     unread: conversations.filter((item) => item.unread === true).length,
     human: conversations.filter((item) => item.status === "humano").length,
     inProgress: conversations.filter((item) => item.status === "em_atendimento").length,
-    resolved: conversations.filter((item) => item.status === "resolvido").length
+    resolved: conversations.filter((item) => ["finalizada", "resolvido"].includes(item.status)).length
   };
 }
 
@@ -940,7 +995,7 @@ function normalizeConversationStore(parsed = {}) {
     }
     byPhone.set(existingKey, mergeConversationRecords(byPhone.get(existingKey), normalized));
   }
-  return { conversas: [...byPhone.values(), ...loose] };
+  return { ...parsed, conversas: [...byPhone.values(), ...loose] };
 }
 
 function normalizeConversationRecord(item = {}) {

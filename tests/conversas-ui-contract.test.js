@@ -144,7 +144,7 @@ test("atualização preserva lista enquanto a API responde e filtro atua nos ite
   fixture.window.document.querySelector("#refreshButton").click();
   await tick();
   assert.equal(fixture.window.document.querySelectorAll(".conversation-item").length, 1);
-  fixture.window.document.querySelector('[data-filter="resolved"]').click();
+  fixture.window.document.querySelector('[data-filter="history"]').click();
   assert.equal(fixture.window.document.querySelectorAll(".conversation-item").length, 0);
   release();
   await tick();
