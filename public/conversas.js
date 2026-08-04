@@ -17,7 +17,7 @@ const state = {
 };
 
 const SAMBAH_CONVERSAS_VERSION = "2.0.0";
-const SAMBAH_CONVERSAS_ASSET_VERSION = "20260730-operacional-2";
+const SAMBAH_CONVERSAS_ASSET_VERSION = "20260804-fila-atual";
 const SAMBAH_CONVERSAS_TITLE = "SamBah Central";
 const listEl = document.querySelector("#conversationList");
 const chatEl = document.querySelector("#chatPane");
@@ -581,13 +581,44 @@ function labelStatus(status = "") {
 
 async function resetInitialQueue() {
   if (!window.confirm("Arquivar todas as conversas atuais e deixar a fila vazia? O histórico será preservado.")) return;
-  const response = await authFetch("/api/conversas/maintenance/reset-queue", { method: "POST" });
-  const data = await response.json();
-  if (!data.ok) return window.alert(data.error || "Não foi possível zerar a fila.");
-  window.alert(data.alreadyApplied ? "A limpeza inicial já foi aplicada." : `${data.archived} conversas foram movidas para o Histórico.`);
-  state.selectedId = "";
-  state.selectedConversation = null;
-  await refreshInbox({ initial: false });
+  resetQueueButton.disabled = true;
+  try {
+    const response = await authFetch("/api/conversas/maintenance/reset-queue", { method: "POST" });
+    const data = await response.json();
+    if (!data.ok) return window.alert(data.error || "Não foi possível limpar a fila.");
+
+    const archived = Number(data.archived || 0);
+    window.alert(archived > 0
+      ? `${archived} conversas foram movidas para o Histórico.`
+      : "A fila já está vazia.");
+
+    state.selectedId = "";
+    state.selectedConversation = null;
+    state.items = state.items.map((item) => ["finalizada", "resolvido", "arquivada"].includes(item.status)
+      ? item
+      : { ...item, status: "arquivada", unread: false });
+    state.summary = {
+      ...state.summary,
+      queue: 0,
+      unread: 0,
+      human: 0,
+      inProgress: 0,
+      history: Number(state.summary.history || 0) + archived
+    };
+    updateCounters();
+    renderList();
+    chatEl.innerHTML = `
+      <div class="empty-state">
+        <strong>Fila operacional vazia</strong>
+        <span>As conversas foram preservadas no Histórico.</span>
+      </div>
+    `;
+    await refreshInbox({ initial: false });
+  } catch (error) {
+    if (!error.sessionRedirect) window.alert("Não foi possível limpar a fila.");
+  } finally {
+    resetQueueButton.disabled = false;
+  }
 }
 
 function initialsFor(value = "") {
