@@ -493,11 +493,10 @@ export class WhatsAppConversationService {
     if (String(actor.role || "").toUpperCase() !== "ADMIN") return { ok: false, statusCode: 403, error: "admin_required" };
     return this.#serializeMutation(async () => {
       const data = await this.#read();
-      if (data.operationalQueueResetVersion === resetVersion) return { ok: true, alreadyApplied: true, archived: 0, preservedMessages: true };
       const now = this.now().toISOString();
       let archived = 0;
       data.conversas = data.conversas.map((conversation) => {
-        if (conversation.status === "arquivada") return conversation;
+        if (["finalizada", "resolvido", "arquivada"].includes(conversation.status)) return conversation;
         archived += 1;
         return { ...conversation, status: "arquivada", unread: false, archivedAt: now, archivedBy: actorName(actor), updatedAt: now, version: Number(conversation.version || 1) + 1 };
       });
