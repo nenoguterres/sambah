@@ -20,7 +20,6 @@ export function routePortalInsanoMessage({ state, message, contract = portalInsa
     return waitingMesaState(routedState);
   }
   if (isPaymentClaim(text)) return startFlow(routedState, contract, "payment_receipt_review", "paymentSafety");
-  if (isCommercialVisitRequest(text)) return startFlow(routedState, contract, "human_handoff", "commercialVisitRequest");
   if (command) return handleNavigationCommand(routedState, contract, command);
   if (isWelcome(text) && routedState.activeFlow) return resumeActiveFlow(routedState, contract);
   if (routedState.activeFlow) return handleActiveFlow(routedState, contract, text, message.text);
@@ -39,6 +38,7 @@ export function routePortalInsanoMessage({ state, message, contract = portalInsa
   if (isExternalPortalArea(routedState)) {
     const selected = resolveMenuOption(contract.menus[routedState.activeMenu], text);
     if (selected) return executeAction(routedState, contract, selected.action, selected.id, menuCache);
+    if (shouldStartAssistedIntake(text)) return startAssistedIntake(routedState, text, message.text);
     return openMenu(routedState, contract, routedState.activeMenu, "fallbackMenu", routedState.menuStack || []);
   }
   if (isWelcome(text) && isPortalHome(routedState, contract)) {
@@ -49,6 +49,7 @@ export function routePortalInsanoMessage({ state, message, contract = portalInsa
   const currentMenuId = menuIdForScreen(currentScreen) || routedState.activeMenu || contract.welcome.menuId;
   const selected = resolveMenuOption(contract.menus[currentMenuId], text);
   if (selected) return executeAction(routedState, contract, selected.action, selected.id, menuCache);
+  if (shouldStartAssistedIntake(text)) return startAssistedIntake(routedState, text, message.text);
   return openMenu({ ...routedState, activeMenu: currentMenuId }, contract, currentMenuId, "fallbackMenu", routedState.menuStack || []);
 }
 
@@ -535,6 +536,7 @@ function startFlow(state, contract, flowId, source, action = {}) {
 }
 
 function handleActiveFlow(state, contract, text, rawText) {
+  if (state.activeFlow === "assisted_intake") return handleAssistedIntake(state, text, rawText);
   const flow = contract.flows[state.activeFlow];
   const step = flow?.steps.find((item) => item.id === state.activeStep);
   if (!flow || !step) return renderCurrentScreen({ ...state, activeFlow: null, activeStep: null, awaitingInput: false }, contract, "invalidFlowState");
@@ -753,7 +755,12 @@ function humanState(state) {
 }
 
 function waitingMesaState(state) {
-  return { handled: true, source: "waitingMesaOrder", nextState: state, replies: [], actions: [{ type: "await_mesa_order" }] };
+  return response(
+    "waitingMesaOrder",
+    state,
+    "Recebi tua mensagem. O pedido ainda aguarda retorno da Mesa. Para tratar outro assunto agora, digita inicio ou humano.",
+    [{ type: "await_mesa_order" }]
+  );
 }
 
 function resetToPortal(state, contract) {
@@ -761,7 +768,7 @@ function resetToPortal(state, contract) {
 }
 
 function isWelcome(text) {
-  return ["oi", "ola", "olá", "menu", "buenas", "quero pedir", "quero fazer um pedido"].includes(text);
+  return ["oi", "ola", "olá", "menu", "buenas", "opcoes", "ver opcoes", "quero ver as opcoes", "quero pedir", "quero fazer um pedido"].includes(text);
 }
 
 function isHumanReset(text) {
@@ -772,10 +779,184 @@ function isPaymentClaim(text) {
   return ["paguei", "pix feito", "enviei comprovante"].some((phrase) => text.includes(phrase));
 }
 
-function isCommercialVisitRequest(text) {
-  const scheduling = /\b(agendar|agendamento|marcar|combinarmos?|reuniao|reunir)\b/.test(text);
-  const meeting = /\b(visita|reuniao|horario|encontro|apresentacao)\b/.test(text);
-  return scheduling && meeting;
+const ASSISTED_INTAKE_PROFILES = {
+  visita: {
+    label: "Agendamento de visita",
+    opening: "Claro! Vamos adiantar teu pedido de visita.",
+    steps: [
+      ["date", "Dia desejado", "Para qual dia tu gostaria de agendar a visita?"],
+      ["time", "Horario desejado", "Qual horario seria melhor?"],
+      ["name", "Nome", "Em nome de quem devo registrar?"],
+      ["purpose", "Motivo", "Qual e o motivo da visita ou o que tu gostaria de conhecer?"]
+    ]
+  },
+  evento: {
+    label: "Evento ou contratacao",
+    opening: "Boa! Vou adiantar as informacoes do teu evento.",
+    steps: [
+      ["date", "Data", "Qual e a data prevista do evento?"],
+      ["city", "Cidade ou local", "Em qual cidade ou local sera realizado?"],
+      ["guests", "Quantidade de pessoas", "Para aproximadamente quantas pessoas?"],
+      ["name", "Nome", "Em nome de quem devo registrar a solicitacao?"]
+    ]
+  },
+  valor: {
+    label: "Preco ou orcamento",
+    opening: "Claro! Para informar o valor certo, preciso entender o pedido.",
+    steps: [
+      ["subject", "Produto ou servico", "De qual produto, servico ou projeto tu quer saber o valor?"],
+      ["scope", "Quantidade ou necessidade", "Qual quantidade ou necessidade aproximada?"],
+      ["deadline", "Prazo", "Para quando tu precisa?"],
+      ["name", "Nome", "Em nome de quem devo registrar o orcamento?"]
+    ]
+  },
+  projeto: {
+    label: "Interesse em projeto",
+    opening: "Que bom! Vamos identificar o projeto certo para ti.",
+    steps: [
+      ["area", "Area de interesse", "Qual projeto ou area despertou teu interesse?"],
+      ["objective", "Objetivo", "O que tu gostaria de conhecer ou resolver?"],
+      ["name", "Nome", "Qual e teu nome para eu registrar o contato?"]
+    ]
+  },
+  catalogo: {
+    label: "Cardapio ou catalogo",
+    opening: "Claro! Vou localizar o catalogo certo.",
+    steps: [
+      ["area", "Area desejada", "Tu procura o cardapio do Xeriffe, produtos para evento ou outra area?"],
+      ["need", "Necessidade", "O que tu gostaria de encontrar nesse catalogo?"],
+      ["name", "Nome", "Qual e teu nome para eu registrar o atendimento?"]
+    ]
+  },
+  contato: {
+    label: "Contato comercial",
+    opening: "Claro, podemos conversar. Vou adiantar o assunto para a equipe.",
+    steps: [
+      ["subject", "Assunto", "Sobre qual assunto tu gostaria de conversar?"],
+      ["period", "Melhor periodo", "Qual periodo e melhor para o contato?"],
+      ["name", "Nome", "Qual e teu nome?"]
+    ]
+  },
+  solicitacao: {
+    label: "Solicitacao comercial",
+    opening: "Entendi. Vou organizar teu pedido antes de encaminhar.",
+    steps: [
+      ["need", "Necessidade", "Me conta um pouco mais sobre o que tu precisa."],
+      ["deadline", "Prazo", "Para quando tu precisa disso?"],
+      ["name", "Nome", "Qual e teu nome para eu registrar a solicitacao?"]
+    ]
+  },
+  geral: {
+    label: "Atendimento geral",
+    opening: "Recebi tua mensagem e vou te ajudar a encaminhar corretamente.",
+    steps: [
+      ["objective", "Objetivo", "Me conta em uma frase o que tu gostaria de resolver."],
+      ["urgency", "Prazo ou urgencia", "Existe algum prazo ou urgencia?"],
+      ["name", "Nome", "Qual e teu nome para eu registrar o atendimento?"]
+    ]
+  }
+};
+
+function shouldStartAssistedIntake(text = "") {
+  return text.length >= 2 && /[a-z]/.test(text);
+}
+
+function startAssistedIntake(state, text, rawText) {
+  const intent = classifyAssistedIntent(text);
+  const profile = ASSISTED_INTAKE_PROFILES[intent];
+  const [firstField, , firstPrompt] = profile.steps[0];
+  const intake = {
+    intent,
+    label: profile.label,
+    originalMessage: cleanIntakeValue(rawText),
+    answers: {},
+    startedAt: new Date().toISOString()
+  };
+  return response(
+    "assistedIntake",
+    {
+      ...state,
+      activeFlow: "assisted_intake",
+      activeStep: firstField,
+      awaitingInput: true,
+      flowData: setField(state.flowData || {}, "preAttendance", intake)
+    },
+    `${profile.opening}\n\n${firstPrompt}`,
+    [{ type: "pre_attendance_started", intent }]
+  );
+}
+
+function handleAssistedIntake(state, text, rawText) {
+  const intake = state.flowData?.preAttendance || {};
+  const profile = ASSISTED_INTAKE_PROFILES[intake.intent] || ASSISTED_INTAKE_PROFILES.geral;
+  const stepIndex = profile.steps.findIndex(([field]) => field === state.activeStep);
+  if (stepIndex < 0) return startAssistedIntake(state, text, rawText);
+  const answer = cleanIntakeValue(rawText);
+  if (!answer) return response("assistedIntakeInvalid", state, profile.steps[stepIndex][2]);
+
+  const [field] = profile.steps[stepIndex];
+  const answers = { ...(intake.answers || {}), [field]: answer };
+  const nextStep = profile.steps[stepIndex + 1];
+  const updatedIntake = { ...intake, answers };
+  if (nextStep) {
+    return response(
+      "assistedIntake",
+      {
+        ...state,
+        activeStep: nextStep[0],
+        awaitingInput: true,
+        flowData: setField(state.flowData || {}, "preAttendance", updatedIntake)
+      },
+      nextStep[2],
+      [{ type: "pre_attendance_progress", intent: intake.intent, field }]
+    );
+  }
+
+  const summary = buildAssistedSummary(profile, updatedIntake);
+  let flowData = setField(state.flowData || {}, "preAttendance", { ...updatedIntake, completedAt: new Date().toISOString(), summary });
+  flowData = setField(flowData, "handoff", { reason: intake.originalMessage, intent: intake.intent, summary });
+  return response(
+    "assistedIntakeCompleted",
+    {
+      ...state,
+      mode: "human",
+      serviceState: "HUMANO",
+      activeFlow: null,
+      activeStep: null,
+      awaitingInput: false,
+      flowData
+    },
+    `${summary}\n\nVou encaminhar este resumo para a equipe confirmar os detalhes. Nenhuma data, valor, disponibilidade ou contratacao esta confirmada ainda.`,
+    [{ type: "notify_operator", intent: intake.intent, summary, collected: answers }]
+  );
+}
+
+function classifyAssistedIntent(text = "") {
+  const has = (pattern) => pattern.test(text);
+  if (has(/\b(agendar|agendamento|marcar|combinarmos?|visita|reuniao|encontro|apresentacao)\b/)) return "visita";
+  if (has(/\b(evento|festa|casamento|aniversario|formatura|food\s*truck|beer\s*truck)\b/)) return "evento";
+  if (has(/\b(preco|valor|custa|custar|orcamento|cotacao|quanto)\b/)) return "valor";
+  if (has(/\b(conhecer|projeto|sistema|solucao|demonstracao|plataforma)\b/)) return "projeto";
+  if (has(/\b(cardapio|catalogo|menu|produto|produtos)\b/)) return "catalogo";
+  if (has(/\b(conversar|conversa|duvida|ajuda|contato)\b/)) return "contato";
+  if (has(/\b(contratar|comprar|preciso|necessito|quero|gostaria|reservar)\b/)) return "solicitacao";
+  return "geral";
+}
+
+function buildAssistedSummary(profile, intake) {
+  const lines = [
+    "Resumo do pre-atendimento",
+    `Tipo: ${profile.label}`,
+    `Mensagem inicial: ${intake.originalMessage || "Nao informada"}`
+  ];
+  for (const [field, label] of profile.steps) {
+    lines.push(`${label}: ${intake.answers?.[field] || "Nao informado"}`);
+  }
+  return lines.join("\n");
+}
+
+function cleanIntakeValue(value = "") {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, 500);
 }
 
 function setField(data, path, value) {
