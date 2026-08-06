@@ -20,6 +20,7 @@ export function routePortalInsanoMessage({ state, message, contract = portalInsa
     return waitingMesaState(routedState);
   }
   if (isPaymentClaim(text)) return startFlow(routedState, contract, "payment_receipt_review", "paymentSafety");
+  if (isCommercialVisitRequest(text)) return startFlow(routedState, contract, "human_handoff", "commercialVisitRequest");
   if (command) return handleNavigationCommand(routedState, contract, command);
   if (isWelcome(text) && routedState.activeFlow) return resumeActiveFlow(routedState, contract);
   if (routedState.activeFlow) return handleActiveFlow(routedState, contract, text, message.text);
@@ -769,6 +770,12 @@ function isHumanReset(text) {
 
 function isPaymentClaim(text) {
   return ["paguei", "pix feito", "enviei comprovante"].some((phrase) => text.includes(phrase));
+}
+
+function isCommercialVisitRequest(text) {
+  const scheduling = /\b(agendar|agendamento|marcar|combinarmos?|reuniao|reunir)\b/.test(text);
+  const meeting = /\b(visita|reuniao|horario|encontro|apresentacao)\b/.test(text);
+  return scheduling && meeting;
 }
 
 function setField(data, path, value) {
