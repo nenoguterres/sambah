@@ -503,20 +503,58 @@ test("Portal Insano texto de pagamento nunca confirma pagamento", async () => {
   assert.equal(second.state.mode, "bot");
 });
 
-test("Portal Insano encaminha pedido livre de visita sem confirmar agenda", async () => {
+test("Portal Insano faz pre-atendimento de visita antes de encaminhar", async () => {
   const engine = createLabEngine({ observeOnly: true });
-  const result = await engine.processor.handleIncoming({
+  const from = "5551000000550";
+  const first = await engine.processor.handleIncoming({
     messageId: "wamid-commercial-visit",
-    from: "5551000000550",
+    from,
     text: "Podemos agendar uma visita!?"
   });
+  assert.equal(first.source, "assistedIntake");
+  assert.equal(first.state.activeFlow, "assisted_intake");
+  assert.match(first.replies[0].text, /qual dia/i);
 
-  assert.equal(result.source, "commercialVisitRequest");
-  assert.equal(result.state.mode, "human");
-  assert.equal(result.state.serviceState, "HUMANO");
-  assert.equal(result.actions[0].type, "notify_operator");
-  assert.match(result.replies[0].text, /encaminhada para atendimento humano/i);
-  assert.doesNotMatch(result.replies[0].text, /confirmad|agendad|disponivel/i);
+  const date = await engine.processor.handleIncoming({ messageId: "wamid-commercial-visit-date", from, text: "sexta-feira" });
+  assert.match(date.replies[0].text, /horario/i);
+  const time = await engine.processor.handleIncoming({ messageId: "wamid-commercial-visit-time", from, text: "14 horas" });
+  assert.match(time.replies[0].text, /nome/i);
+  const name = await engine.processor.handleIncoming({ messageId: "wamid-commercial-visit-name", from, text: "Maria Silva" });
+  assert.match(name.replies[0].text, /motivo/i);
+  const completed = await engine.processor.handleIncoming({ messageId: "wamid-commercial-visit-purpose", from, text: "Conhecer o projeto Obirici" });
+
+  assert.equal(completed.source, "assistedIntakeCompleted");
+  assert.equal(completed.state.mode, "human");
+  assert.equal(completed.state.serviceState, "HUMANO");
+  assert.equal(completed.actions[0].type, "notify_operator");
+  assert.match(completed.actions[0].summary, /sexta-feira/);
+  assert.match(completed.actions[0].summary, /14 horas/);
+  assert.match(completed.actions[0].summary, /Maria Silva/);
+  assert.match(completed.replies[0].text, /nenhuma .* esta confirmada/i);
+});
+
+test("Portal Insano humaniza mensagens livres representativas sem deixar vacuo", async () => {
+  const cases = [
+    ["Quanto custa?", /produto, servico ou projeto/i, "valor"],
+    ["Quero conhecer o projeto", /qual projeto ou area/i, "projeto"],
+    ["Quero contratar", /o que tu precisa/i, "solicitacao"],
+    ["Podemos conversar?", /qual assunto/i, "contato"],
+    ["Tenho uma ideia diferente", /o que tu gostaria de resolver/i, "geral"]
+  ];
+
+  for (const [index, [message, expectedReply, intent]] of cases.entries()) {
+    const engine = createLabEngine({ observeOnly: true });
+    const result = await engine.processor.handleIncoming({
+      messageId: `wamid-free-${index}`,
+      from: `555100000056${index}`,
+      text: message
+    });
+    assert.equal(result.source, "assistedIntake");
+    assert.equal(result.state.activeFlow, "assisted_intake");
+    assert.equal(result.state.flowData.preAttendance.intent, intent);
+    assert.equal(result.replies.length, 1);
+    assert.match(result.replies[0].text, expectedReply);
+  }
 });
 
 test("Portal Insano Xeriffe abre somente o cardapio publico rapido", async () => {
