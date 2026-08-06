@@ -773,8 +773,8 @@ function isPaymentClaim(text) {
 }
 
 function isCommercialVisitRequest(text) {
-  const scheduling = /\\b(agendar|agendamento|marcar|combinarmos?|reuniao|reunir)\\b/.test(text);
-  const meeting = /\\b(visita|reuniao|horario|encontro|apresentacao)\\b/.test(text);
+  const scheduling = /\b(agendar|agendamento|marcar|combinarmos?|reuniao|reunir)\b/.test(text);
+  const meeting = /\b(visita|reuniao|horario|encontro|apresentacao)\b/.test(text);
   return scheduling && meeting;
 }
 
