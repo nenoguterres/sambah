@@ -503,6 +503,22 @@ test("Portal Insano texto de pagamento nunca confirma pagamento", async () => {
   assert.equal(second.state.mode, "bot");
 });
 
+test("Portal Insano encaminha pedido livre de visita sem confirmar agenda", async () => {
+  const engine = createLabEngine({ observeOnly: true });
+  const result = await engine.processor.handleIncoming({
+    messageId: "wamid-commercial-visit",
+    from: "5551000000550",
+    text: "Podemos agendar uma visita!?"
+  });
+
+  assert.equal(result.source, "commercialVisitRequest");
+  assert.equal(result.state.mode, "human");
+  assert.equal(result.state.serviceState, "HUMANO");
+  assert.equal(result.actions[0].type, "notify_operator");
+  assert.match(result.replies[0].text, /encaminhada para atendimento humano/i);
+  assert.doesNotMatch(result.replies[0].text, /confirmad|agendad|disponivel/i);
+});
+
 test("Portal Insano Xeriffe abre somente o cardapio publico rapido", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000600";
