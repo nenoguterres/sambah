@@ -142,7 +142,43 @@
       .trim();
   }
 
+  function tooltipText(element) {
+    const explicit = element.getAttribute("data-tooltip")
+      || element.getAttribute("title")
+      || element.getAttribute("aria-label");
+    if (normalizedText(explicit)) return String(explicit).trim();
+
+    const visibleLabel = element.matches("input, textarea")
+      ? element.getAttribute("placeholder")
+      : element.textContent;
+    const label = String(visibleLabel || "").replace(/\s+/g, " ").trim();
+    if (!label || label.length > 120) return "";
+    return `Função: ${label}`;
+  }
+
+  function applyUsageTooltip(element) {
+    if (element.dataset.sambahTooltipReady === "true") return;
+    const text = tooltipText(element);
+    if (!text) return;
+    element.title = text;
+    element.dataset.sambahTooltipReady = "true";
+  }
+
   function enhancePageUsability(root = document) {
+    const interactiveSelector = [
+      "button",
+      "a[href]",
+      "[role='button']",
+      "input:not([type='hidden'])",
+      "select",
+      "textarea"
+    ].join(",");
+
+    if (root.nodeType === Node.ELEMENT_NODE && root.matches(interactiveSelector)) {
+      applyUsageTooltip(root);
+    }
+    root.querySelectorAll(interactiveSelector).forEach(applyUsageTooltip);
+
     root.querySelectorAll("button").forEach((button) => {
       if (button.dataset.sambahUsabilityReady === "true") return;
       button.dataset.sambahUsabilityReady = "true";
@@ -231,6 +267,11 @@
     link.href = command.href;
     link.textContent = command.label;
     if (command.status) link.dataset.status = command.status;
+    link.addEventListener("click", (event) => {
+      if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      window.location.assign(link.href);
+    });
     return link;
   }
 
