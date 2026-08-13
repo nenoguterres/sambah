@@ -142,24 +142,64 @@
       .trim();
   }
 
+  const TOOLTIP_DESCRIPTIONS = {
+    "visao geral": "Abre a visão geral e os indicadores principais do SamBah.",
+    "mesa do xeriffe": "Abre o aplicativo Mesa do Xeriffe neste computador.",
+    "sambah crm": "Abre o cadastro e o acompanhamento de clientes e oportunidades.",
+    "sambah pay": "Abre as ferramentas de pagamentos e cobranças do SamBah Pay.",
+    "perola": "Abre as campanhas, publicações e análises da Pérola.",
+    "painel": "Abre o painel principal deste módulo.",
+    "leads": "Mostra os contatos comerciais que ainda precisam de atendimento.",
+    "oportunidades": "Mostra as oportunidades comerciais em acompanhamento.",
+    "clientes": "Abre o cadastro e o histórico dos clientes.",
+    "relatorios": "Abre os relatórios e registros da operação.",
+    "atualizar crm": "Atualiza agora os dados exibidos no CRM.",
+    "conversas": "Abre as conversas recebidas pelo SamBah.",
+    "whatsapp": "Abre os atendimentos recebidos pelo WhatsApp.",
+    "orcamentos": "Abre as solicitações de orçamento recebidas.",
+    "handoff humano": "Mostra os atendimentos encaminhados para uma pessoa.",
+    "historico": "Abre o histórico de atendimentos e ações.",
+    "limpar fila atual": "Remove da tela os registros da fila atual de conversas.",
+    "ativar alertas neste celular": "Ativa neste aparelho os avisos de novas solicitações de atendimento.",
+    "atualizar": "Atualiza agora as informações desta tela.",
+    "pesquisar conversa": "Digite um nome, telefone ou texto para localizar uma conversa.",
+    "recolher barra sambah": "Recolhe o menu lateral do SamBah.",
+    "expandir barra sambah": "Expande o menu lateral do SamBah."
+  };
+
+  function validTooltipValue(value) {
+    const text = String(value ?? "").replace(/\s+/g, " ").trim();
+    if (!text || /^(null|undefined|nan|none)$/i.test(text)) return "";
+    return text;
+  }
+
   function tooltipText(element) {
-    const explicit = element.getAttribute("data-tooltip")
-      || element.getAttribute("title")
-      || element.getAttribute("aria-label");
-    if (normalizedText(explicit)) return String(explicit).trim();
+    const explicitValues = [
+      element.getAttribute("data-tooltip"),
+      element.getAttribute("title"),
+      element.getAttribute("aria-label")
+    ];
+    const explicit = explicitValues.map(validTooltipValue).find(Boolean);
+    if (explicit && TOOLTIP_DESCRIPTIONS[normalizedText(explicit)]) {
+      return TOOLTIP_DESCRIPTIONS[normalizedText(explicit)];
+    }
+    if (explicit) return explicit;
 
     const visibleLabel = element.matches("input, textarea")
       ? element.getAttribute("placeholder")
       : element.textContent;
-    const label = String(visibleLabel || "").replace(/\s+/g, " ").trim();
+    const label = validTooltipValue(visibleLabel);
     if (!label || label.length > 120) return "";
-    return `Função: ${label}`;
+    return TOOLTIP_DESCRIPTIONS[normalizedText(label)] || `Use esta ferramenta para: ${label}.`;
   }
 
   function applyUsageTooltip(element) {
     if (element.dataset.sambahTooltipReady === "true") return;
     const text = tooltipText(element);
-    if (!text) return;
+    if (!text) {
+      element.removeAttribute("title");
+      return;
+    }
     element.title = text;
     element.dataset.sambahTooltipReady = "true";
   }
