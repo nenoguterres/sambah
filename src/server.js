@@ -3856,7 +3856,14 @@ async function serveStatic(res, fileName) {
     : join(publicDir, safeName);
   try {
     const body = await readFile(filePath);
-    res.writeHead(200, { "content-type": MIME_TYPES[extname(filePath)] || "application/octet-stream" });
+    const contentType = MIME_TYPES[extname(filePath)] || "application/octet-stream";
+    const headers = { "content-type": contentType };
+    if ([".html", ".js", ".css"].includes(extname(filePath))) {
+      headers["cache-control"] = "no-cache, no-store, must-revalidate";
+      headers.pragma = "no-cache";
+      headers.expires = "0";
+    }
+    res.writeHead(200, headers);
     res.end(body);
   } catch (error) {
     if (error.code === "ENOENT") {
