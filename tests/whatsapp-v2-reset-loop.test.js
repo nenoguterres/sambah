@@ -91,3 +91,41 @@ test("frase natural Quero voltar ao Portal Insano zera o contexto", () => {
   assert.equal(result.nextState.areaId, null);
   assert.equal(result.nextState.activeFlow, null);
 });
+
+test("frase nova fora de pergunta ativa zera contexto anterior e abre o Portal principal", () => {
+  const state = createWhatsAppV2State("5551980413745");
+  state.areaId = "insano_food_truck";
+  state.activeMenu = "foodtruck_main_menu";
+  state.flowData = { old: "nao pode permanecer" };
+  state.foodtruckSubstate = { selectedAction: "PORTAL_INSANO_FOODTRUCK", target: "evento" };
+  state.navigationStack = ["PORTAL_INSANO", "INSANO_FOODTRUCK", "INSANO_EVENTO"];
+  state.mesaOrderId = "pedido-antigo";
+  state.xeriffeCommand.items = [{ productId: "produto-antigo" }];
+
+  const result = routePortalInsanoMessage({ state, message: { text: "px" } });
+  assert.equal(result.source, "freshPhraseReset");
+  assert.equal(result.nextState.mode, "bot");
+  assert.equal(result.nextState.serviceState, "AUTOMATICO");
+  assert.equal(result.nextState.areaId, null);
+  assert.equal(result.nextState.activeMenu, "portal_main_menu");
+  assert.equal(result.nextState.activeFlow, null);
+  assert.equal(result.nextState.foodtruckSubstate, null);
+  assert.equal(result.nextState.mesaOrderId, null);
+  assert.deepEqual(result.nextState.xeriffeCommand.items, []);
+  assert.equal(result.nextState.flowData.old, undefined);
+  assert.deepEqual(result.replies[0].menu.options.map((item) => item.title), ["Gastronomia", "Agro / Granja", "Tecnologias e Fabricacao"]);
+});
+
+test("resposta a pergunta ativa continua o fluxo sem zerar contexto", () => {
+  const state = createWhatsAppV2State("5551980413745");
+  state.areaId = "gastronomia";
+  state.activeMenu = "gastronomy_main_menu";
+  state.activeFlow = "assisted_intake";
+  state.activeStep = "objective";
+  state.awaitingInput = true;
+  state.flowData.preAttendance = { intent: "geral", answers: {}, originalMessage: "preciso de ajuda" };
+  const result = routePortalInsanoMessage({ state, message: { text: "quero um projeto novo" } });
+  assert.equal(result.nextState.activeFlow, "assisted_intake");
+  assert.equal(result.nextState.areaId, "gastronomia");
+  assert.equal(result.nextState.flowData.preAttendance.answers.objective, "quero um projeto novo");
+});

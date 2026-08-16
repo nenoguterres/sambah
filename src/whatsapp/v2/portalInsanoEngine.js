@@ -37,6 +37,10 @@ export function routePortalInsanoMessage({ state, message, contract = portalInsa
   if (isWelcome(text) && routedState.activeFlow) return resumeActiveFlow(routedState, contract);
   if (routedState.activeFlow) return handleActiveFlow(routedState, contract, text, message.text);
 
+  if (shouldStartFreshContext(routedState, contract, text)) {
+    return openMenu(resetToPortal(routedState, contract), contract, contract.welcome.menuId, "freshPhraseReset", []);
+  }
+
   if (isWelcome(text)) {
     return openMenu(
       resetToPortal(routedState, contract),
@@ -67,6 +71,14 @@ export function routePortalInsanoMessage({ state, message, contract = portalInsa
   if (selected) return executeAction(routedState, contract, selected.action, selected.id, menuCache);
   if (shouldStartAssistedIntake(text)) return startAssistedIntake(routedState, text, message.text);
   return openMenu({ ...routedState, activeMenu: currentMenuId }, contract, currentMenuId, "fallbackMenu", routedState.menuStack || []);
+}
+
+function shouldStartFreshContext(state, contract, text) {
+  if (!shouldStartAssistedIntake(text)) return false;
+  if ((state.activeMenu || contract.welcome.menuId) === contract.welcome.menuId) return false;
+  const currentMenu = contract.menus[state.activeMenu];
+  if (resolveMenuOption(currentMenu, text)) return false;
+  return true;
 }
 
 function shouldResetOrphanGeneralIntake(state, text) {
@@ -808,7 +820,24 @@ function waitingMesaState(state) {
 }
 
 function resetToPortal(state, contract) {
-  return { ...state, mode: "bot", serviceState: "AUTOMATICO", areaId: null, activeMenu: contract.welcome.menuId, navigationStack: ["PORTAL_INSANO"], activeFlow: null, activeStep: null, awaitingInput: false, menuStack: [], foodtruckSubstate: null };
+  return {
+    ...state,
+    mode: "bot",
+    serviceState: "AUTOMATICO",
+    areaId: null,
+    activeMenu: contract.welcome.menuId,
+    navigationStack: ["PORTAL_INSANO"],
+    activeFlow: null,
+    activeStep: null,
+    awaitingInput: false,
+    menuStack: [],
+    flowData: {},
+    foodtruckSubstate: null,
+    mesaOrderId: null,
+    mesaLinkSentAt: null,
+    mesaOrderReceivedAt: null,
+    xeriffeCommand: { items: [], selectedCategory: null, selectedProductId: null, selectedAddonIds: [] }
+  };
 }
 
 function isWelcome(text) {

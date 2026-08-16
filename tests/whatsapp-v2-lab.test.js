@@ -390,9 +390,9 @@ test("Portal Insano Food Truck abre montagem publica unica sem fluxo legado", as
   assertNoNumberedMenu(evento.replies[0].text);
 
   const freeText = await engine.processor.handleIncoming({ messageId: "wamid-foodtruck-evento-4", from: fromEvento, text: "qualquer coisa" });
-  assert.equal(freeText.replies[0].type, "url_button");
-  assert.equal(freeText.replies[0].buttonText, "PORTAL INSANO");
-  assert.deepEqual(freeText.state.navigationStack, ["PORTAL_INSANO", "INSANO_FOODTRUCK", "INSANO_EVENTO"]);
+  assert.equal(freeText.replies[0].type, "menu");
+  assert.equal(freeText.replies[0].menu.id, "portal_main_menu");
+  assert.deepEqual(freeText.state.navigationStack, ["PORTAL_INSANO"]);
   assertNoNumberedMenu(freeText.replies[0].text);
 
 });
@@ -455,9 +455,9 @@ test("Portal Insano migra conversa antiga sem pilha para a tela conhecida", asyn
 
   const result = await engine.processor.handleIncoming({ messageId: "wamid-old-nav-state", from, text: "texto solto" });
 
-  assert.equal(result.replies[0].type, "url_button");
-  assert.equal(result.replies[0].buttonText, "MONTAR EVENTO");
-  assert.deepEqual(result.state.navigationStack, ["PORTAL_INSANO", "INSANO_FOODTRUCK", "INSANO_EVENTO"]);
+  assert.equal(result.replies[0].type, "menu");
+  assert.equal(result.replies[0].menu.id, "portal_main_menu");
+  assert.deepEqual(result.state.navigationStack, ["PORTAL_INSANO"]);
 });
 
 test("Portal Insano Food Truck limpa estado legado antes de roteamento", async () => {
@@ -504,16 +504,17 @@ test("Portal Insano preserva area nos menus Foodtruck, Xeriffe, Granja e Tecnolo
   }
 });
 
-test("Portal Insano opcao invalida repete menu atual e comandos voltar/inicio navegam corretamente", async () => {
+test("Portal Insano frase nova reinicia e comandos voltar/inicio navegam corretamente", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000300";
   await engine.processor.handleIncoming({ messageId: "wamid-nav-1", from, text: "oi" });
   await engine.processor.handleIncoming({ messageId: "wamid-nav-2", from, text: "PORTAL_INSANO_FOODTRUCK" });
   const invalid = await engine.processor.handleIncoming({ messageId: "wamid-nav-3", from, text: "Catalogo de produtos" });
-  assert.equal(invalid.state.activeMenu, "foodtruck_main_menu");
+  assert.equal(invalid.state.activeMenu, "portal_main_menu");
   assert.match(invalid.state.history.at(-1).text, /Catalogo/);
-  assert.match(invalid.outboxId ? engine.outboxRepository.list().at(-1).reply.text : "Insano Food Truck", /Insano Food Truck/);
+  assert.equal(invalid.replies[0].menu.id, "portal_main_menu");
 
+  await engine.processor.handleIncoming({ messageId: "wamid-nav-3b", from, text: "PORTAL_INSANO_FOODTRUCK" });
   await engine.processor.handleIncoming({ messageId: "wamid-nav-4", from, text: "INSANO_EVENTO" });
   const back = await engine.processor.handleIncoming({ messageId: "wamid-nav-5", from, text: "PORTAL_VOLTAR" });
   assert.equal(back.state.activeMenu, "portal_main_menu");
