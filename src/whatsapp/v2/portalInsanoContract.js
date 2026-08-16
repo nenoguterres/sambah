@@ -1,6 +1,6 @@
 export const portalInsanoContract = {
   schema: "sambah.whatsapp.portal-insano",
-  version: "3.3.0",
+  version: "3.4.0",
   assistant: {
     name: "SamBah",
     role: "Assistente oficial de atendimento do Portal Insano"
@@ -15,7 +15,7 @@ export const portalInsanoContract = {
   },
   welcome: {
     id: "portal_welcome",
-    message: "Buenas! Aqui e o SamBah, atendimento do Portal Insano. Escolha abaixo a area que deseja acessar.",
+    message: "Buenas! Aqui e o SamBah, atendimento do Portal Insano. Escolha abaixo a area que deseja acessar. Voce pode clicar ou escrever a opcao.",
     menuId: "portal_main_menu"
   },
   menus: {
@@ -23,11 +23,20 @@ export const portalInsanoContract = {
       id: "portal_main_menu",
       title: "Portal Insano",
       body: "Escolha uma area para continuar:",
-      strictInteractiveIds: true,
+      options: [
+        option("portal.gastronomia", 1, "Gastronomia", { type: "open_menu", target: "gastronomy_main_menu", areaId: "gastronomia" }),
+        option("portal.granja", 2, "Agro / Granja", { type: "open_menu", target: "granja_main_menu", areaId: "granja_aguas_da_lagoa" }),
+        option("portal.negocios", 3, "Tecnologias e Fabricacao", { type: "open_menu", target: "business_main_menu", areaId: null })
+      ]
+    },
+    gastronomy_main_menu: {
+      id: "gastronomy_main_menu",
+      title: "Gastronomia",
+      body: "Escolha o atendimento gastronomico:",
       options: [
         option("PORTAL_INSANO_FOODTRUCK", 1, "Insano Food Truck", { type: "open_url_button", target: "integration.insano_food_truck.event_form_url" }),
         option("portal.xeriffe", 2, "Xeriffe Obirici", { type: "open_menu", target: "xeriffe_main_menu", areaId: "xeriffe_obirici" }),
-        option("portal.more", 3, "Mais opcoes", { type: "open_menu", target: "portal_more_menu", areaId: null })
+        option("gastronomy.back", 3, "Voltar ao Portal Insano", { type: "open_menu", target: "portal_main_menu", areaId: null })
       ]
     },
     portal_more_menu: {
@@ -40,6 +49,17 @@ export const portalInsanoContract = {
         option("portal.tecnologia", 2, "Desenvolvimento de Tecnologias", { type: "open_menu", target: "technology_main_menu", areaId: "desenvolvimento_tecnologias" }),
         option("portal.humano", 3, "Atendimento Humano", { type: "open_menu", target: "human_contact_menu", areaId: "atendimento_humano" }),
         option("portal.more.back", 4, "Voltar ao Portal Insano", { type: "open_menu", target: "portal_main_menu", areaId: null })
+      ]
+    },
+    business_main_menu: {
+      id: "business_main_menu",
+      title: "Tecnologias e Fabricacao",
+      body: "Escolha a area de interesse:",
+      options: [
+        option("business.technology", 1, "Tecnologia", { type: "open_menu", target: "technology_main_menu", areaId: "desenvolvimento_tecnologias" }),
+        option("business.sawmill", 2, "Serraria", { type: "open_menu", target: "sawmill_main_menu", areaId: "serraria_equipamentos" }),
+        option("business.visual", 3, "Comunicacao Visual", { type: "open_menu", target: "visual_communication_menu", areaId: "comunicacao_visual" }),
+        option("business.back", 4, "Voltar ao Portal Insano", { type: "open_menu", target: "portal_main_menu", areaId: null })
       ]
     },
     foodtruck_main_menu: {
@@ -108,24 +128,29 @@ export const portalInsanoContract = {
     },
     technology_main_menu: {
       id: "technology_main_menu",
-      title: "Desenvolvimento de Tecnologias",
-      body: "Escolha a area de interesse:",
-      fallbackText: "1. Desenvolvimento de sistemas\n2. Aplicativos\n3. Automacao comercial\n4. Inteligencia artificial\n5. WhatsApp e atendimento\n6. Pagamentos e SamBah Pay\n7. Hardware e ESP32\n8. Seguranca e monitoramento\n9. Containers e estruturas\n10. Energia solar e autonomia\n11. Projetos existentes\n12. Solicitar avaliacao\n13. Atendimento humano\n14. Voltar ao Portal Insano",
+      title: "Tecnologia",
+      body: "Nossos aplicativos e funcoes: Mesa do Xeriffe para operacao e atendimento; SamBah para atendimento e CRM; SamBah Pay para pagamentos; Perola para conteudo e campanhas; Studio N para projetos; i9ACAO para seguranca; Workhub para organizar trabalhos; alem de automacoes e solucoes com ESP32.",
       options: [
-        option("technology.systems", 1, "Desenvolvimento de sistemas", { type: "start_flow", target: "technology_evaluation" }),
-        option("technology.apps", 2, "Aplicativos", { type: "start_flow", target: "technology_evaluation" }),
-        option("technology.automation", 3, "Automacao comercial", { type: "start_flow", target: "technology_evaluation" }),
-        option("technology.ai", 4, "Inteligencia artificial", { type: "start_flow", target: "technology_evaluation" }),
-        option("technology.whatsapp", 5, "WhatsApp e atendimento", { type: "start_flow", target: "technology_evaluation" }),
-        option("technology.payments", 6, "Pagamentos e SamBah Pay", { type: "start_flow", target: "technology_evaluation" }),
-        option("technology.hardware", 7, "Hardware e ESP32", { type: "start_flow", target: "technology_evaluation" }),
-        option("technology.security", 8, "Seguranca e monitoramento", { type: "start_flow", target: "technology_evaluation" }),
-        option("technology.containers", 9, "Containers e estruturas", { type: "start_flow", target: "technology_evaluation" }),
-        option("technology.energy", 10, "Energia solar e autonomia", { type: "start_flow", target: "technology_evaluation" }),
-        option("technology.projects", 11, "Projetos existentes", { type: "show_catalog", target: "catalog.projects" }),
-        option("technology.evaluation", 12, "Solicitar avaliacao", { type: "start_flow", target: "technology_evaluation" }),
-        option("technology.human", 13, "Atendimento humano", { type: "start_flow", target: "human_handoff" }),
-        option("technology.back", 14, "Voltar ao Portal Insano", { type: "open_menu", target: "portal_main_menu", areaId: null })
+        option("technology.human", 1, "Atendimento humano", { type: "start_flow", target: "human_handoff" }),
+        option("technology.back", 2, "Voltar", { type: "open_menu", target: "business_main_menu", areaId: null })
+      ]
+    },
+    sawmill_main_menu: {
+      id: "sawmill_main_menu",
+      title: "Serraria",
+      body: "Fabricacao de equipamentos e estruturas para operacoes gastronomicas, incluindo projetos de food truck. A equipe humana confirma necessidade, medidas e viabilidade.",
+      options: [
+        option("sawmill.human", 1, "Atendimento humano", { type: "start_flow", target: "human_handoff" }),
+        option("sawmill.back", 2, "Voltar", { type: "open_menu", target: "business_main_menu", areaId: null })
+      ]
+    },
+    visual_communication_menu: {
+      id: "visual_communication_menu",
+      title: "Comunicacao Visual",
+      body: "Producoes planejadas no Studio N: letras-caixa, luminosos, placas e fachadas em ACM, totens, paineis, letreiros e preparacao de projetos para corte e dobra. A equipe humana avalia medidas, materiais, acabamento e instalacao.",
+      options: [
+        option("visual.human", 1, "Atendimento humano", { type: "start_flow", target: "human_handoff" }),
+        option("visual.back", 2, "Voltar", { type: "open_menu", target: "business_main_menu", areaId: null })
       ]
     },
     payment_main_menu: {

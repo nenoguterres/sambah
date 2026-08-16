@@ -34,6 +34,9 @@ export function routePortalInsanoMessage({ state, message, contract = portalInsa
     );
   }
 
+  const legacyPortalEntry = resolveLegacyPortalEntry(routedState, text);
+  if (legacyPortalEntry) return executeAction(routedState, contract, legacyPortalEntry.action, legacyPortalEntry.id, menuCache);
+
   if (isXeriffeCatalogMenu(routedState.activeMenu)) return handleXeriffeCatalogMessage(routedState, menuCache, text);
   if (isExternalPortalArea(routedState)) {
     const selected = resolveMenuOption(contract.menus[routedState.activeMenu], text);
@@ -51,6 +54,16 @@ export function routePortalInsanoMessage({ state, message, contract = portalInsa
   if (selected) return executeAction(routedState, contract, selected.action, selected.id, menuCache);
   if (shouldStartAssistedIntake(text)) return startAssistedIntake(routedState, text, message.text);
   return openMenu({ ...routedState, activeMenu: currentMenuId }, contract, currentMenuId, "fallbackMenu", routedState.menuStack || []);
+}
+
+function resolveLegacyPortalEntry(state, text) {
+  if (state.activeMenu !== "portal_main_menu") return null;
+  const legacyEntries = {
+    portal_insano_foodtruck: { id: "PORTAL_INSANO_FOODTRUCK", action: { type: "open_url_button", target: "integration.insano_food_truck.event_form_url" } },
+    "portal.xeriffe": { id: "portal.xeriffe", action: { type: "open_menu", target: "xeriffe_main_menu", areaId: "xeriffe_obirici" } },
+    "portal.more": { id: "portal.more", action: { type: "open_menu", target: "portal_more_menu", areaId: null } }
+  };
+  return legacyEntries[normalizeText(text)] || null;
 }
 
 export function renderMenu(menu) {

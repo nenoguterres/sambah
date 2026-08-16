@@ -135,9 +135,9 @@ test("Portal Insano menu principal roteia cada botao sem chamar IA", async () =>
   assert.match(chef.replies[0].text, /Chef Neno Gutterres/);
 
   const numericEngine = createLabEngine({ observeOnly: true });
+  await numericEngine.processor.handleIncoming({ messageId: "wamid-main-numeric-welcome", from: "5551000000199", text: "oi" });
   const numeric = await numericEngine.processor.handleIncoming({ messageId: "wamid-main-numeric", from: "5551000000199", text: "1" });
-  assert.equal(numeric.state.activeMenu, "portal_main_menu");
-  assert.deepEqual(numeric.state.navigationStack, ["PORTAL_INSANO"]);
+  assert.equal(numeric.state.activeMenu, "gastronomy_main_menu");
   assert.equal(numeric.replies[0].type, "menu");
   assertNoNumberedMenu(numeric.replies[0].text);
 });
@@ -156,9 +156,9 @@ test("Motor 1 abre o cardapio publico do Xeriffe sem criar pedido no WhatsApp", 
   assert.equal(portal.replies[0].type, "menu");
   assert.equal(portal.replies[0].menu.id, "portal_main_menu");
   assert.deepEqual(portal.replies[0].menu.options.map((item) => item.title), [
-    "Insano Food Truck",
-    "Xeriffe Obirici",
-    "Mais opcoes"
+    "Gastronomia",
+    "Agro / Granja",
+    "Tecnologias e Fabricacao"
   ]);
 
   const xeriffe = await engine.processor.handleIncoming({ messageId: "wamid-motor-1-xeriffe", from, text: "portal.xeriffe" });
@@ -176,6 +176,43 @@ test("Motor 1 abre o cardapio publico do Xeriffe sem criar pedido no WhatsApp", 
   assert.equal(cardapio.state.cart, undefined);
   assert.equal(cardapio.actions[0].type, "xeriffe_public_menu_url");
   assert.equal(engine.outboxRepository.list().length, 0);
+});
+
+test("Portal Insano abre as tres areas iniciais por clique, numero ou texto", async () => {
+  const cases = [
+    ["portal.gastronomia", "gastronomy_main_menu", "gastronomia"],
+    ["2", "granja_main_menu", "granja_aguas_da_lagoa"],
+    ["Tecnologias e Fabricacao", "business_main_menu", null]
+  ];
+
+  for (const [index, [selection, menuId, areaId]] of cases.entries()) {
+    const engine = createLabEngine({ observeOnly: true });
+    const from = `555100000029${index}`;
+    await engine.processor.handleIncoming({ messageId: `wamid-new-main-${index}-welcome`, from, text: "oi" });
+    const result = await engine.processor.handleIncoming({ messageId: `wamid-new-main-${index}-select`, from, text: selection });
+    assert.equal(result.state.activeMenu, menuId);
+    assert.equal(result.state.areaId, areaId);
+  }
+});
+
+test("Tecnologias e Fabricacao apresenta Tecnologia, Serraria e Comunicacao Visual com atendimento humano", async () => {
+  const cases = [
+    ["business.technology", "technology_main_menu", "desenvolvimento_tecnologias", /SamBah Pay/],
+    ["2", "sawmill_main_menu", "serraria_equipamentos", /food truck/i],
+    ["Comunicacao Visual", "visual_communication_menu", "comunicacao_visual", /Studio N/]
+  ];
+
+  for (const [index, [selection, menuId, areaId, bodyPattern]] of cases.entries()) {
+    const engine = createLabEngine({ observeOnly: true });
+    const from = `555100000039${index}`;
+    await engine.processor.handleIncoming({ messageId: `wamid-fabrication-${index}-welcome`, from, text: "oi" });
+    await engine.processor.handleIncoming({ messageId: `wamid-fabrication-${index}-root`, from, text: "3" });
+    const result = await engine.processor.handleIncoming({ messageId: `wamid-fabrication-${index}-select`, from, text: selection });
+    assert.equal(result.state.activeMenu, menuId);
+    assert.equal(result.state.areaId, areaId);
+    assert.match(result.replies[0].menu.body, bodyPattern);
+    assert.equal(result.replies[0].menu.options[0].title, "Atendimento humano");
+  }
 });
 
 test("Xeriffe separa compra rapida de reserva, mesa e evento", async () => {
