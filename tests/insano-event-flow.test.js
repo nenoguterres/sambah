@@ -66,6 +66,7 @@ function validPayload(patch = {}) {
     data: "25/08/2026",
     local: "Salao da Associacao",
     cidade: "Porto Alegre",
+    tipoAmbiente: "ao_ar_livre",
     pessoas: "100",
     horarioInicio: "18:00",
     horarioTermino: "23:00",
@@ -104,6 +105,7 @@ test("fluxo final Evento valida campos, registra uma solicitação e preserva co
     assert.equal((await post(validPayload({ data: "01/01/2026" }))).body.errors.some((item) => item.error === "past_date"), true);
     assert.equal((await post(validPayload({ pessoas: "0" }))).body.errors.some((item) => item.field === "publicoPrevisto"), true);
     assert.equal((await post(validPayload({ horarioTermino: "" }))).body.errors.some((item) => item.field === "horarioTermino"), true);
+    assert.equal((await post(validPayload({ tipoAmbiente: "" }))).body.errors.some((item) => item.field === "tipoAmbiente"), true);
 
     const created = await post(validPayload());
     assert.equal(created.status, 201);
@@ -127,6 +129,7 @@ test("fluxo final Evento valida campos, registra uma solicitação e preserva co
     assert.equal(leads[0].conversationId, "wa_5551987654321");
     assert.equal(leads[0].telefoneOriginal, "5551987654321");
     assert.equal(leads[0].telefoneContato, "51987654321");
+    assert.equal(leads[0].formData.environmentType, "ao_ar_livre");
     assert.equal(leads[0].origin, "WHATSAPP_PORTAL_INSANO_FOODTRUCK_EVENTO");
 
     const alerts = JSON.parse(await readFile(join(app.dir, "event-email-alerts.json"), "utf8"));
@@ -135,6 +138,7 @@ test("fluxo final Evento valida campos, registra uma solicitação e preserva co
     assert.equal(alerts[0].eventRequestId, "event_form_test_1");
     assert.equal(alerts[0].to, "chefnenogutterres@gmail.com,kdoiegutterresgastronomia@gmail.com");
     assert.match(alerts[0].body, /ABRIR CONVERSA NO SAMBAH/);
+    assert.match(alerts[0].body, /Tipo de ambiente:\nAo ar livre/);
     assert.match(alerts[0].conversationUrl, /conversationId=wa_5551987654321/);
 
     const conversations = JSON.parse(await readFile(join(app.dir, "conversas.json"), "utf8"));

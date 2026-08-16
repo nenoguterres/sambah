@@ -11,6 +11,7 @@ const FORMS = Object.freeze({
       { name: "dataEvento", label: "Data do evento", type: "date", required: true },
       { name: "cidade", label: "Cidade", type: "text", required: true },
       { name: "local", label: "Local ou endereÃ§o", type: "text", required: true },
+      { name: "tipoAmbiente", label: "Tipo de ambiente", type: "select", required: true, options: ["ao_ar_livre", "fechado"] },
       { name: "horarioInicio", label: "HorÃ¡rio de inÃ­cio", type: "time", required: true },
       { name: "horarioTermino", label: "HorÃ¡rio de tÃ©rmino", type: "time", required: false },
       { name: "publicoPrevisto", label: "Quantidade de pessoas", type: "number", required: true, min: 1 },

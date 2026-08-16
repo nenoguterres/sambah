@@ -2448,6 +2448,7 @@ async function createInsanoFoodTruckEventRequest({
       displayDate: formatBrazilianDate(payload.date),
       location: payload.location,
       city: payload.city,
+      environmentType: payload.environmentType,
       people: payload.people,
       startsAt: payload.startsAt,
       endsAt: payload.endsAt,
@@ -2463,6 +2464,7 @@ async function createInsanoFoodTruckEventRequest({
       time: payload.startsAt,
       location: payload.location,
       city: payload.city,
+      environmentType: payload.environmentType,
       people: payload.people,
       startsAt: payload.startsAt,
       endsAt: payload.endsAt,
@@ -2517,6 +2519,7 @@ async function createInsanoFoodTruckEventRequest({
       pessoas: payload.people,
       produto: payload.product,
       tipo_evento: "Insano Food Truck",
+      tipo_ambiente: payload.environmentType,
       observacoes: payload.notes,
       message: payload.notes,
       pipeline: "food_truck_evento",
@@ -2558,6 +2561,12 @@ async function createInsanoFoodTruckEventRequest({
   };
   const humanMode = isHumanConversation(conversation?.conversa);
   const sendResult = humanMode ? { ok: false, sent: false, status: "human_mode_no_auto_reply", metaMessageType: "menu" } : await safeSendEventWhatsappReturn({ whatsappProvider, runtimeConfig, phone: payload.originalPhone || payload.phone, message: interactiveReturn });
+  const teamNotification = await safeSendEventWhatsappReturn({
+    whatsappProvider,
+    runtimeConfig,
+    phone: runtimeConfig.eventWhatsappTo || runtimeConfig.sambahWhatsapp?.kazuko || runtimeConfig.whatsappNumber || "",
+    message: { type: "text", text: internalSummary }
+  });
   if (!humanMode && conversationId && whatsappConversationService?.recordOutgoing) {
     await whatsappConversationService.recordOutgoing(conversationId, {
       text: whatsappReturn,
@@ -2587,6 +2596,9 @@ async function createInsanoFoodTruckEventRequest({
     },
     emailSend: { ok: emailSend.ok, status: emailSend.alert?.status || emailAlert.alert.status, error: emailSend.error || "" },
     whatsappSent: Boolean(sendResult?.sent),
+    teamWhatsappSent: Boolean(teamNotification?.sent),
+    teamWhatsappStatus: teamNotification?.status || "not_sent",
+    notificationWarning: emailSend.ok || teamNotification?.sent ? "" : "team_notification_failed",
     humanMode,
     conversationId,
     conversationUrl
@@ -3176,6 +3188,7 @@ function normalizeInsanoEventPayload(body = {}) {
     date: normalizeEventDate(body.dataEvento || body.data || body.date || body.eventDate || ""),
     location: cleanSiteOrderText(body.local || body.endereco || body.location || body.place || ""),
     city: cleanSiteOrderText(body.cidade || body.city || ""),
+    environmentType: normalizeEnvironmentType(body.tipoAmbiente || body.tipo_ambiente || body.environmentType || body.ambiente || ""),
     product: cleanSiteOrderText(body.produto || body.product || body.item || ""),
     people: Number(body.publicoPrevisto || body.pessoas || body.people || body.quantidade_pessoas || 0) || null,
     startsAt: cleanSiteOrderText(body.horarioInicio || body.startsAt || body.startTime || body.inicio || ""),
@@ -3193,6 +3206,7 @@ function validateInsanoEventPayload(payload = {}, kind = "evento") {
   else if (payload.date < todayIsoDate()) errors.push({ field: "dataEvento", error: "past_date" });
   if (!payload.location) errors.push({ field: "local", error: "required" });
   if (!payload.city) errors.push({ field: "cidade", error: "required" });
+  if (!payload.environmentType) errors.push({ field: "tipoAmbiente", error: "required" });
   if (kind === "orcamento" && !payload.product) errors.push({ field: "produto", error: "required" });
   if (kind === "orcamento" && (!Number.isInteger(payload.people) || payload.people < 50)) errors.push({ field: "quantidadePorcoes", error: "min_50_required" });
   if (!Number.isInteger(payload.people) || payload.people <= 0) errors.push({ field: "publicoPrevisto", error: "positive_integer_required" });
@@ -3200,6 +3214,17 @@ function validateInsanoEventPayload(payload = {}, kind = "evento") {
   if (!payload.endTimeUndefined && !isValidTime(payload.endsAt)) errors.push({ field: "horarioTermino", error: "required_or_a_definir" });
   if (!payload.phone || payload.phone.length < 10) errors.push({ field: "telefone", error: "usable_phone_required" });
   return { ok: errors.length === 0, errors };
+}
+
+function normalizeEnvironmentType(value = "") {
+  const normalized = normalizeSiteText(value).replace(/\s+/g, "_");
+  if (["ao_ar_livre", "aberto", "ambiente_aberto", "externo"].includes(normalized)) return "ao_ar_livre";
+  if (["fechado", "ambiente_fechado", "interno"].includes(normalized)) return "fechado";
+  return "";
+}
+
+function environmentTypeLabel(value = "") {
+  return value === "ao_ar_livre" ? "Ao ar livre" : value === "fechado" ? "Ambiente fechado" : "Não informado";
 }
 
 function normalizeEventDate(value = "") {
@@ -3420,6 +3445,7 @@ function buildInsanoEventInternalSummary(payload = {}, kind = "evento") {
     `Data: ${formatBrazilianDate(payload.date)}`,
     `Local: ${payload.location}`,
     `Cidade: ${payload.city}`,
+    `Ambiente: ${environmentTypeLabel(payload.environmentType)}`,
     kind === "orcamento" ? `Produto: ${payload.product || ""}` : "",
     `${labels.amountLabel}: ${payload.people} ${labels.amountUnit}`,
     `Horario de inicio: ${payload.startsAt}`,
@@ -3462,6 +3488,9 @@ function buildInsanoEventEmailAlert({ payload = {}, leadId = "", eventRequestId 
     "",
     "Cidade:",
     city,
+    "",
+    "Tipo de ambiente:",
+    environmentTypeLabel(payload.environmentType),
     "",
     ...(kind === "orcamento" ? ["Produto:", payload.product || "", ""] : []),
     `${labels.amountLabel}:`,

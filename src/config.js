@@ -34,6 +34,7 @@ export function getRuntimeConfig(env = globalThis.process?.env || {}) {
     corsOrigins: parseList(env.CORS_ORIGINS, DEFAULT_CORS_ORIGINS),
     whatsappNumber: env.WHATSAPP_NUMBER || "5551980413745",
     insanoWhatsappNumber: env.INSANO_WHATSAPP_NUMBER || "",
+    eventWhatsappTo: env.EVENT_WHATSAPP_TO || env.SAMBAH_WHATSAPP_KAZUKO || "5551997920292",
     sitePublicToken: env.SITE_PUBLIC_TOKEN || "",
     siteOrdersEnabled: env.SITE_ORDERS_ENABLED !== "false",
     dataDir: env.DATA_DIR || "data",
@@ -149,4 +150,3 @@ function loadLocalEnv() {
     return {};
   }
 }
-

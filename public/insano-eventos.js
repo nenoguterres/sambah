@@ -129,6 +129,7 @@ function formMarkup() {
     <label>Data do evento<input name="dataEvento" type="date" min="${today()}" required></label>
     <label>Cidade<input name="cidade" autocomplete="address-level2" required></label>
     <label class="full">Local ou endereço<input name="local" autocomplete="street-address" required></label>
+    <label class="full">Como será o ambiente?<select name="tipoAmbiente" required><option value="">Selecione</option><option value="ao_ar_livre">Ao ar livre</option><option value="fechado">Ambiente fechado</option></select></label>
     <label>Horário de início<input name="horarioInicio" type="time" required></label>
     <label>Horário de término<input name="horarioTermino" type="time" disabled></label>
     <label class="inline-check full"><input name="terminoADefinir" type="checkbox" checked> Horário de término a definir</label>
@@ -162,13 +163,14 @@ async function submitRequest(event) {
   const total = estimate();
   const selection = items.map((item) => `${item.name} — ${state.people} ${kind === "evento" ? "pessoas" : "porções"}`).join("; ");
   const notes = [`Seleção rápida: ${selection}`, total === null ? "Estimativa: a confirmar" : `Estimativa visual: ${money(total)}`, data.observacoes || ""].filter(Boolean).join("\n");
-  const payload = { conversationId, submissionId: submissionId(kind), telefoneOriginal: phone, nome: data.nome, telefone: data.telefone, dataEvento: data.dataEvento, local: data.local, cidade: data.cidade, publicoPrevisto: state.people, pessoas: state.people, produto: items.map((item) => item.name).join(", "), horarioInicio: data.horarioInicio, horarioTermino: data.terminoADefinir ? "a definir" : data.horarioTermino, observacoes: notes, page: location.pathname, formType: `insano_event_builder_${kind}`, kind, source: "WhatsApp - Portal Insano - Montagem rápida de evento" };
+  const payload = { conversationId, submissionId: submissionId(kind), telefoneOriginal: phone, nome: data.nome, telefone: data.telefone, dataEvento: data.dataEvento, local: data.local, cidade: data.cidade, tipoAmbiente: data.tipoAmbiente, publicoPrevisto: state.people, pessoas: state.people, produto: items.map((item) => item.name).join(", "), horarioInicio: data.horarioInicio, horarioTermino: data.terminoADefinir ? "a definir" : data.horarioTermino, observacoes: notes, page: location.pathname, formType: `insano_event_builder_${kind}`, kind, source: "WhatsApp - Portal Insano - Montagem rápida de evento" };
   button.disabled = true;
   status.textContent = "Enviando para a equipe...";
   try {
     const response = await fetch(kind === "evento" ? "/api/site/insano/evento" : "/api/site/insano/orcamento", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
     const body = await response.json();
     if (!response.ok || body.ok === false) throw new Error(body.errors?.[0]?.error || body.error || "Não foi possível enviar.");
+    state.notificationWarning = body.notificationWarning || "";
     state.step = "success";
     state.requestId = body.id || "";
     persistState();
@@ -180,7 +182,8 @@ async function submitRequest(event) {
 }
 
 function renderSuccess() {
-  app.innerHTML = `${headerMarkup()}<section class="event-content success"><div class="success-mark">✓</div><p class="eyebrow">Recebemos</p><h1>Solicitação enviada</h1><p class="lead">A equipe vai confirmar disponibilidade e valor final na mesma conversa do WhatsApp.</p><a class="whatsapp-link" href="${whatsappUrl}?text=${encodeURIComponent("Enviei minha solicitação de evento pelo Insano.")}">Voltar ao WhatsApp</a></section>`;
+  const warning = state.notificationWarning ? `<p class="form-status">A solicitação foi salva, mas o aviso automático à equipe falhou. Use o botão abaixo para avisar pelo WhatsApp.</p>` : "";
+  app.innerHTML = `${headerMarkup()}<section class="event-content success"><div class="success-mark">✓</div><p class="eyebrow">Recebemos</p><h1>Solicitação enviada</h1><p class="lead">A equipe vai confirmar disponibilidade e valor final na mesma conversa do WhatsApp.</p>${warning}<a class="whatsapp-link" href="${whatsappUrl}?text=${encodeURIComponent("Enviei minha solicitação de evento pelo Insano.")}">Voltar ao WhatsApp</a></section>`;
   bindActions();
 }
 
@@ -189,7 +192,7 @@ function estimate() { const items = selectedItems(); return !items.length || ite
 function money(value) { return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value); }
 function today() { return new Date().toISOString().slice(0, 10); }
 function submissionId(kind) { const key = `insano:event-builder:submission:${kind}:${conversationId || phone || "public"}`; let value = sessionStorage.getItem(key); if (!value) { value = `${kind}_builder_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`; sessionStorage.setItem(key, value); } return value; }
-function persistState() { sessionStorage.setItem(storageKey, JSON.stringify({ step: state.step, mode: state.mode, category: state.category, people: state.people, selected: state.selected, requestId: state.requestId || "" })); }
-function restoreState() { try { const value = JSON.parse(sessionStorage.getItem(storageKey) || "{}"); return { step: value.step || "choose", mode: value.mode || "evento", category: value.category || "", people: Number(value.people) || 50, selected: Array.isArray(value.selected) ? value.selected : [], requestId: value.requestId || "" }; } catch { return { step: "choose", mode: "evento", category: "", people: 50, selected: [] }; } }
+function persistState() { sessionStorage.setItem(storageKey, JSON.stringify({ step: state.step, mode: state.mode, category: state.category, people: state.people, selected: state.selected, requestId: state.requestId || "", notificationWarning: state.notificationWarning || "" })); }
+function restoreState() { try { const value = JSON.parse(sessionStorage.getItem(storageKey) || "{}"); return { step: value.step || "choose", mode: value.mode || "evento", category: value.category || "", people: Number(value.people) || 50, selected: Array.isArray(value.selected) ? value.selected : [], requestId: value.requestId || "", notificationWarning: value.notificationWarning || "" }; } catch { return { step: "choose", mode: "evento", category: "", people: 50, selected: [], notificationWarning: "" }; } }
 function safeImageUrl(value = "") { try { const url = new URL(String(value)); return ["http:", "https:"].includes(url.protocol) ? url.toString() : ""; } catch { return ""; } }
 function escapeHtml(value = "") { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;"); }

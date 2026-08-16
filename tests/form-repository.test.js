@@ -6,7 +6,7 @@ test("repositorio compartilha formulario completo de evento", () => {
   const form = getFormDefinition("evento");
   assert.equal(form.destination, "crm_events");
   assert.deepEqual(form.fields.filter((field) => field.required).map((field) => field.name), [
-    "nome", "telefone", "dataEvento", "cidade", "local", "horarioInicio", "publicoPrevisto", "tipoEvento"
+    "nome", "telefone", "dataEvento", "cidade", "local", "tipoAmbiente", "horarioInicio", "publicoPrevisto", "tipoEvento"
   ]);
 });
 
