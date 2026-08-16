@@ -21,6 +21,16 @@ export function routePortalInsanoMessage({ state, message, contract = portalInsa
   }
   if (isPaymentClaim(text)) return startFlow(routedState, contract, "payment_receipt_review", "paymentSafety");
   if (command) return handleNavigationCommand(routedState, contract, command);
+  if (shouldRecoverTruncatedFabricationIntake(routedState, text)) {
+    const recovered = resetToPortal(routedState, contract);
+    return executeAction(
+      recovered,
+      contract,
+      { type: "open_menu", target: "business_main_menu", areaId: null },
+      "recoverTruncatedFabrication",
+      menuCache
+    );
+  }
   if (isWelcome(text) && routedState.activeFlow) return resumeActiveFlow(routedState, contract);
   if (routedState.activeFlow) return handleActiveFlow(routedState, contract, text, message.text);
 
@@ -54,6 +64,14 @@ export function routePortalInsanoMessage({ state, message, contract = portalInsa
   if (selected) return executeAction(routedState, contract, selected.action, selected.id, menuCache);
   if (shouldStartAssistedIntake(text)) return startAssistedIntake(routedState, text, message.text);
   return openMenu({ ...routedState, activeMenu: currentMenuId }, contract, currentMenuId, "fallbackMenu", routedState.menuStack || []);
+}
+
+function shouldRecoverTruncatedFabricationIntake(state, text) {
+  if (state.activeFlow !== "assisted_intake") return false;
+  const original = normalizeText(state.flowData?.preAttendance?.originalMessage);
+  const cameFromTruncatedButton = original === "tecnologias e fabric";
+  const retryingEntry = isWelcome(text) || text === "tecnologias e fabric" || text === "tecnologias e fabricacao";
+  return cameFromTruncatedButton && retryingEntry;
 }
 
 function resolveLegacyPortalEntry(state, text) {

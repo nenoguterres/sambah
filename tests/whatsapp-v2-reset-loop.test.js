@@ -17,6 +17,22 @@ test("saudacao durante fluxo ativo repete o passo sem reiniciar o Portal", () =>
   assert.match(result.replies[0].text, /data, horario e quantidade de pessoas/i);
 });
 
+test("saudacao recupera conversa presa pelo antigo botao Tecnologias e Fabric", () => {
+  const state = createWhatsAppV2State("5551980413745");
+  state.activeFlow = "assisted_intake";
+  state.activeStep = "objective";
+  state.awaitingInput = true;
+  state.flowData.preAttendance = {
+    intent: "geral",
+    originalMessage: "Tecnologias e Fabric",
+    answers: {}
+  };
+  const result = routePortalInsanoMessage({ state, message: { text: "oi" } });
+  assert.equal(result.nextState.activeMenu, "business_main_menu");
+  assert.equal(result.nextState.activeFlow, null);
+  assert.equal(result.replies[0].menu.buttonText, "VER AREAS");
+});
+
 test("saudacao em submenu retorna ao Portal", () => {
   const state = createWhatsAppV2State("5551980413745");
   state.areaId = "xeriffe_obirici";
