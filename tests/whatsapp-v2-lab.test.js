@@ -203,13 +203,13 @@ test("Portal reconhece Tecnologias e Fabricacao mesmo quando WhatsApp corta o ti
   assert.equal(result.state.activeMenu, "business_main_menu");
   assert.equal(result.state.activeFlow, null);
   assert.equal(result.replies[0].menu.buttonText, "VER AREAS");
-  assert.deepEqual(result.replies[0].menu.options.slice(0, 3).map((item) => item.title), ["Tecnologia", "Serraria", "Comunicacao Visual"]);
+  assert.deepEqual(result.replies[0].menu.options.slice(0, 3).map((item) => item.title), ["Tecnologia", "Serralheria", "Comunicacao Visual"]);
 });
 
-test("Tecnologias e Fabricacao apresenta Tecnologia, Serraria e Comunicacao Visual com atendimento humano", async () => {
+test("Tecnologias e Fabricacao apresenta Tecnologia, Serralheria e Comunicacao Visual com atendimento humano", async () => {
   const cases = [
     ["business.technology", "technology_main_menu", "desenvolvimento_tecnologias", /aplicativo/i],
-    ["2", "sawmill_main_menu", "serraria_equipamentos", /food truck/i],
+    ["2", "sawmill_main_menu", "serralheria_equipamentos", /metal.*food truck/i],
     ["Comunicacao Visual", "visual_communication_menu", "comunicacao_visual", /Studio N/]
   ];
 

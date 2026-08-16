@@ -58,7 +58,7 @@ export const portalInsanoContract = {
       buttonText: "VER AREAS",
       options: [
         option("business.technology", 1, "Tecnologia", { type: "open_menu", target: "technology_main_menu", areaId: "desenvolvimento_tecnologias" }),
-        option("business.sawmill", 2, "Serraria", { type: "open_menu", target: "sawmill_main_menu", areaId: "serraria_equipamentos" }),
+        option("business.sawmill", 2, "Serralheria", { type: "open_menu", target: "sawmill_main_menu", areaId: "serralheria_equipamentos" }),
         option("business.visual", 3, "Comunicacao Visual", { type: "open_menu", target: "visual_communication_menu", areaId: "comunicacao_visual" }),
         option("business.back", 4, "Voltar ao Portal Insano", { type: "open_menu", target: "portal_main_menu", areaId: null })
       ]
@@ -154,8 +154,8 @@ export const portalInsanoContract = {
     app_workhub_menu: appMenu("app_workhub_menu", "Central de Trabalhos", "Organizacao central das tarefas, prioridades, andamento, bloqueios e conclusoes dos projetos."),
     sawmill_main_menu: {
       id: "sawmill_main_menu",
-      title: "Serraria",
-      body: "Fabricacao de equipamentos e estruturas para operacoes gastronomicas, incluindo projetos de food truck. A equipe humana confirma necessidade, medidas e viabilidade.",
+      title: "Serralheria",
+      body: "Fabricacao em metal de equipamentos e estruturas para operacoes gastronomicas, incluindo projetos de food truck. A equipe humana confirma necessidade, medidas e viabilidade.",
       options: [
         option("sawmill.human", 1, "Atendimento humano", { type: "start_flow", target: "human_handoff" }),
         option("sawmill.back", 2, "Voltar", { type: "open_menu", target: "business_main_menu", areaId: null })
