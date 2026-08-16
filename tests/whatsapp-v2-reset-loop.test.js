@@ -33,6 +33,19 @@ test("saudacao recupera conversa presa pelo antigo botao Tecnologias e Fabric", 
   assert.equal(result.replies[0].menu.buttonText, "VER AREAS");
 });
 
+test("saudacao reinicia pre-atendimento geral orfao mesmo sem mensagem original", () => {
+  const state = createWhatsAppV2State("5551980413745");
+  state.activeFlow = "assisted_intake";
+  state.activeStep = "objective";
+  state.awaitingInput = true;
+  state.flowData.preAttendance = { intent: "geral", answers: {} };
+  const result = routePortalInsanoMessage({ state, message: { text: "oi" } });
+  assert.equal(result.source, "recoverOrphanGeneralIntake");
+  assert.equal(result.nextState.activeMenu, "portal_main_menu");
+  assert.equal(result.nextState.activeFlow, null);
+  assert.equal(result.replies[0].menu.options[2].title, "Tecnologias e Fabricacao");
+});
+
 test("saudacao em submenu retorna ao Portal", () => {
   const state = createWhatsAppV2State("5551980413745");
   state.areaId = "xeriffe_obirici";

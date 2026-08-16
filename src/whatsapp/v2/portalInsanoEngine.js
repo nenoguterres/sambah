@@ -31,6 +31,9 @@ export function routePortalInsanoMessage({ state, message, contract = portalInsa
       menuCache
     );
   }
+  if (shouldResetOrphanGeneralIntake(routedState, text)) {
+    return openMenu(resetToPortal(routedState, contract), contract, contract.welcome.menuId, "recoverOrphanGeneralIntake", []);
+  }
   if (isWelcome(text) && routedState.activeFlow) return resumeActiveFlow(routedState, contract);
   if (routedState.activeFlow) return handleActiveFlow(routedState, contract, text, message.text);
 
@@ -64,6 +67,14 @@ export function routePortalInsanoMessage({ state, message, contract = portalInsa
   if (selected) return executeAction(routedState, contract, selected.action, selected.id, menuCache);
   if (shouldStartAssistedIntake(text)) return startAssistedIntake(routedState, text, message.text);
   return openMenu({ ...routedState, activeMenu: currentMenuId }, contract, currentMenuId, "fallbackMenu", routedState.menuStack || []);
+}
+
+function shouldResetOrphanGeneralIntake(state, text) {
+  return state.activeFlow === "assisted_intake"
+    && state.activeStep === "objective"
+    && state.flowData?.preAttendance?.intent === "geral"
+    && !state.areaId
+    && isWelcome(text);
 }
 
 function shouldRecoverTruncatedFabricationIntake(state, text) {
