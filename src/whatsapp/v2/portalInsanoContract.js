@@ -114,6 +114,7 @@ export const portalInsanoContract = {
       id: "granja_main_menu",
       title: "Granja Aguas da Lagoa",
       body: "O que deseja consultar?",
+      buttonText: "VER OPCOES",
       fallbackText: "1. Animais disponiveis\n2. Ovos\n3. Hortifruti\n4. Produtos da Granja\n5. Comprar ou reservar\n6. Visitas e atividades\n7. Falar com responsavel\n8. Voltar ao Portal Insano",
       options: [
         option("granja.animals", 1, "Animais disponiveis", { type: "show_catalog", target: "catalog.granja.animais" }),

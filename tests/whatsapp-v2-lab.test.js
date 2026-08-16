@@ -215,6 +215,15 @@ test("Tecnologias e Fabricacao apresenta Tecnologia, Serraria e Comunicacao Visu
   }
 });
 
+test("Granja usa botao curto sem cortar o nome Aguas da Lagoa", async () => {
+  const engine = createLabEngine({ observeOnly: true });
+  const from = "5551000000490";
+  await engine.processor.handleIncoming({ messageId: "wamid-granja-label-welcome", from, text: "oi" });
+  const result = await engine.processor.handleIncoming({ messageId: "wamid-granja-label-select", from, text: "2" });
+  assert.equal(result.replies[0].menu.title, "Granja Aguas da Lagoa");
+  assert.equal(result.replies[0].menu.buttonText, "VER OPCOES");
+});
+
 test("Xeriffe separa compra rapida de reserva, mesa e evento", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000202";
