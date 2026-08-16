@@ -80,3 +80,14 @@ test("texto cortado Voltar ao Portal Ins retorna sempre ao Portal Insano", () =>
   assert.equal(result.nextState.areaId, null);
   assert.equal(result.replies[0].menu.options[0].title, "Gastronomia");
 });
+
+test("frase natural Quero voltar ao Portal Insano zera o contexto", () => {
+  const state = createWhatsAppV2State("5551980413745");
+  state.areaId = "gastronomia";
+  state.activeMenu = "gastronomy_main_menu";
+  state.flowData = { previous: "contexto antigo" };
+  const result = routePortalInsanoMessage({ state, message: { text: "Quero voltar ao Portal Insano" } });
+  assert.equal(result.nextState.activeMenu, "portal_main_menu");
+  assert.equal(result.nextState.areaId, null);
+  assert.equal(result.nextState.activeFlow, null);
+});

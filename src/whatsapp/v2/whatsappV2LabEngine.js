@@ -4,6 +4,7 @@ import { InMemoryWhatsAppV2ConversationRepository, InMemoryWhatsAppV2OutboxRepos
 import { routePortalInsanoMessage } from "./portalInsanoEngine.js";
 
 const HUMAN_IDLE_TTL_MS = 30 * 60 * 1000;
+const CONVERSATION_IDLE_TTL_MS = 30 * 60 * 1000;
 const HUMAN_ACKNOWLEDGEMENT_TEXT = "Recebi tua mensagem e já avisei a equipe. O atendimento humano continua aberto. Para consultar cardápio, evento ou orçamento agora, digita início e volta ao Portal Insano.";
 
 export function createWhatsAppV2LabEngine(options = {}) {
@@ -48,7 +49,8 @@ export class WhatsAppV2LabProcessor {
     try {
       const loadedState = await this.conversationRepository.get(message.conversationId);
       const humanExpiry = expireHumanStateIfNeeded(loadedState, message.receivedAt);
-      const currentState = humanExpiry.state;
+      const conversationExpiry = expireConversationStateIfNeeded(humanExpiry.state, message.receivedAt, humanExpiry.expired);
+      const currentState = conversationExpiry.state;
       const nextHistory = [...(currentState.history || []), { messageId: message.messageId, text: message.text, at: message.receivedAt }];
       const menuCache = await this.menuService?.getMenuCache?.() || await this.menuService?.cacheSnapshot?.() || { items: [], categories: [] };
       const routed = routePortalInsanoMessage({
@@ -95,6 +97,7 @@ export class WhatsAppV2LabProcessor {
         repliesSent,
         state: nextState,
         humanStateExpired: humanExpiry.expired,
+        conversationStateExpired: conversationExpiry.expired,
         outboxId: outboxItem?.id || null,
         mode: this.externalDelivery ? "operational" : this.observeOnly ? "observe_only" : "lab_send_fake"
       };
@@ -117,6 +120,34 @@ export class WhatsAppV2LabProcessor {
       return { sent: false, status: "failed" };
     }
   }
+}
+
+function expireConversationStateIfNeeded(state = {}, receivedAt = "", alreadyExpired = false) {
+  if (alreadyExpired) return { state, expired: true };
+  const updatedAt = Date.parse(state.updatedAt || "");
+  const receivedTime = Date.parse(receivedAt || "");
+  if (!Number.isFinite(updatedAt) || !Number.isFinite(receivedTime) || receivedTime - updatedAt <= CONVERSATION_IDLE_TTL_MS) {
+    return { state, expired: false };
+  }
+  return {
+    expired: true,
+    state: {
+      ...state,
+      mode: "bot",
+      serviceState: "AUTOMATICO",
+      areaId: null,
+      activeMenu: "portal_main_menu",
+      menuStack: [],
+      navigationStack: ["PORTAL_INSANO"],
+      activeFlow: null,
+      activeStep: null,
+      awaitingInput: false,
+      flowData: {},
+      foodtruckSubstate: null,
+      conversationExpiredAt: new Date(receivedTime).toISOString(),
+      conversationPreviousUpdatedAt: state.updatedAt || null
+    }
+  };
 }
 
 function addEffectiveHumanAcknowledgement(result = {}, humanExpiry = {}, enabled = false) {

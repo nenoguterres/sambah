@@ -263,7 +263,7 @@ test("montador publico do Evento reutiliza catalogo real e nao expoe shell opera
     assert.match(script, /\/api\/site\/insano\/orcamento/);
     assert.match(script, /Voltar ao Portal Insano/);
     assert.match(script, /data-portal/);
-    assert.match(script, /encodeURIComponent\("inicio"\)/);
+    assert.match(script, /encodeURIComponent\("Quero voltar ao Portal Insano"\)/);
     assert.doesNotMatch(script, /data-human>Atendimento/);
     assert.doesNotMatch(script, /renderSambahShell/);
   } finally {

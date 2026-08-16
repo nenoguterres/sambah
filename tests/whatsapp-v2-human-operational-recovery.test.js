@@ -85,3 +85,32 @@ test("nova mensagem depois da expiracao recebe atendimento automatico mesmo sem 
   assert.equal(result.replies[0].type, "menu");
   assert.equal(result.replies[0].menu.id, "portal_main_menu");
 });
+
+test("qualquer contexto automatico expira apos 30 minutos e a nova frase inicia outro atendimento", async () => {
+  const repository = new InMemoryWhatsAppV2ConversationRepository();
+  const state = createWhatsAppV2State(PHONE, "2026-07-24T10:00:00.000Z");
+  state.areaId = "comunicacao_visual";
+  state.activeMenu = "visual_communication_menu";
+  state.activeFlow = "assisted_intake";
+  state.activeStep = "objective";
+  state.awaitingInput = true;
+  state.flowData = { preAttendance: { intent: "geral", answers: { old: "contexto" } } };
+  await repository.save(state);
+  const engine = createWhatsAppV2OperationalEngine({ conversationRepository: repository });
+
+  const result = await engine.processor.handleIncoming({
+    messageId: "wamid-automatic-expired-1",
+    from: PHONE,
+    text: "quero saber o valor de um evento",
+    receivedAt: "2026-07-24T11:30:00.000Z"
+  });
+
+  assert.equal(result.conversationStateExpired, true);
+  assert.equal(result.state.mode, "bot");
+  assert.equal(result.state.serviceState, "AUTOMATICO");
+  assert.equal(result.state.areaId, null);
+  assert.equal(result.state.activeFlow, "assisted_intake");
+  assert.equal(result.state.flowData.preAttendance.intent, "evento");
+  assert.equal(result.state.flowData.preAttendance.answers.old, undefined);
+  assert.match(result.replies[0].text, /data prevista do evento/i);
+});
