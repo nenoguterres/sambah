@@ -56,7 +56,7 @@ function headerMarkup() {
   return `<header class="event-header">
     ${state.step !== "choose" ? `<button class="back-button" type="button" data-back aria-label="Voltar">‹</button>` : ""}
     <div><div class="wordmark">INSANO</div><small>Food Truck</small></div>
-    <button class="text-button" type="button" data-human>Atendimento</button>
+    <button class="text-button" type="button" data-portal>Voltar ao Portal Insano</button>
   </header>`;
 }
 
@@ -140,7 +140,7 @@ function formMarkup() {
 function bindActions() {
   document.querySelectorAll("[data-mode]").forEach((button) => button.addEventListener("click", () => { state.mode = button.dataset.mode; state.step = "build"; render(); }));
   document.querySelector("[data-back]")?.addEventListener("click", () => { state.step = state.step === "review" ? "build" : "choose"; render(); });
-  document.querySelector("[data-human]")?.addEventListener("click", () => { location.href = `${whatsappUrl}?text=${encodeURIComponent("Quero falar com a equipe do Insano Food Truck sobre um evento.")}`; });
+  document.querySelector("[data-portal]")?.addEventListener("click", () => { location.href = `${whatsappUrl}?text=${encodeURIComponent("inicio")}`; });
   document.querySelectorAll("[data-category]").forEach((button) => button.addEventListener("click", () => { state.category = button.dataset.category; render(); }));
   document.querySelectorAll("[data-people]").forEach((button) => button.addEventListener("click", () => { const minimum = state.mode === "evento" ? 10 : 50; state.people = Math.min(1000, Math.max(minimum, state.people + Number(button.dataset.people))); render(); }));
   document.querySelectorAll("[data-product]").forEach((button) => button.addEventListener("click", () => { const id = button.dataset.product; state.selected = state.selected.includes(id) ? state.selected.filter((item) => item !== id) : [...state.selected, id]; render(); }));
