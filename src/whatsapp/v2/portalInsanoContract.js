@@ -47,7 +47,7 @@ export const portalInsanoContract = {
       options: [
         option("portal.granja", 1, "Granja Aguas da Lagoa", { type: "open_menu", target: "granja_main_menu", areaId: "granja_aguas_da_lagoa" }),
         option("portal.tecnologia", 2, "Desenvolvimento de Tecnologias", { type: "open_menu", target: "technology_main_menu", areaId: "desenvolvimento_tecnologias" }),
-        option("portal.humano", 3, "Atendimento Humano", { type: "open_menu", target: "human_contact_menu", areaId: "atendimento_humano" }),
+        option("portal.humano", 3, "Falar com a equipe", { type: "open_menu", target: "human_contact_menu", areaId: "atendimento_humano" }),
         option("portal.more.back", 4, "Voltar ao Portal Insano", { type: "open_menu", target: "portal_main_menu", areaId: null })
       ]
     },
@@ -71,7 +71,7 @@ export const portalInsanoContract = {
       strictInteractiveIds: true,
       options: [
         option("INSANO_EVENTO", 1, "Montar evento", { type: "open_url_button", target: "integration.insano_food_truck.event_form_url" }),
-        option("INSANO_HUMANO", 2, "Atendimento Humano", { type: "start_flow", target: "human_handoff" }),
+        option("INSANO_HUMANO", 2, "Falar com a equipe", { type: "start_flow", target: "human_handoff" }),
         option("PORTAL_VOLTAR", 3, "Voltar ao Portal", { type: "open_menu", target: "portal_main_menu", areaId: null, clearFoodtruckSubstate: true })
       ]
     },
@@ -96,13 +96,13 @@ export const portalInsanoContract = {
         option("xeriffe.reserve", 1, "Reservar mesa", { type: "start_flow", target: "xeriffe_reservation_request" }),
         option("xeriffe.table", 2, "Atendimento na mesa", { type: "start_flow", target: "xeriffe_table_service" }),
         option("xeriffe.event", 3, "Espaco para evento", { type: "start_flow", target: "xeriffe_event_information" }),
-        option("xeriffe.human", 4, "Atendimento Humano", { type: "open_menu", target: "human_contact_menu", areaId: "atendimento_humano" }),
+        option("xeriffe.human", 4, "Falar com a equipe", { type: "open_menu", target: "human_contact_menu", areaId: "atendimento_humano" }),
         option("xeriffe.services.back", 5, "Voltar ao Xeriffe", { type: "open_menu", target: "xeriffe_main_menu", areaId: "xeriffe_obirici" })
       ]
     },
     human_contact_menu: {
       id: "human_contact_menu",
-      title: "Atendimento Humano",
+      title: "Falar com a equipe",
       body: "Com quem deseja falar?",
       strictInteractiveIds: true,
       options: [
@@ -141,7 +141,7 @@ export const portalInsanoContract = {
         option("technology.app.studion", 5, "Studio N", { type: "open_menu", target: "app_studion_menu" }),
         option("technology.app.i9acao", 6, "i9ACAO Security", { type: "open_menu", target: "app_i9acao_menu" }),
         option("technology.app.workhub", 7, "Central de Trabalhos", { type: "open_menu", target: "app_workhub_menu" }),
-        option("technology.human", 8, "Atendimento humano", { type: "start_flow", target: "human_handoff" }),
+        option("technology.human", 8, "Falar com a equipe", { type: "start_flow", target: "human_handoff" }),
         option("technology.back", 9, "Voltar", { type: "open_menu", target: "business_main_menu", areaId: null })
       ]
     },
@@ -157,7 +157,7 @@ export const portalInsanoContract = {
       title: "Serralheria",
       body: "Fabricacao em metal de equipamentos e estruturas para operacoes gastronomicas, incluindo projetos de food truck. A equipe humana confirma necessidade, medidas e viabilidade.",
       options: [
-        option("sawmill.human", 1, "Atendimento humano", { type: "start_flow", target: "human_handoff" }),
+        option("sawmill.human", 1, "Falar com a equipe", { type: "start_flow", target: "human_handoff" }),
         option("sawmill.back", 2, "Voltar", { type: "open_menu", target: "business_main_menu", areaId: null })
       ]
     },
@@ -166,7 +166,7 @@ export const portalInsanoContract = {
       title: "Comunicacao Visual",
       body: "Producoes planejadas no Studio N: letras-caixa, luminosos, placas e fachadas em ACM, totens, paineis, letreiros e preparacao de projetos para corte e dobra. A equipe humana avalia medidas, materiais, acabamento e instalacao.",
       options: [
-        option("visual.human", 1, "Atendimento humano", { type: "start_flow", target: "human_handoff" }),
+        option("visual.human", 1, "Falar com a equipe", { type: "start_flow", target: "human_handoff" }),
         option("visual.back", 2, "Voltar", { type: "open_menu", target: "business_main_menu", areaId: null })
       ]
     },
@@ -237,7 +237,7 @@ function appMenu(id, title, body) {
     title,
     body,
     options: [
-      option(`${id}.human`, 1, "Atendimento humano", { type: "start_flow", target: "human_handoff" }),
+      option(`${id}.human`, 1, "Falar com a equipe", { type: "start_flow", target: "human_handoff" }),
       option(`${id}.back`, 2, "Voltar aos aplicativos", { type: "open_menu", target: "technology_main_menu" })
     ]
   };

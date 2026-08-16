@@ -222,7 +222,7 @@ test("Tecnologias e Fabricacao apresenta Tecnologia, Serralheria e Comunicacao V
     assert.equal(result.state.activeMenu, menuId);
     assert.equal(result.state.areaId, areaId);
     assert.match(result.replies[0].menu.body, bodyPattern);
-    assert.ok(result.replies[0].menu.options.some((option) => option.title === "Atendimento humano"));
+    assert.ok(result.replies[0].menu.options.some((option) => option.title === "Falar com a equipe"));
   }
 });
 
@@ -241,7 +241,7 @@ test("Tecnologia oferece um botao para cada aplicativo e apresenta suas funcoes"
   const app = await engine.processor.handleIncoming({ messageId: "wamid-apps-sambah", from, text: "technology.app.sambah" });
   assert.equal(app.state.activeMenu, "app_sambah_menu");
   assert.match(app.replies[0].menu.body, /WhatsApp.*CRM/);
-  assert.deepEqual(app.replies[0].menu.options.map((item) => item.title), ["Atendimento humano", "Voltar aos aplicativos"]);
+  assert.deepEqual(app.replies[0].menu.options.map((item) => item.title), ["Falar com a equipe", "Voltar aos aplicativos"]);
 });
 
 test("Granja usa botao curto sem cortar o nome Aguas da Lagoa", async () => {
@@ -326,7 +326,7 @@ test.skip("Portal Insano Food Truck exibe tres acoes diretas e abre montagem pub
     "INSANO_HUMANO",
     "PORTAL_VOLTAR"
   ]);
-  assert.deepEqual(menu.options.map((option) => option.title), ["Montar evento", "Atendimento Humano", "Voltar ao Portal"]);
+  assert.deepEqual(menu.options.map((option) => option.title), ["Montar evento", "Falar com a equipe", "Voltar ao Portal"]);
 });
 
 test("Portal Insano Food Truck abre diretamente o portal publico", async () => {

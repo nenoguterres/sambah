@@ -771,10 +771,10 @@ function handleNavigationCommand(state, contract, command) {
 function routeNavigationCommand(text) {
   if (["inicio", "menu principal", "portal", "portal insano", "comecar de novo"].includes(text)) return "inicio";
   if (["insano_menu_voltar", "voltar ao insano food truck"].includes(text)) return "insano_menu_voltar";
-  if (["portal_voltar", "voltar ao portal insano"].includes(text)) return "portal_voltar";
+  if (["portal_voltar", "voltar ao portal insano"].includes(text) || text.startsWith("voltar ao portal ins")) return "portal_voltar";
   if (["voltar", "retornar", "menu anterior"].includes(text)) return "voltar";
   if (["cancelar", "parar", "desistir"].includes(text)) return "cancelar";
-  if (["insano_humano", "humano", "atendente", "atendimento humano", "pessoa", "falar com alguem"].includes(text)) return "humano";
+  if (["insano_humano", "humano", "atendente", "atendimento humano", "pessoa", "falar com alguem", "falar com a equipe"].includes(text)) return "humano";
   return null;
 }
 

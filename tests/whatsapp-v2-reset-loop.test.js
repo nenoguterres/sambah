@@ -70,3 +70,13 @@ test("modo humano ignora saudacao e somente inicio retorna ao automatico", () =>
   assert.equal(reset.nextState.serviceState, "AUTOMATICO");
   assert.equal(reset.replies[0].menu.id, "portal_main_menu");
 });
+
+test("texto cortado Voltar ao Portal Ins retorna sempre ao Portal Insano", () => {
+  const state = createWhatsAppV2State("5551980413745");
+  state.areaId = "comunicacao_visual";
+  state.activeMenu = "business_main_menu";
+  const result = routePortalInsanoMessage({ state, message: { text: "Voltar ao Portal Ins" } });
+  assert.equal(result.nextState.activeMenu, "portal_main_menu");
+  assert.equal(result.nextState.areaId, null);
+  assert.equal(result.replies[0].menu.options[0].title, "Gastronomia");
+});
