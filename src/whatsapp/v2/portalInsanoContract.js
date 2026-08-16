@@ -55,6 +55,7 @@ export const portalInsanoContract = {
       id: "business_main_menu",
       title: "Tecnologias e Fabricacao",
       body: "Escolha a area de interesse:",
+      buttonText: "VER AREAS",
       options: [
         option("business.technology", 1, "Tecnologia", { type: "open_menu", target: "technology_main_menu", areaId: "desenvolvimento_tecnologias" }),
         option("business.sawmill", 2, "Serraria", { type: "open_menu", target: "sawmill_main_menu", areaId: "serraria_equipamentos" }),
@@ -130,12 +131,27 @@ export const portalInsanoContract = {
     technology_main_menu: {
       id: "technology_main_menu",
       title: "Tecnologia",
-      body: "Nossos aplicativos e funcoes: Mesa do Xeriffe para operacao e atendimento; SamBah para atendimento e CRM; SamBah Pay para pagamentos; Perola para conteudo e campanhas; Studio N para projetos; i9ACAO para seguranca; Workhub para organizar trabalhos; alem de automacoes e solucoes com ESP32.",
+      body: "Escolha um aplicativo para conhecer suas funcoes:",
+      buttonText: "VER APLICATIVOS",
       options: [
-        option("technology.human", 1, "Atendimento humano", { type: "start_flow", target: "human_handoff" }),
-        option("technology.back", 2, "Voltar", { type: "open_menu", target: "business_main_menu", areaId: null })
+        option("technology.app.mesa", 1, "Mesa do Xeriffe", { type: "open_menu", target: "app_mesa_menu" }),
+        option("technology.app.sambah", 2, "SamBah", { type: "open_menu", target: "app_sambah_menu" }),
+        option("technology.app.pay", 3, "SamBah Pay", { type: "open_menu", target: "app_pay_menu" }),
+        option("technology.app.perola", 4, "Perola", { type: "open_menu", target: "app_perola_menu" }),
+        option("technology.app.studion", 5, "Studio N", { type: "open_menu", target: "app_studion_menu" }),
+        option("technology.app.i9acao", 6, "i9ACAO Security", { type: "open_menu", target: "app_i9acao_menu" }),
+        option("technology.app.workhub", 7, "Central de Trabalhos", { type: "open_menu", target: "app_workhub_menu" }),
+        option("technology.human", 8, "Atendimento humano", { type: "start_flow", target: "human_handoff" }),
+        option("technology.back", 9, "Voltar", { type: "open_menu", target: "business_main_menu", areaId: null })
       ]
     },
+    app_mesa_menu: appMenu("app_mesa_menu", "Mesa do Xeriffe", "Operacao de mesas, comandas, atendimento, caixa e comunicacao com a producao."),
+    app_sambah_menu: appMenu("app_sambah_menu", "SamBah", "Atendimento pelo WhatsApp, organizacao de conversas, CRM, oportunidades e encaminhamento humano."),
+    app_pay_menu: appMenu("app_pay_menu", "SamBah Pay", "Ferramentas de pagamentos, cobrancas e integracao financeira do ecossistema SamBah."),
+    app_perola_menu: appMenu("app_perola_menu", "Perola", "Planejamento de campanhas, conteudos, publicacoes, calendario e acompanhamento comercial."),
+    app_studion_menu: appMenu("app_studion_menu", "Studio N", "Projetos de comunicacao visual, letras-caixa, luminosos, ACM, corte, dobra e visualizacao."),
+    app_i9acao_menu: appMenu("app_i9acao_menu", "i9ACAO Security", "Seguranca e monitoramento por cameras, areas de vigilancia, dispositivos e alertas."),
+    app_workhub_menu: appMenu("app_workhub_menu", "Central de Trabalhos", "Organizacao central das tarefas, prioridades, andamento, bloqueios e conclusoes dos projetos."),
     sawmill_main_menu: {
       id: "sawmill_main_menu",
       title: "Serraria",
@@ -213,6 +229,18 @@ export const portalInsanoContract = {
 
 function option(id, order, title, action) {
   return { id, order, title, action };
+}
+
+function appMenu(id, title, body) {
+  return {
+    id,
+    title,
+    body,
+    options: [
+      option(`${id}.human`, 1, "Atendimento humano", { type: "start_flow", target: "human_handoff" }),
+      option(`${id}.back`, 2, "Voltar aos aplicativos", { type: "open_menu", target: "technology_main_menu" })
+    ]
+  };
 }
 
 function flow(id, initialMessage, field, flags = {}) {

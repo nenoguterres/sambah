@@ -99,7 +99,9 @@ export function resolveMenuOption(menu, text) {
     return menu.options.find((item) => normalizeText(item.id) === normalized) || null;
   }
   return menu.options.find((item) => {
-    return String(item.order) === normalized || normalizeText(item.id) === normalized || normalizeText(item.title) === normalized;
+    const title = normalizeText(item.title);
+    const truncatedTitle = normalized.length >= 12 && title.startsWith(normalized);
+    return String(item.order) === normalized || normalizeText(item.id) === normalized || title === normalized || truncatedTitle;
   }) || null;
 }
 

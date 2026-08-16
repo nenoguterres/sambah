@@ -195,9 +195,20 @@ test("Portal Insano abre as tres areas iniciais por clique, numero ou texto", as
   }
 });
 
+test("Portal reconhece Tecnologias e Fabricacao mesmo quando WhatsApp corta o titulo", async () => {
+  const engine = createLabEngine({ observeOnly: true });
+  const from = "5551000000299";
+  await engine.processor.handleIncoming({ messageId: "wamid-fabrication-truncated-welcome", from, text: "oi" });
+  const result = await engine.processor.handleIncoming({ messageId: "wamid-fabrication-truncated-select", from, text: "Tecnologias e Fabric" });
+  assert.equal(result.state.activeMenu, "business_main_menu");
+  assert.equal(result.state.activeFlow, null);
+  assert.equal(result.replies[0].menu.buttonText, "VER AREAS");
+  assert.deepEqual(result.replies[0].menu.options.slice(0, 3).map((item) => item.title), ["Tecnologia", "Serraria", "Comunicacao Visual"]);
+});
+
 test("Tecnologias e Fabricacao apresenta Tecnologia, Serraria e Comunicacao Visual com atendimento humano", async () => {
   const cases = [
-    ["business.technology", "technology_main_menu", "desenvolvimento_tecnologias", /SamBah Pay/],
+    ["business.technology", "technology_main_menu", "desenvolvimento_tecnologias", /aplicativo/i],
     ["2", "sawmill_main_menu", "serraria_equipamentos", /food truck/i],
     ["Comunicacao Visual", "visual_communication_menu", "comunicacao_visual", /Studio N/]
   ];
@@ -211,8 +222,26 @@ test("Tecnologias e Fabricacao apresenta Tecnologia, Serraria e Comunicacao Visu
     assert.equal(result.state.activeMenu, menuId);
     assert.equal(result.state.areaId, areaId);
     assert.match(result.replies[0].menu.body, bodyPattern);
-    assert.equal(result.replies[0].menu.options[0].title, "Atendimento humano");
+    assert.ok(result.replies[0].menu.options.some((option) => option.title === "Atendimento humano"));
   }
+});
+
+test("Tecnologia oferece um botao para cada aplicativo e apresenta suas funcoes", async () => {
+  const engine = createLabEngine({ observeOnly: true });
+  const from = "5551000000399";
+  await engine.processor.handleIncoming({ messageId: "wamid-apps-welcome", from, text: "oi" });
+  await engine.processor.handleIncoming({ messageId: "wamid-apps-root", from, text: "3" });
+  const technology = await engine.processor.handleIncoming({ messageId: "wamid-apps-tech", from, text: "1" });
+  assert.equal(technology.state.activeMenu, "technology_main_menu");
+  assert.equal(technology.replies[0].menu.buttonText, "VER APLICATIVOS");
+  assert.deepEqual(technology.replies[0].menu.options.slice(0, 7).map((item) => item.title), [
+    "Mesa do Xeriffe", "SamBah", "SamBah Pay", "Perola", "Studio N", "i9ACAO Security", "Central de Trabalhos"
+  ]);
+
+  const app = await engine.processor.handleIncoming({ messageId: "wamid-apps-sambah", from, text: "technology.app.sambah" });
+  assert.equal(app.state.activeMenu, "app_sambah_menu");
+  assert.match(app.replies[0].menu.body, /WhatsApp.*CRM/);
+  assert.deepEqual(app.replies[0].menu.options.map((item) => item.title), ["Atendimento humano", "Voltar aos aplicativos"]);
 });
 
 test("Granja usa botao curto sem cortar o nome Aguas da Lagoa", async () => {
