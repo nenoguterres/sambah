@@ -38,6 +38,8 @@ test("mensagem dentro de 30 minutos preserva HUMANO e recebe confirmacao eficaz"
   assert.match(result.replies[0].text, /já avisei a equipe/i);
   assert.equal(result.actions.some((action) => action.type === "notify_operator"), true);
   assert.equal(result.actions.some((action) => action.type === "human_acknowledgement"), true);
+  assert.equal(typeof result.latency.totalMs, "number");
+  assert.equal(typeof result.latency.loadStateMs, "number");
 });
 
 test("HUMANO expira depois de 30 minutos e oi reabre o Portal Insano", async () => {

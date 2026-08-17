@@ -54,6 +54,28 @@ test("nova mensagem recebida cria novo evento e acknowledge encerra a pendencia"
   assert.equal((await service.listAlerts({ unreadOnly: true })).count, 1);
 });
 
+test("alerta humano informa prazo e atraso de primeira resposta", async (t) => {
+  let now = new Date("2026-08-17T12:00:00.000Z");
+  const dir = await mkdtemp(join(tmpdir(), "sambah-sla-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const service = new CallCenterService({
+    operatorsFile: join(dir, "operators.json"),
+    alertsFile: join(dir, "alerts.json"),
+    subscriptionsFile: join(dir, "subscriptions.json"),
+    now: () => now,
+    firstResponseSlaMinutes: 10
+  });
+  const created = await service.createAlert({
+    conversation: { id: "wa_sla", telefone: "5551", status: "humano", lastInboundMessageId: "wamid-sla", ultimaMensagem: "preciso de ajuda" },
+    operator: { phone: "5551980413745" }
+  });
+  assert.equal(created.alert.firstResponseDueAt, "2026-08-17T12:10:00.000Z");
+  now = new Date("2026-08-17T12:13:00.000Z");
+  const listed = await service.listAlerts({ unreadOnly: true });
+  assert.equal(listed.alerts[0].firstResponseSlaStatus, "overdue");
+  assert.equal(listed.alerts[0].firstResponseOverdueMinutes, 3);
+});
+
 test("assinatura 410 e VAPID ausente nao derrubam alerta", async (t) => {
   const provider = {
     setVapidDetails() {},

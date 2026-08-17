@@ -180,9 +180,11 @@ function updateAttentionAlert() {
     return;
   }
   const first = attentionItems[0] || {};
+  const waitingMinutes = minutesSince(first.ultimaInteracao || first.updatedAt || first.createdAt);
+  const waitingLabel = waitingMinutes >= 10 ? ` · ATRASADO ${waitingMinutes} min` : waitingMinutes > 0 ? ` · aguardando ${waitingMinutes} min` : " · agora";
   humanAlertPanelEl.innerHTML = `
     <strong><span class="human-alert-count">${total}</span> ${total === 1 ? "atendimento precisa" : "atendimentos precisam"} de resposta</strong>
-    <span>${escapeHtml(first.nome || "Cliente WhatsApp")} · ${escapeHtml(first.ultimaMensagem || "Nova conversa aguardando")}</span>
+    <span>${escapeHtml(first.nome || "Cliente WhatsApp")}${escapeHtml(waitingLabel)} · ${escapeHtml(first.ultimaMensagem || "Nova conversa aguardando")}</span>
     <div class="human-alert-actions">
       <button type="button" data-alert-focus="${escapeAttr(first.id || "")}">Responder agora</button>
     </div>
@@ -197,6 +199,12 @@ function updateAttentionAlert() {
     const id = event.currentTarget.dataset.alertFocus;
     if (id) openConversation(id);
   });
+}
+
+function minutesSince(value) {
+  const timestamp = Date.parse(value || "");
+  if (!Number.isFinite(timestamp)) return 0;
+  return Math.max(0, Math.floor((Date.now() - timestamp) / 60000));
 }
 
 function updateAppBadge(total) {

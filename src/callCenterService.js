@@ -5,6 +5,7 @@ import { dirname } from "node:path";
 const VALID_STATUSES = new Set(["online", "offline", "available", "busy"]);
 const AVAILABLE_STATUSES = new Set(["online", "available"]);
 const ALERT_SPAM_WINDOW_MS = 5 * 60 * 1000;
+const DEFAULT_FIRST_RESPONSE_SLA_MINUTES = 10;
 let webPushModule = null;
 
 export class CallCenterService {
@@ -18,7 +19,8 @@ export class CallCenterService {
     vapidPublicKey = process.env.WEB_PUSH_VAPID_PUBLIC_KEY || "",
     vapidPrivateKey = process.env.WEB_PUSH_VAPID_PRIVATE_KEY || "",
     vapidSubject = process.env.WEB_PUSH_SUBJECT || "https://api.insanofoodtruck.com.br",
-    webPushProvider = null
+    webPushProvider = null,
+    firstResponseSlaMinutes = Number(process.env.CALL_CENTER_FIRST_RESPONSE_SLA_MINUTES || DEFAULT_FIRST_RESPONSE_SLA_MINUTES)
   } = {}) {
     this.operatorsFile = operatorsFile;
     this.alertsFile = alertsFile;
@@ -33,6 +35,7 @@ export class CallCenterService {
     this.vapidPrivateKey = vapidPrivateKey;
     this.vapidSubject = vapidSubject;
     this.webPushProvider = webPushProvider;
+    this.firstResponseSlaMinutes = Math.max(1, Number(firstResponseSlaMinutes) || DEFAULT_FIRST_RESPONSE_SLA_MINUTES);
   }
 
   async login({ name = "", phone = "", pin = "" } = {}) {
@@ -158,6 +161,8 @@ export class CallCenterService {
       createdAt: now,
       updatedAt: now,
       lastSentAt: now,
+      firstResponseDueAt: new Date(nowDate.getTime() + this.firstResponseSlaMinutes * 60 * 1000).toISOString(),
+      firstResponseSlaMinutes: this.firstResponseSlaMinutes,
       realIntegrated: false,
       deliveryStatus: "pending",
       deliveries: []
@@ -174,7 +179,8 @@ export class CallCenterService {
     const alerts = data.alerts
       .filter((alert) => !operatorPhone || alert.operatorPhone === operatorPhone)
       .filter((alert) => !unreadOnly || alert.status !== "read")
-      .sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)));
+      .sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)))
+      .map((alert) => withAlertSla(alert, this.now()));
     return { ok: true, count: alerts.length, alerts };
   }
 
@@ -375,6 +381,18 @@ export class CallCenterService {
     await this.#writeAlerts(alertsData);
     return { alert: alertsData.alerts[index] };
   }
+}
+
+function withAlertSla(alert = {}, now = new Date()) {
+  const dueAt = Date.parse(alert.firstResponseDueAt || "");
+  const pending = alert.status !== "read";
+  const overdue = pending && Number.isFinite(dueAt) && now.getTime() > dueAt;
+  return {
+    ...alert,
+    firstResponseSlaStatus: pending ? (overdue ? "overdue" : "on_time") : "acknowledged",
+    firstResponseOverdue: overdue,
+    firstResponseOverdueMinutes: overdue ? Math.floor((now.getTime() - dueAt) / 60000) : 0
+  };
 }
 
 export function normalizeOperatorPhone(value = "") {

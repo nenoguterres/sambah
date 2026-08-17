@@ -5,6 +5,7 @@ import { FileWhatsAppV2ConversationRepository } from "./v2/inMemoryRepositories.
 import { join } from "node:path";
 
 export async function whatsappMaintenanceHandler(payload = {}, { conversationService, messageService, auditService, menuService = null, whatsappProvider = null, runtimeConfig = getRuntimeConfig() } = {}) {
+  const requestStartedAt = Date.now();
   const incoming = parseWhatsAppIncoming(payload);
   const conversationResult = await conversationService.recordNeutralIncoming(incoming);
   const messageResult = await safeHandleIncomingHistory(messageService, payload, incoming);
@@ -74,6 +75,7 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
       menuService,
       reserved: reservation.reserved
     });
+    const processingMs = Date.now() - requestStartedAt;
     if (processed.state?.mode === "human" || processed.state?.serviceState === "HUMANO") {
       const humanResult = await conversationService.markHuman?.(conversationResult.conversa.id);
       if (humanResult?.ok) conversationResult.conversa = humanResult.conversa;
@@ -90,7 +92,9 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
           phone: maskPhone(incoming.telefone || ""),
           mode: "operational",
           source: processed.source || "",
-          reason: processed.source === "humanState" ? "human_state_blocks_automation" : "no_reply_created"
+          reason: processed.source === "humanState" ? "human_state_blocks_automation" : "no_reply_created",
+          processingMs,
+          engineLatency: processed.latency || null
         },
         dedupeKey: incoming.messageId ? `whatsapp-v2-no-reply:${incoming.messageId}` : undefined
       });
@@ -202,7 +206,10 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
         autoReplyEnabled: true,
         sendEnabled: runtimeConfig.whatsappV2?.sendEnabled === true,
         senderCalled: sendAttempted,
-        providerStatus: sendResult?.status || ""
+        providerStatus: sendResult?.status || "",
+        processingMs,
+        totalWebhookMs: Date.now() - requestStartedAt,
+        engineLatency: processed.latency || null
       },
       dedupeKey: incoming.messageId ? `whatsapp-v2-operational:${incoming.messageId}` : undefined
     });
@@ -235,7 +242,10 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
         source: processed.source || "",
         replyType: reply.type || "text",
         metaMessageType: sendResult?.metaMessageType || reply.type || "text",
-        fallbackUsed: Boolean(sendResult?.fallbackUsed)
+        fallbackUsed: Boolean(sendResult?.fallbackUsed),
+        processingMs,
+        totalWebhookMs: Date.now() - requestStartedAt,
+        engineLatency: processed.latency || null
       }
     };
   }

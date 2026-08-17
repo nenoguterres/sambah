@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { performance } from "node:perf_hooks";
 import { assertWhatsAppV2ResponseContract } from "./responseContract.js";
 import { InMemoryWhatsAppV2ConversationRepository, InMemoryWhatsAppV2OutboxRepository } from "./inMemoryRepositories.js";
 import { routePortalInsanoMessage } from "./portalInsanoEngine.js";
@@ -41,18 +42,29 @@ export class WhatsAppV2LabProcessor {
   }
 
   async handleIncoming(payload = {}) {
+    const startedAt = performance.now();
+    const timings = {};
+    let checkpoint = startedAt;
+    const mark = (name) => {
+      const now = performance.now();
+      timings[name] = roundMilliseconds(now - checkpoint);
+      checkpoint = now;
+    };
     const message = normalizeIncoming(payload);
     const traceId = crypto.randomUUID();
     const reserved = message.reserved === true ? true : await this.conversationRepository.reserveMessage(message.messageId);
-    if (!reserved) return { ok: true, duplicate: true, traceId, repliesSent: 0 };
+    mark("reserveMessageMs");
+    if (!reserved) return { ok: true, duplicate: true, traceId, repliesSent: 0, latency: finishTimings(timings, startedAt) };
 
     try {
       const loadedState = await this.conversationRepository.get(message.conversationId);
+      mark("loadStateMs");
       const humanExpiry = expireHumanStateIfNeeded(loadedState, message.receivedAt);
       const conversationExpiry = expireConversationStateIfNeeded(humanExpiry.state, message.receivedAt, humanExpiry.expired);
       const currentState = conversationExpiry.state;
       const nextHistory = [...(currentState.history || []), { messageId: message.messageId, text: message.text, at: message.receivedAt }];
       const menuCache = await this.menuService?.getMenuCache?.() || await this.menuService?.cacheSnapshot?.() || { items: [], categories: [] };
+      mark("loadMenuMs");
       const routed = routePortalInsanoMessage({
         state: {
           ...currentState,
@@ -64,12 +76,14 @@ export class WhatsAppV2LabProcessor {
         menuCache
       });
       const result = assertWhatsAppV2ResponseContract(addEffectiveHumanAcknowledgement(routed, humanExpiry, this.externalDelivery));
+      mark("routeMessageMs");
       const nextState = {
         ...result.nextState,
         updatedAt: new Date(message.receivedAt).toISOString(),
         lastProcessedMessageId: message.messageId
       };
       await this.conversationRepository.save(nextState);
+      mark("saveStateMs");
 
       let outboxItem = null;
       let repliesSent = 0;
@@ -84,8 +98,10 @@ export class WhatsAppV2LabProcessor {
         const sent = await this.sendOutbox(outboxItem.id, traceId);
         repliesSent = sent.sent ? 1 : 0;
       }
+      mark("outboxMs");
 
       await this.conversationRepository.markMessageProcessed(message.messageId);
+      mark("markProcessedMs");
       return {
         ok: true,
         duplicate: false,
@@ -99,6 +115,7 @@ export class WhatsAppV2LabProcessor {
         humanStateExpired: humanExpiry.expired,
         conversationStateExpired: conversationExpiry.expired,
         outboxId: outboxItem?.id || null,
+        latency: finishTimings(timings, startedAt),
         mode: this.externalDelivery ? "operational" : this.observeOnly ? "observe_only" : "lab_send_fake"
       };
     } catch (error) {
@@ -120,6 +137,14 @@ export class WhatsAppV2LabProcessor {
       return { sent: false, status: "failed" };
     }
   }
+}
+
+function finishTimings(timings, startedAt) {
+  return { ...timings, totalMs: roundMilliseconds(performance.now() - startedAt) };
+}
+
+function roundMilliseconds(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
 }
 
 function expireConversationStateIfNeeded(state = {}, receivedAt = "", alreadyExpired = false) {

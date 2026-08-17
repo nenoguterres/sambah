@@ -1,6 +1,6 @@
 export const portalInsanoContract = {
   schema: "sambah.whatsapp.portal-insano",
-  version: "3.4.0",
+  version: "3.5.0",
   assistant: {
     name: "SamBah",
     role: "Assistente oficial de atendimento do Portal Insano"
