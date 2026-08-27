@@ -384,13 +384,14 @@ test("plataformas externas, cardapios, mesa, garcom e cozinha respondem", async 
       nome: "Evento Wix Insano",
       telefoneOriginal: "51970000009",
       whatsapp: "51970000009",
-      data: "25/08/2026",
+      data: "25/08/2027",
       local: "Porto Alegre",
       cidade: "Porto Alegre",
       pessoas: "90",
       horarioInicio: "18:00",
       horarioTermino: "23:00",
       tipo_evento: "executivo",
+      tipoAmbiente: "fechado",
       page: "/service-page/insano",
       observacoes: "Evento executivo com churrascaria"
     });
@@ -401,7 +402,7 @@ test("plataformas externas, cardapios, mesa, garcom e cozinha respondem", async 
     assert.equal(insanoEvento.lead.source, "WHATSAPP_PORTAL_INSANO_FOODTRUCK_EVENTO");
     assert.equal(insanoEvento.crm.lead.origem, "insanofoodtruck.com.br");
     assert.equal(insanoEvento.emailAlert.to, "chefnenogutterres@gmail.com,kdoiegutterresgastronomia@gmail.com");
-    assert.match(insanoEvento.emailAlert.subject, /\[NOVO EVENTO\] 25\/08\/2026 — Porto Alegre — 90 pessoas/);
+    assert.match(insanoEvento.emailAlert.subject, /\[NOVO EVENTO\] 25\/08\/2027 — Porto Alegre — 90 pessoas/);
     assert.match(insanoEvento.conversationUrl, /\/conversas\?conversationId=wa_555197000009/);
     assert.match(insanoEvento.whatsappUrl, /^https:\/\/wa\.me\/5551980413745/);
     const eventLeads = JSON.parse(await readFile(join(dir, "event-leads.json"), "utf8"));
@@ -587,12 +588,13 @@ test("Portal Insano cria pedidos, eventos, empresas, Xeriffe e WhatsApp sem expo
       telefoneOriginal: "51971000005",
       phone: "51971000005",
       whatsapp: "51971000005",
-      data: "25/08/2026",
+      data: "25/08/2027",
       local: "Centro de Eventos",
       cidade: "Porto Alegre",
       quantidade_pessoas: "90",
       horarioInicio: "14:00",
       terminoADefinir: true,
+      tipoAmbiente: "fechado",
       notes: "Coffee break",
       createdAt: old,
       atualizado_em: old
@@ -804,13 +806,14 @@ test("operacao diaria completa cobre Insano, evento, festa Xeriffe, mesa e dashb
       nome: "Operacao Evento Insano",
       telefoneOriginal: "51980000002",
       whatsapp: "51980000002",
-      data: "26/08/2026",
+      data: "26/08/2027",
       local: "Porto Alegre",
       cidade: "Porto Alegre",
       pessoas: "120",
       horarioInicio: "18:00",
       horarioTermino: "23:00",
       tipo_evento: "executivo",
+      tipoAmbiente: "fechado",
       observacoes: "Churrasco Insano corporativo",
       valor_estimado: 12000
     });
