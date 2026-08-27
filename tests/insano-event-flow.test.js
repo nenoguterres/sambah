@@ -63,7 +63,7 @@ function validPayload(patch = {}) {
     telefoneOriginal: "5551987654321",
     telefone: "51987654321",
     nome: "Cliente Evento",
-    data: "25/08/2026",
+    data: "25/08/2027",
     local: "Salao da Associacao",
     cidade: "Porto Alegre",
     tipoAmbiente: "ao_ar_livre",
@@ -115,7 +115,7 @@ test("fluxo final Evento valida campos, registra uma solicitação e preserva co
     assert.equal(created.body.emailAlert.status, "SENT");
     assert.equal(smtpCalls.length, 1);
     assert.equal(smtpCalls[0].to, "chefnenogutterres@gmail.com,kdoiegutterresgastronomia@gmail.com");
-    assert.match(smtpCalls[0].subject, /\[NOVO EVENTO\] 25\/08\/2026 — Porto Alegre — 100 pessoas/);
+    assert.match(smtpCalls[0].subject, /\[NOVO EVENTO\] 25\/08\/2027 — Porto Alegre — 100 pessoas/);
 
     const duplicate = await post(validPayload());
     assert.equal(duplicate.status, 201);
@@ -316,7 +316,7 @@ test("fluxo Orcamento usa formulario proprio e envia email sem cair no Evento", 
     assert.equal(body.emailAlert.status, "SENT");
     assert.equal(smtpCalls.length, 1);
     assert.equal(smtpCalls[0].to, "chefnenogutterres@gmail.com,kdoiegutterresgastronomia@gmail.com");
-    assert.match(smtpCalls[0].subject, /\[NOVO ORCAMENTO\] 25\/08\/2026 — Porto Alegre — Hamburguer/);
+    assert.match(smtpCalls[0].subject, /\[NOVO ORCAMENTO\] 25\/08\/2027 — Porto Alegre — Hamburguer/);
     assert.match(smtpCalls[0].body, /Nova solicitacao de orcamento recebida pelo SamBah/);
     assert.match(smtpCalls[0].body, /Produto:\nHamburguer/);
     assert.match(smtpCalls[0].body, /Quantidade de porcoes:\n50 porcoes/);
