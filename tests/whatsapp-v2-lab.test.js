@@ -281,6 +281,10 @@ test("Granja usa botao curto sem cortar o nome Aguas da Lagoa", async () => {
   const result = await engine.processor.handleIncoming({ messageId: "wamid-granja-label-select", from, text: "2" });
   assert.equal(result.replies[0].menu.title, "Granja Aguas da Lagoa");
   assert.equal(result.replies[0].menu.buttonText, "VER OPCOES");
+  const animals = await engine.processor.handleIncoming({ messageId: "wamid-granja-animals", from, text: "granja.animals" });
+  assert.equal(animals.state.mode, "human");
+  assert.equal(animals.actions.some((action) => action.type === "notify_operator" && action.emailAlert === true), true);
+  assert.match(animals.replies[0].text, /avisei a equipe/i);
 });
 
 test("Xeriffe separa compra rapida de reserva, mesa e evento", async () => {

@@ -1211,7 +1211,51 @@ test("/health retorna versao e commit do build", async () => {
   }
 });
 
-async function createTestServer({ provider = new MockWhatsAppProvider({ logger: { info: () => {} } }), whatsappSendFetch = globalThis.fetch } = {}) {
+test("WhatsApp envia email quando disponibilidade da Granja exige confirmacao humana", async () => {
+  const previousV2 = process.env.WHATSAPP_V2_ENABLED;
+  const previousAutoReply = process.env.WHATSAPP_AUTO_REPLY_ENABLED;
+  const previousSend = process.env.WHATSAPP_SEND_ENABLED;
+  process.env.WHATSAPP_V2_ENABLED = "true";
+  process.env.WHATSAPP_AUTO_REPLY_ENABLED = "true";
+  process.env.WHATSAPP_SEND_ENABLED = "false";
+  const createdAlerts = [];
+  const sentAlerts = [];
+  const eventEmailAlertService = {
+    createAlert: async (input) => {
+      const alert = { ...input, alertId: `alert-${createdAlerts.length + 1}`, status: "PENDING" };
+      createdAlerts.push(alert);
+      return { ok: true, alert };
+    },
+    sendAlert: async (alertId) => {
+      sentAlerts.push(alertId);
+      return { ok: true, alert: { alertId, status: "SENT" } };
+    }
+  };
+  const { server, base, cleanup } = await createTestServer({ eventEmailAlertService });
+  const from = "5551999999940";
+  try {
+    for (const [id, text] of [["wamid-granja-email-area", "quero comprar aves"], ["wamid-granja-email-animals", "granja.animals"]]) {
+      const response = await fetch(`${base}/webhook/whatsapp`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(metaPayload({ from, id, type: "text", text: { body: text } }))
+      });
+      assert.equal(response.status, 200);
+    }
+    assert.equal(createdAlerts.length, 1);
+    assert.equal(sentAlerts.length, 1);
+    assert.match(createdAlerts[0].subject, /Confirmar disponibilidade da Granja/);
+    assert.match(createdAlerts[0].body, /ABRIR CONVERSA NO SAMBAH/);
+  } finally {
+    await close(server);
+    await cleanup();
+    restoreEnv("WHATSAPP_V2_ENABLED", previousV2);
+    restoreEnv("WHATSAPP_AUTO_REPLY_ENABLED", previousAutoReply);
+    restoreEnv("WHATSAPP_SEND_ENABLED", previousSend);
+  }
+});
+
+async function createTestServer({ provider = new MockWhatsAppProvider({ logger: { info: () => {} } }), whatsappSendFetch = globalThis.fetch, eventEmailAlertService = null } = {}) {
   const dir = await mkdtemp(join(tmpdir(), "sambha-wa-maintenance-"));
   const previousDataDir = process.env.DATA_DIR;
   process.env.DATA_DIR = dir;
@@ -1249,6 +1293,7 @@ async function createTestServer({ provider = new MockWhatsAppProvider({ logger: 
     conversationService: new SambahConversationService({ scriptsFile: join(dir, "scripts.json") }),
     whatsappConversationService,
     whatsappMessageService,
+    eventEmailAlertService,
     whatsappProvider: provider,
     runtimeConfig: getRuntimeConfig(),
     whatsappSendFetch

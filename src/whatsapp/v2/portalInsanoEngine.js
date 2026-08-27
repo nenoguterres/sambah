@@ -624,7 +624,7 @@ function startFlow(state, contract, flowId, source, action = {}) {
       assignee
         ? `Conversa encaminhada para ${assignee}. O historico e o contexto foram preservados.`
         : "Conversa encaminhada para atendimento humano. O historico e o contexto foram preservados.",
-      [{ type: "notify_operator", assignee: assignee || null }]
+      [{ type: "notify_operator", assignee: assignee || null, emailAlert: true }]
     );
   }
   const nextState = { ...state, activeFlow: flowId, activeStep: flow.steps[0].id, awaitingInput: true };
@@ -643,7 +643,7 @@ function handleActiveFlow(state, contract, text, rawText) {
       "humanHandoffFlow",
       { ...state, mode: "human", serviceState: "HUMANO", activeFlow: null, activeStep: null, awaitingInput: false, flowData: nextFlowData },
       "Conversa encaminhada para atendimento humano. O historico e o contexto foram preservados.",
-      [{ type: "notify_operator" }]
+      [{ type: "notify_operator", emailAlert: true }]
     );
   }
   if (flow.neverConfirmPayment) {
@@ -658,7 +658,26 @@ function handleActiveFlow(state, contract, text, rawText) {
 }
 
 function showCatalog(state, contract, catalogId, source) {
-  return response("catalogService", { ...state, catalogId }, contract.catalogs[catalogId] || "Catalogo indisponivel sem validacao operacional.", [{ type: "catalog_viewed", source }]);
+  const text = contract.catalogs[catalogId] || "Catalogo indisponivel sem validacao operacional.";
+  const requiresHumanConfirmation = catalogId.startsWith("catalog.granja.");
+  if (requiresHumanConfirmation) {
+    return response(
+      "catalogService",
+      { ...state, catalogId, mode: "human", serviceState: "HUMANO" },
+      `${text}\n\nAvisei a equipe para confirmar a disponibilidade contigo.`,
+      [
+        { type: "catalog_viewed", source },
+        {
+          type: "notify_operator",
+          emailAlert: true,
+          subject: "Confirmar disponibilidade da Granja",
+          summary: text,
+          catalogId
+        }
+      ]
+    );
+  }
+  return response("catalogService", { ...state, catalogId }, text, [{ type: "catalog_viewed", source }]);
 }
 
 function normalizeNavigationState(state = {}, contract = portalInsanoContract) {
@@ -1040,7 +1059,7 @@ function handleAssistedIntake(state, text, rawText) {
       flowData
     },
     `${summary}\n\nVou encaminhar este resumo para a equipe confirmar os detalhes. Nenhuma data, valor, disponibilidade ou contratacao esta confirmada ainda.`,
-    [{ type: "notify_operator", intent: intake.intent, summary, collected: answers }]
+    [{ type: "notify_operator", emailAlert: true, intent: intake.intent, summary, collected: answers }]
   );
 }
 

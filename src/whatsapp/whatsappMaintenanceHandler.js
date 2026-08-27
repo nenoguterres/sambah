@@ -4,7 +4,7 @@ import { createWhatsAppV2OperationalEngine } from "./v2/whatsappV2LabEngine.js";
 import { FileWhatsAppV2ConversationRepository } from "./v2/inMemoryRepositories.js";
 import { join } from "node:path";
 
-export async function whatsappMaintenanceHandler(payload = {}, { conversationService, messageService, auditService, menuService = null, whatsappProvider = null, runtimeConfig = getRuntimeConfig() } = {}) {
+export async function whatsappMaintenanceHandler(payload = {}, { conversationService, messageService, auditService, menuService = null, whatsappProvider = null, eventEmailAlertService = null, runtimeConfig = getRuntimeConfig() } = {}) {
   const requestStartedAt = Date.now();
   const incoming = parseWhatsAppIncoming(payload);
   const conversationResult = await conversationService.recordNeutralIncoming(incoming);
@@ -80,6 +80,13 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
       const humanResult = await conversationService.markHuman?.(conversationResult.conversa.id);
       if (humanResult?.ok) conversationResult.conversa = humanResult.conversa;
     }
+    const operatorEmailAlert = await maybeSendOperatorEmail({
+      processed,
+      incoming,
+      conversation: conversationResult.conversa,
+      eventEmailAlertService,
+      runtimeConfig
+    });
     const reply = processed.replies?.[0] || null;
     if (!reply) {
       await safeAuditRecord(auditService, {
@@ -246,7 +253,8 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
         processingMs,
         totalWebhookMs: Date.now() - requestStartedAt,
         engineLatency: processed.latency || null
-      }
+      },
+      operatorEmailAlert
     };
   }
 
@@ -274,6 +282,48 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
     message: conversationResult.message,
     normalized: messageResult?.normalized || null
   };
+}
+
+async function maybeSendOperatorEmail({ processed = {}, incoming = {}, conversation = {}, eventEmailAlertService = null, runtimeConfig = getRuntimeConfig() } = {}) {
+  const action = processed.actions?.find((item) => item.type === "notify_operator" && item.emailAlert === true);
+  if (!action || !eventEmailAlertService) return null;
+  const messageId = String(incoming.messageId || "").trim();
+  const conversationId = conversation.id || processed.state?.sambahConversationId || processed.state?.conversationId || "";
+  const base = String(runtimeConfig.eventFormPublicUrl || runtimeConfig.baseUrl || "https://sambah.onrender.com").trim();
+  let origin = "https://sambah.onrender.com";
+  try {
+    origin = new URL(base).origin;
+  } catch {}
+  const conversationUrl = `${origin}/conversas?conversationId=${encodeURIComponent(conversationId)}`;
+  const subject = `[WHATSAPP] ${action.subject || "Atendimento humano solicitado"}`;
+  const body = [
+    "O SamBah identificou uma solicitacao que precisa de atendimento humano.",
+    "",
+    `Cliente: ${conversation.nome || incoming.nome || incoming.profileName || "Cliente WhatsApp"}`,
+    `Telefone: ${conversation.telefone || incoming.telefone || incoming.from || "Nao informado"}`,
+    `Mensagem: ${incoming.text || incoming.message || "Nao informada"}`,
+    action.summary ? `Resumo: ${action.summary}` : "",
+    "",
+    `ABRIR CONVERSA NO SAMBAH: ${conversationUrl}`
+  ].filter(Boolean).join("\n");
+  try {
+    const created = await eventEmailAlertService.createAlert({
+      eventRequestId: `whatsapp_${messageId || conversationId}`,
+      conversationId,
+      subject,
+      body,
+      conversationUrl
+    });
+    const sent = await eventEmailAlertService.sendAlert(created.alert.alertId);
+    return {
+      ok: sent.ok === true,
+      status: sent.alert?.status || created.alert.status || "",
+      alertId: created.alert.alertId,
+      error: sent.error || ""
+    };
+  } catch (error) {
+    return { ok: false, status: "FAILED", error: String(error?.message || error) };
+  }
 }
 
 function createWhatsAppV2Repository(runtimeConfig = getRuntimeConfig()) {
