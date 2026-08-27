@@ -37,6 +37,7 @@ import { AiAuditService } from "./ai/aiAuditService.js";
 import { AiPerformanceService } from "./ai/aiPerformanceService.js";
 import { AiConversionService } from "./ai/aiConversionService.js";
 import { getFormDefinition, listFormDefinitions } from "./forms/formRepository.js";
+import { resetTestHistoryOnce } from "./testHistoryMaintenanceService.js";
 
 const require = createRequire(import.meta.url);
 const packageJson = require("../package.json");
@@ -4100,6 +4101,8 @@ const isCliRun = globalThis.process?.argv?.[1] && import.meta.url === pathToFile
 
 if (isCliRun) {
   const port = getRuntimeConfig().port;
+  const reset = await resetTestHistoryOnce({ dataDir: getRuntimeConfig().dataDir });
+  console.log("sambah.test_history_reset", { applied: reset.applied, resetId: reset.resetId, files: reset.resetFiles?.length || 0 });
   createApp().listen(port, () => {
     console.log(`samBah! admin em http://localhost:${port}/admin`);
   });
