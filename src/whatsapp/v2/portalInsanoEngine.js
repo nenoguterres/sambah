@@ -34,6 +34,18 @@ export function routePortalInsanoMessage({ state, message, contract = portalInsa
   if (shouldResetOrphanGeneralIntake(routedState, text)) {
     return openMenu(resetToPortal(routedState, contract), contract, contract.welcome.menuId, "recoverOrphanGeneralIntake", []);
   }
+  const semanticPortalArea = shouldRouteSemanticPortalArea(routedState, contract, text)
+    ? resolveSemanticPortalArea(text)
+    : null;
+  if (semanticPortalArea) {
+    return executeAction(
+      resetToPortal(routedState, contract),
+      contract,
+      semanticPortalArea.action,
+      semanticPortalArea.id,
+      menuCache
+    );
+  }
   if (isWelcome(text) && routedState.activeFlow) return resumeActiveFlow(routedState, contract);
   if (routedState.activeFlow) return handleActiveFlow(routedState, contract, text, message.text);
 
@@ -105,6 +117,34 @@ function resolveLegacyPortalEntry(state, text) {
     "portal.more": { id: "portal.more", action: { type: "open_menu", target: "portal_more_menu", areaId: null } }
   };
   return legacyEntries[normalizeText(text)] || null;
+}
+
+function shouldRouteSemanticPortalArea(state, contract, text) {
+  if (state.activeFlow === "assisted_intake") return ["area", "objective"].includes(state.activeStep);
+  if (state.activeFlow) return false;
+  if (resolveLegacyPortalEntry(state, text)) return false;
+  return !resolveMenuOption(contract.menus[state.activeMenu], text);
+}
+
+function resolveSemanticPortalArea(text) {
+  const areas = [
+    {
+      id: "semantic.granja",
+      pattern: /\b(agro|granja|ave|aves|galinha|galinhas|poedeira|poedeiras|pinto|pintos|frango|frangos|ovo|ovos|hortifruti)\b/,
+      action: { type: "open_menu", target: "granja_main_menu", areaId: "granja_aguas_da_lagoa" }
+    },
+    {
+      id: "semantic.negocios",
+      pattern: /\b(tecnologia|tecnologias|aplicativo|aplicativos|software|sistema|sistemas|serralheria|metal|metais|fabricacao|fabricar|letreiro|luminoso|placa|placas|acm|cnc)\b|comunicacao visual/,
+      action: { type: "open_menu", target: "business_main_menu", areaId: null }
+    },
+    {
+      id: "semantic.gastronomia",
+      pattern: /\b(gastronomia|gastronomico|gastronomica|restaurante|restaurantes|bar|bares|food\s*truck|foodtruck|xeriffe|insano|obirici)\b/,
+      action: { type: "open_menu", target: "gastronomy_main_menu", areaId: "gastronomia" }
+    }
+  ];
+  return areas.find((area) => area.pattern.test(text)) || null;
 }
 
 export function renderMenu(menu) {

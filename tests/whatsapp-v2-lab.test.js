@@ -195,6 +195,36 @@ test("Portal Insano abre as tres areas iniciais por clique, numero ou texto", as
   }
 });
 
+test("Portal direciona frases naturais para Gastronomia, Agro e Tecnologias antes do pre-atendimento", async () => {
+  const cases = [
+    ["restaurante", "gastronomy_main_menu", "gastronomia"],
+    ["bar", "gastronomy_main_menu", "gastronomia"],
+    ["food truck", "gastronomy_main_menu", "gastronomia"],
+    ["Xeriffe Insano Obirici", "gastronomy_main_menu", "gastronomia"],
+    ["quero comprar aves", "granja_main_menu", "granja_aguas_da_lagoa"],
+    ["preciso fabricar um letreiro em ACM", "business_main_menu", null]
+  ];
+
+  for (const [index, [message, menuId, areaId]] of cases.entries()) {
+    const engine = createLabEngine({ observeOnly: true });
+    const result = await engine.processor.handleIncoming({
+      messageId: `wamid-semantic-area-${index}`,
+      from: `555100000030${index}`,
+      text: message
+    });
+    assert.equal(result.state.activeMenu, menuId);
+    assert.equal(result.state.areaId, areaId);
+    assert.equal(result.state.activeFlow, null);
+  }
+
+  const engine = createLabEngine({ observeOnly: true });
+  const from = "5551000000309";
+  await engine.processor.handleIncoming({ messageId: "wamid-semantic-intake", from, text: "Quero conhecer os servicos" });
+  const redirected = await engine.processor.handleIncoming({ messageId: "wamid-semantic-intake-area", from, text: "gastronomia" });
+  assert.equal(redirected.state.activeMenu, "gastronomy_main_menu");
+  assert.equal(redirected.state.activeFlow, null);
+});
+
 test("Portal reconhece Tecnologias e Fabricacao mesmo quando WhatsApp corta o titulo", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000299";
