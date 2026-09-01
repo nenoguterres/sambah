@@ -24,6 +24,38 @@ test("Central descreve mensagem Meta nao textual sem exibir unknown", async () =
   assert.equal(parsed.mediaId, "media-sticker");
 });
 
+test("Central preserva o erro da Meta quando ela nao fornece o conteudo", async () => {
+  const parsed = parseWhatsAppIncoming({
+    entry: [{ changes: [{ value: {
+      contacts: [{ profile: { name: "Meta" }, wa_id: "5511999999999" }],
+      messages: [{
+        from: "5511999999999",
+        id: "wamid.unsupported",
+        type: "unsupported",
+        unsupported: { type: "edit" },
+        errors: [{ code: 131051, title: "Message type unknown", error_data: { details: "Message type is currently not supported." } }]
+      }]
+    } }] }]
+  });
+
+  assert.equal(parsed.tipo, "unsupported");
+  assert.equal(parsed.metaErrorCode, "131051");
+  assert.equal(parsed.unsupportedSubtype, "edit");
+  assert.equal(parsed.displayText, "Conteudo nao fornecido pela Meta (mensagem editada; erro 131051)");
+  assert.equal(parsed.actionable, false);
+
+  const dir = await mkdtemp(join(tmpdir(), "sambah-conversation-meta-unsupported-"));
+  try {
+    const service = new WhatsAppConversationService({ filePath: join(dir, "conversas.json") });
+    const result = await service.recordNeutralIncoming(parsed);
+    assert.equal(result.conversa.unread, false);
+    assert.equal(result.message.metaErrorCode, "131051");
+    assert.equal(result.message.actionable, false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("Central substitui nome generico pelo nome real enviado pela Meta", async () => {
   const dir = await mkdtemp(join(tmpdir(), "sambah-conversation-real-name-"));
   const filePath = join(dir, "conversas.json");

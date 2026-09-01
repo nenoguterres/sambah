@@ -62,6 +62,7 @@ export class WhatsAppConversationService {
     const existing = findConversation(data.conversas, telefone || id);
     const text = String(incoming.displayText || incoming.text || incoming.message || incoming.transcricao || "").trim();
     const incomingMessageId = String(incoming.messageId || "").trim();
+    const actionable = incoming.actionable !== false;
     const provider = String(incoming.provider || "meta").trim() || "meta";
     const aliases = whatsappPhoneAliases(telefone);
     const existingMessage = findExistingInboundMessage(data.conversas, {
@@ -93,6 +94,11 @@ export class WhatsAppConversationService {
       transcricao: incoming.transcricao || "",
       mediaId: incoming.mediaId || "",
       rawType: incoming.rawType || incoming.type || "text",
+      metaErrorCode: incoming.metaErrorCode || "",
+      metaErrorTitle: incoming.metaErrorTitle || "",
+      metaErrorDetails: incoming.metaErrorDetails || "",
+      unsupportedSubtype: incoming.unsupportedSubtype || "",
+      actionable,
       createdAt: now,
       status: "recebida"
     };
@@ -105,6 +111,11 @@ export class WhatsAppConversationService {
       mensagens: [],
       createdAt: now
     };
+    const hasEarlierActionableUnread = base.unread === true && (base.mensagens || []).some((item) => (
+      item.direction === "in"
+      && item.actionable !== false
+      && !["unsupported", "unknown"].includes(item.type)
+    ));
     const updated = {
       ...base,
       nome: preferredConversationName(base.nome, incoming.nome || incoming.profileName),
@@ -114,7 +125,7 @@ export class WhatsAppConversationService {
       ultimaInteracao: now,
       updatedAt: now,
       status: HUMAN_STATUSES.has(base.status) ? base.status : "nova",
-      unread: true,
+      unread: actionable || hasEarlierActionableUnread,
       lastInboundMessageId: message.id,
       respostaSugerida: "",
       automaticReplyCreated: false,
@@ -743,8 +754,9 @@ export function parseWhatsAppIncoming(payload = {}) {
   const source = metaMessage || payload;
   const rawType = source.type || payload.messageType || "text";
   const tipo = normalizeMessageType(rawType);
+  const metaError = extractIncomingMetaError(source);
   const text = String(metaMessage ? extractWhatsAppMessageText(metaMessage, payload) : source.message || source.text || source.body || payload.message || payload.text || "").trim();
-  const displayText = text || describeIncomingPayload(source, tipo);
+  const displayText = text || describeIncomingPayload(source, tipo, metaError);
   const audio = source.audio || payload.audio || {};
   const media = source.audio || source.image || source.video || source.document || source.sticker || payload.media || {};
   const rawFrom = String(source.from || payload.from || payload.phone || payload.telefone || "").replace(/\D/g, "");
@@ -762,6 +774,11 @@ export function parseWhatsAppIncoming(payload = {}) {
     rawType,
     text,
     displayText,
+    metaErrorCode: metaError.code,
+    metaErrorTitle: metaError.title,
+    metaErrorDetails: metaError.details,
+    unsupportedSubtype: String(source.unsupported?.type || "").trim(),
+    actionable: !(tipo === "unsupported" && metaError.code === "131051"),
     caption: source.image?.caption || source.document?.caption || payload.caption || "",
     mediaId: media.id || audio.id || payload.media_id || payload.mediaId || "",
     mimeType: media.mime_type || payload.mimeType || "",
@@ -793,7 +810,7 @@ function describeMessageType(type) {
   return "Mensagem recebida";
 }
 
-function describeIncomingPayload(source = {}, type = "") {
+function describeIncomingPayload(source = {}, type = "", metaError = {}) {
   if (type === "contacts") {
     const contact = Array.isArray(source.contacts) ? source.contacts[0] : null;
     const name = String(contact?.name?.formatted_name || contact?.name?.first_name || "").trim();
@@ -815,7 +832,35 @@ function describeIncomingPayload(source = {}, type = "") {
     const fileName = String(source.document?.filename || "").trim();
     if (fileName) return `Documento recebido: ${fileName}`;
   }
+  if (type === "unsupported") {
+    const code = String(metaError.code || "").trim();
+    const subtype = unsupportedSubtypeLabel(source.unsupported?.type);
+    const suffix = [subtype, code ? `erro ${code}` : ""].filter(Boolean).join("; ");
+    return `Conteudo nao fornecido pela Meta${suffix ? ` (${suffix})` : ""}`;
+  }
   return describeMessageType(type);
+}
+
+function extractIncomingMetaError(source = {}) {
+  const error = Array.isArray(source.errors) ? source.errors[0] || {} : {};
+  return {
+    code: error.code === undefined || error.code === null ? "" : String(error.code),
+    title: String(error.title || error.message || "").trim(),
+    details: String(error.error_data?.details || "").trim()
+  };
+}
+
+function unsupportedSubtypeLabel(value = "") {
+  return {
+    edit: "mensagem editada",
+    gif: "GIF",
+    group_invite: "convite de grupo",
+    poll_creation: "enquete",
+    poll_update: "resposta de enquete",
+    product: "produto",
+    reaction: "reacao",
+    location: "localizacao"
+  }[String(value || "").trim().toLowerCase()] || "";
 }
 
 function preferredConversationName(current = "", incoming = "") {

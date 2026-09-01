@@ -554,11 +554,25 @@ function renderMessage(message) {
     ? `<span class="message-error">${escapeHtml(metaErrorLabel(message))}</span>`
     : "";
   return `<article class="message ${message.direction === "out" ? "out" : "in"}">
-    <p>${escapeHtml(message.text || message.transcricao || labelStatus(message.type))}</p>
+    <p>${escapeHtml(displayMessageText(message))}</p>
     <small>${escapeHtml(formatTime(message.createdAt))} · ${escapeHtml(message.status || "")}</small>
     ${errorDetail}
     ${state.activeRole === "ADMIN" ? `<button class="message-delete" type="button" data-delete-message="${escapeAttr(message.id || "")}" title="Excluir mensagem">Excluir</button>` : ""}
   </article>`;
+}
+
+function displayMessageText(message = {}) {
+  const text = String(message.text || message.transcricao || "").trim();
+  const legacyUnknown = [
+    "unknown",
+    "Mensagem em formato nao reconhecido",
+    "Mensagem recebida em formato nao reconhecido"
+  ].includes(text);
+  if (message.type === "unsupported" || legacyUnknown) {
+    const code = message.metaErrorCode ? ` (erro ${message.metaErrorCode})` : "";
+    return `Conteudo nao fornecido pela Meta${code}`;
+  }
+  return text || labelStatus(message.type);
 }
 
 function manualSendFailureText(data = {}) {
@@ -593,8 +607,8 @@ function labelStatus(status = "") {
     reaction: "Reacao recebida",
     sticker: "Figurinha recebida",
     system: "Aviso do WhatsApp recebido",
-    unsupported: "Mensagem em formato nao suportado",
-    unknown: "Mensagem em formato nao reconhecido"
+    unsupported: "Conteudo nao fornecido pela Meta",
+    unknown: "Mensagem recebida sem conteudo compativel"
   }[status] || status || "Aguardando equipe";
 }
 
