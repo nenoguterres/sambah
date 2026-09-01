@@ -3,7 +3,39 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { WhatsAppConversationService } from "../src/whatsappConversationService.js";
+import { WhatsAppConversationService, parseWhatsAppIncoming } from "../src/whatsappConversationService.js";
+
+test("Central descreve mensagem Meta nao textual sem exibir unknown", async () => {
+  const parsed = parseWhatsAppIncoming({
+    object: "whatsapp_business_account",
+    entry: [{
+      changes: [{
+        value: {
+          contacts: [{ profile: { name: "Cliente Figurinha" }, wa_id: "5551999999999" }],
+          messages: [{ id: "wamid-sticker", from: "5551999999999", type: "sticker", sticker: { id: "media-sticker" } }]
+        }
+      }]
+    }]
+  });
+  assert.equal(parsed.tipo, "sticker");
+  assert.equal(parsed.text, "");
+  assert.equal(parsed.displayText, "Figurinha recebida");
+  assert.equal(parsed.nome, "Cliente Figurinha");
+  assert.equal(parsed.mediaId, "media-sticker");
+});
+
+test("Central substitui nome generico pelo nome real enviado pela Meta", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambah-conversation-real-name-"));
+  const filePath = join(dir, "conversas.json");
+  const service = new WhatsAppConversationService({ filePath });
+  try {
+    await service.recordNeutralIncoming({ telefone: "5551999999999", messageId: "wamid-name-1", text: "oi" });
+    const result = await service.recordNeutralIncoming({ telefone: "5551999999999", messageId: "wamid-name-2", text: "voltei", profileName: "Gabriela" });
+    assert.equal(result.conversa.nome, "Gabriela");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
 
 test("Central de Conversas envia resposta manual pelo provider WhatsApp configurado", async () => {
   const dir = await mkdtemp(join(tmpdir(), "sambha-conversation-inbox-"));

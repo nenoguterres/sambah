@@ -583,7 +583,18 @@ function labelStatus(status = "") {
     aguardando_cliente: "Aguardando cliente",
     finalizada: "Finalizada",
     resolvido: "Finalizada",
-    arquivada: "Arquivada"
+    arquivada: "Arquivada",
+    audio: "Audio recebido",
+    image: "Imagem recebida",
+    video: "Video recebido",
+    document: "Documento recebido",
+    contacts: "Contato recebido",
+    location: "Localizacao recebida",
+    reaction: "Reacao recebida",
+    sticker: "Figurinha recebida",
+    system: "Aviso do WhatsApp recebido",
+    unsupported: "Mensagem em formato nao suportado",
+    unknown: "Mensagem em formato nao reconhecido"
   }[status] || status || "Aguardando equipe";
 }
 

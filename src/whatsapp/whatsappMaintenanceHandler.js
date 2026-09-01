@@ -37,6 +37,36 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
     };
   }
 
+  if (runtimeConfig.whatsappV2?.enabled === true && !String(incoming.text || "").trim()) {
+    await safeAuditRecord(auditService, {
+      type: "whatsapp_non_text_message_recorded",
+      status: "info",
+      source: "meta_whatsapp",
+      message: "Mensagem nao textual registrada sem disparar o Portal",
+      context: {
+        messageId: incoming.messageId || "",
+        phone: maskPhone(incoming.telefone || ""),
+        messageType: incoming.rawType || incoming.tipo || "unknown",
+        automaticReplyCreated: false,
+        sent: false
+      },
+      dedupeKey: incoming.messageId ? `whatsapp-non-text:${incoming.messageId}` : undefined
+    });
+    return {
+      ok: true,
+      handled: true,
+      engine: "v2",
+      reason: "non_text_message_recorded",
+      automaticReplyCreated: false,
+      sent: false,
+      aiCalled: false,
+      senderCalled: false,
+      conversa: conversationResult.conversa,
+      message: conversationResult.message,
+      normalized: messageResult?.normalized || null
+    };
+  }
+
   if (runtimeConfig.whatsappV2?.enabled === true) {
     const v2Repository = createWhatsAppV2Repository(runtimeConfig);
     const reservation = await reserveIncomingMessage(v2Repository, incoming);

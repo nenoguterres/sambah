@@ -434,6 +434,40 @@ test("WhatsApp V2 nao reserva messageId se a gravacao neutra falhar", async () =
   }
 });
 
+test("WhatsApp V2 registra figurinha sem responder Portal e sem exibir unknown", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "sambah-v2-sticker-"));
+  const filePath = join(dir, "conversas.json");
+  const providerCalls = [];
+  try {
+    const conversationService = new WhatsAppConversationService({ filePath });
+    const result = await whatsappMaintenanceHandler(metaPayload({
+      from: "5551999999911",
+      id: "wamid-v2-sticker",
+      timestamp: "1788217200",
+      type: "sticker",
+      sticker: { id: "media-sticker" }
+    }), {
+      conversationService,
+      messageService: null,
+      auditService: { record: async () => ({ duplicated: false }) },
+      whatsappProvider: { sendMessage: async (entry) => { providerCalls.push(entry); return { sent: true }; } },
+      runtimeConfig: {
+        dataDir: dir,
+        whatsappV2: { enabled: true, autoReplyEnabled: true, sendEnabled: true },
+        whatsappBusiness: { accessToken: "token-test", phoneNumberId: "phone-number-test" }
+      }
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.reason, "non_text_message_recorded");
+    assert.equal(result.automaticReplyCreated, false);
+    assert.equal(providerCalls.length, 0);
+    assert.equal(result.message.text, "Figurinha recebida");
+    assert.equal(result.conversa.nome, "Cliente Meta");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("WhatsApp V2 continua ate o sender quando o historico auxiliar falha", async () => {
   const dir = await mkdtemp(join(tmpdir(), "sambha-v2-aux-history-failure-"));
   const providerCalls = [];

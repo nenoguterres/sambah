@@ -60,7 +60,7 @@ export class WhatsAppConversationService {
     const telefone = normalizePhone(incoming.telefone || incoming.from || incoming.phone || "");
     const id = telefone ? `wa_${telefone}` : `wa_${crypto.randomUUID()}`;
     const existing = findConversation(data.conversas, telefone || id);
-    const text = String(incoming.text || incoming.message || incoming.transcricao || "").trim();
+    const text = String(incoming.displayText || incoming.text || incoming.message || incoming.transcricao || "").trim();
     const incomingMessageId = String(incoming.messageId || "").trim();
     const provider = String(incoming.provider || "meta").trim() || "meta";
     const aliases = whatsappPhoneAliases(telefone);
@@ -98,7 +98,7 @@ export class WhatsAppConversationService {
     };
     const base = existing || {
       id,
-      nome: incoming.nome || incoming.profileName || "Cliente WhatsApp",
+      nome: preferredConversationName("", incoming.nome || incoming.profileName),
       telefone,
       operation: "Insano",
       origem: "whatsapp",
@@ -107,7 +107,7 @@ export class WhatsAppConversationService {
     };
     const updated = {
       ...base,
-      nome: base.nome || incoming.nome || incoming.profileName || "Cliente WhatsApp",
+      nome: preferredConversationName(base.nome, incoming.nome || incoming.profileName),
       telefone: telefone || base.telefone || "",
       id: telefone ? `wa_${telefone}` : base.id,
       ultimaMensagem: text || describeMessageType(message.type),
@@ -744,7 +744,9 @@ export function parseWhatsAppIncoming(payload = {}) {
   const rawType = source.type || payload.messageType || "text";
   const tipo = normalizeMessageType(rawType);
   const text = String(metaMessage ? extractWhatsAppMessageText(metaMessage, payload) : source.message || source.text || source.body || payload.message || payload.text || "").trim();
+  const displayText = text || describeIncomingPayload(source, tipo);
   const audio = source.audio || payload.audio || {};
+  const media = source.audio || source.image || source.video || source.document || source.sticker || payload.media || {};
   const rawFrom = String(source.from || payload.from || payload.phone || payload.telefone || "").replace(/\D/g, "");
   const waId = String(contact?.wa_id || "").replace(/\D/g, "");
   return {
@@ -759,15 +761,18 @@ export function parseWhatsAppIncoming(payload = {}) {
     tipo,
     rawType,
     text,
+    displayText,
     caption: source.image?.caption || source.document?.caption || payload.caption || "",
-    mediaId: audio.id || payload.media_id || payload.mediaId || "",
+    mediaId: media.id || audio.id || payload.media_id || payload.mediaId || "",
+    mimeType: media.mime_type || payload.mimeType || "",
+    fileName: source.document?.filename || payload.fileName || "",
     transcricao: payload.transcription || payload.transcricao || ""
   };
 }
 
 function normalizeMessageType(type = "") {
   const normalized = String(type || "").toLowerCase();
-  if (["text", "audio", "image", "video", "document", "interactive", "button", "order"].includes(normalized)) return normalized;
+  if (["text", "audio", "image", "video", "document", "interactive", "button", "order", "contacts", "location", "reaction", "sticker", "system", "unsupported"].includes(normalized)) return normalized;
   return "unknown";
 }
 
@@ -775,9 +780,50 @@ function describeMessageType(type) {
   if (!type) return "";
   if (type === "audio") return "Audio recebido";
   if (type === "image") return "Imagem recebida";
+  if (type === "video") return "Video recebido";
   if (type === "document") return "Documento recebido";
   if (type === "interactive") return "Mensagem interativa recebida";
+  if (type === "contacts") return "Contato recebido";
+  if (type === "location") return "Localizacao recebida";
+  if (type === "reaction") return "Reacao recebida";
+  if (type === "sticker") return "Figurinha recebida";
+  if (type === "order") return "Pedido recebido";
+  if (type === "system") return "Aviso do WhatsApp recebido";
+  if (type === "unsupported" || type === "unknown") return "Mensagem recebida em formato nao reconhecido";
   return "Mensagem recebida";
+}
+
+function describeIncomingPayload(source = {}, type = "") {
+  if (type === "contacts") {
+    const contact = Array.isArray(source.contacts) ? source.contacts[0] : null;
+    const name = String(contact?.name?.formatted_name || contact?.name?.first_name || "").trim();
+    return name ? `Contato recebido: ${name}` : "Contato recebido";
+  }
+  if (type === "location") {
+    const location = source.location || {};
+    const label = String(location.name || location.address || "").trim();
+    if (label) return `Localizacao recebida: ${label}`;
+    const latitude = Number(location.latitude);
+    const longitude = Number(location.longitude);
+    if (Number.isFinite(latitude) && Number.isFinite(longitude)) return `Localizacao recebida: ${latitude}, ${longitude}`;
+  }
+  if (type === "reaction") {
+    const emoji = String(source.reaction?.emoji || "").trim();
+    return emoji ? `Reacao recebida: ${emoji}` : "Reacao removida";
+  }
+  if (type === "document") {
+    const fileName = String(source.document?.filename || "").trim();
+    if (fileName) return `Documento recebido: ${fileName}`;
+  }
+  return describeMessageType(type);
+}
+
+function preferredConversationName(current = "", incoming = "") {
+  const currentName = String(current || "").trim();
+  const incomingName = String(incoming || "").trim();
+  const placeholder = ["", "cliente whatsapp", "contato whatsapp", "unknown", "desconhecido"].includes(currentName.toLowerCase());
+  if (incomingName && placeholder) return incomingName;
+  return currentName || incomingName || "Cliente WhatsApp";
 }
 
 function sanitizeDeletedMessage(message = {}) {
