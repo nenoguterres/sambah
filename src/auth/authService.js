@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { DEV_AUTH_USERS } from "./users.dev.js";
+import { DEV_AUTH_USERS, FIXED_AUTH_USERS } from "./users.dev.js";
 
 const COOKIE_NAME = "sambah_session";
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
@@ -10,11 +10,13 @@ const AUTH_ROLES = ["ADMIN", "GERENTE", "CAIXA", "OPERADOR", "ATENDENTE", "AUDIT
 export class SambahAuthService {
   constructor({
     users = DEV_AUTH_USERS,
+    fixedUsers = users === DEV_AUTH_USERS ? FIXED_AUTH_USERS : [],
     usersFile = null,
     secret = globalThis.process?.env?.SAMBAH_SESSION_SECRET || "sambah-local-dev-session-secret",
     now = () => new Date()
   } = {}) {
     this.users = users;
+    this.fixedUsers = fixedUsers.map((user) => ({ ...user }));
     this.usersFile = usersFile;
     this.secret = secret;
     this.now = now;
@@ -76,6 +78,7 @@ export class SambahAuthService {
     await this.ensureLoaded();
     const user = this.findUser(username);
     if (!user) return { ok: false, statusCode: 404, error: "user_not_found", message: "Usuario nao encontrado" };
+    if (this.isFixedUser(user.username)) return fixedUserValidation();
     if (displayName !== undefined) user.displayName = cleanDisplayName(displayName) || user.username;
     if (role !== undefined) user.role = normalizeRole(role);
     user.updatedAt = this.now().toISOString();
@@ -88,6 +91,7 @@ export class SambahAuthService {
     await this.ensureLoaded();
     const user = this.findUser(username);
     if (!user) return { ok: false, statusCode: 404, error: "user_not_found", message: "Usuario nao encontrado" };
+    if (this.isFixedUser(user.username)) return fixedUserValidation();
     user.active = Boolean(active);
     user.updatedAt = this.now().toISOString();
     if (!user.active) this.dropUserSessions(user.username);
@@ -99,6 +103,7 @@ export class SambahAuthService {
     await this.ensureLoaded();
     const user = this.findUser(username);
     if (!user) return { ok: false, statusCode: 404, error: "user_not_found", message: "Usuario nao encontrado" };
+    if (this.isFixedUser(user.username)) return fixedUserValidation();
     if (!validPassword(password)) return authValidation("invalid_password", "Senha deve ter pelo menos 4 caracteres");
     Object.assign(user, this.hashPassword(password), { updatedAt: this.now().toISOString() });
     this.dropUserSessions(user.username);
@@ -107,7 +112,15 @@ export class SambahAuthService {
   }
 
   async ensureLoaded() {
-    if (this.loaded || !this.usersFile) return;
+    if (this.loaded) return;
+
+    if (!this.usersFile) {
+      this.users = mergeFixedUsers(this.users, this.fixedUsers).users;
+      this.loaded = true;
+      return;
+    }
+
+    let shouldPersist = false;
     try {
       const raw = await readFile(this.usersFile, "utf8");
       const parsed = JSON.parse(raw);
@@ -115,9 +128,13 @@ export class SambahAuthService {
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
       this.users = this.users.map((user) => ({ active: true, ...user }));
-      await this.persist();
+      shouldPersist = true;
     }
+
+    const merged = mergeFixedUsers(this.users, this.fixedUsers);
+    this.users = merged.users;
     this.loaded = true;
+    if (shouldPersist || merged.changed) await this.persist();
   }
 
   async persist() {
@@ -133,6 +150,11 @@ export class SambahAuthService {
   findUser(username) {
     const normalizedUsername = normalizeUsername(username);
     return this.users.find((user) => user.username === normalizedUsername);
+  }
+
+  isFixedUser(username) {
+    const normalizedUsername = normalizeUsername(username);
+    return this.fixedUsers.some((user) => normalizeUsername(user.username) === normalizedUsername);
   }
 
   hashPassword(password) {
@@ -203,6 +225,34 @@ export class SambahAuthService {
   }
 }
 
+function mergeFixedUsers(users = [], fixedUsers = []) {
+  const merged = (Array.isArray(users) ? users : []).map((user) => ({ ...user }));
+  let changed = false;
+
+  for (const fixedUser of Array.isArray(fixedUsers) ? fixedUsers : []) {
+    const normalizedUsername = normalizeUsername(fixedUser.username);
+    if (!normalizedUsername) continue;
+    const normalizedFixedUser = {
+      ...fixedUser,
+      username: normalizedUsername,
+      displayName: cleanDisplayName(fixedUser.displayName) || normalizedUsername,
+      role: normalizeRole(fixedUser.role),
+      active: true
+    };
+    const index = merged.findIndex((user) => normalizeUsername(user.username) === normalizedUsername);
+    if (index < 0) {
+      merged.push({ ...normalizedFixedUser });
+      changed = true;
+      continue;
+    }
+    const current = merged[index];
+    if (Object.keys(normalizedFixedUser).some((key) => current[key] !== normalizedFixedUser[key])) changed = true;
+    merged[index] = { ...current, ...normalizedFixedUser };
+  }
+
+  return { users: merged, changed };
+}
+
 function normalizeUsername(username = "") {
   return String(username || "").trim().toLowerCase().replace(/[^a-z0-9._-]/g, "");
 }
@@ -229,6 +279,15 @@ function validPassword(password = "") {
 
 function authValidation(error, message) {
   return { ok: false, statusCode: 400, error, message };
+}
+
+function fixedUserValidation() {
+  return {
+    ok: false,
+    statusCode: 409,
+    error: "fixed_user_immutable",
+    message: "Usuario administrativo fixo nao pode ser alterado"
+  };
 }
 
 export function parseCookies(header = "") {
