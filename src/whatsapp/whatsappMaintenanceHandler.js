@@ -110,15 +110,21 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
       const humanResult = await conversationService.markHuman?.(conversationResult.conversa.id);
       if (humanResult?.ok) conversationResult.conversa = humanResult.conversa;
     }
-    const operatorEmailAlert = await maybeSendOperatorEmail({
-      processed,
-      incoming,
-      conversation: conversationResult.conversa,
-      eventEmailAlertService,
-      runtimeConfig
-    });
     const reply = processed.replies?.[0] || null;
     if (!reply) {
+      const humanResult = await conversationService.markHuman?.(conversationResult.conversa.id);
+      if (humanResult?.ok) conversationResult.conversa = humanResult.conversa;
+      const notification = ensureOperatorNotification(processed, {
+        subject: "Mensagem sem resposta automatica",
+        summary: "O SamBah nao gerou resposta automatica e encaminhou a conversa para atendimento humano."
+      });
+      const operatorEmailAlert = await maybeSendOperatorEmail({
+        processed: notification,
+        incoming,
+        conversation: conversationResult.conversa,
+        eventEmailAlertService,
+        runtimeConfig
+      });
       await safeAuditRecord(auditService, {
         type: "whatsapp_v2_no_automatic_reply",
         status: "info",
@@ -147,11 +153,25 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
         senderCalled: false,
         conversa: conversationResult.conversa,
         message: conversationResult.message,
-        normalized: messageResult?.normalized || null
+        normalized: messageResult?.normalized || null,
+        operatorEmailAlert
       };
     }
 
     if (runtimeConfig.whatsappV2?.autoReplyEnabled !== true) {
+      const humanResult = await conversationService.markHuman?.(conversationResult.conversa.id);
+      if (humanResult?.ok) conversationResult.conversa = humanResult.conversa;
+      const notification = ensureOperatorNotification(processed, {
+        subject: "Resposta automatica desativada",
+        summary: "A mensagem chegou, mas a resposta automatica esta desativada. Atendimento humano necessario."
+      });
+      const operatorEmailAlert = await maybeSendOperatorEmail({
+        processed: notification,
+        incoming,
+        conversation: conversationResult.conversa,
+        eventEmailAlertService,
+        runtimeConfig
+      });
       await safeAuditRecord(auditService, {
         type: "whatsapp_v2_auto_reply_disabled",
         status: "warning",
@@ -178,7 +198,8 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
         senderCalled: false,
         conversa: conversationResult.conversa,
         message: conversationResult.message,
-        normalized: messageResult?.normalized || null
+        normalized: messageResult?.normalized || null,
+        operatorEmailAlert
       };
     }
 
@@ -204,6 +225,23 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
         reason = sendResult?.sent ? "sent" : "meta_send_failed";
       }
     }
+    if (!sendResult?.sent) {
+      const humanResult = await conversationService.markHuman?.(conversationResult.conversa.id);
+      if (humanResult?.ok) conversationResult.conversa = humanResult.conversa;
+    }
+    const notification = sendResult?.sent
+      ? processed
+      : ensureOperatorNotification(processed, {
+        subject: "Falha ao responder cliente no WhatsApp",
+        summary: "A mensagem chegou ao SamBah, mas a resposta nao foi entregue pela Meta. Atendimento humano necessario."
+      });
+    const operatorEmailAlert = await maybeSendOperatorEmail({
+      processed: notification,
+      incoming,
+      conversation: conversationResult.conversa,
+      eventEmailAlertService,
+      runtimeConfig
+    });
     const outboundResult = await conversationService.recordOutgoing(conversationResult.conversa.id, {
       text: outboundCommand.text,
       correlationId: outboundCommand.correlationId,
@@ -311,6 +349,26 @@ export async function whatsappMaintenanceHandler(payload = {}, { conversationSer
     conversa: conversationResult.conversa,
     message: conversationResult.message,
     normalized: messageResult?.normalized || null
+  };
+}
+
+function ensureOperatorNotification(processed = {}, { subject = "Atendimento humano solicitado", summary = "" } = {}) {
+  const actions = Array.isArray(processed.actions) ? processed.actions : [];
+  const index = actions.findIndex((item) => item.type === "notify_operator");
+  if (index === -1) {
+    return {
+      ...processed,
+      actions: [...actions, { type: "notify_operator", emailAlert: true, subject, summary }]
+    };
+  }
+  return {
+    ...processed,
+    actions: actions.map((item, itemIndex) => itemIndex === index ? {
+      ...item,
+      emailAlert: true,
+      subject: item.subject || subject,
+      summary: item.summary || summary
+    } : item)
   };
 }
 

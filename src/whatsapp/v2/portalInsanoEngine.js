@@ -866,7 +866,17 @@ function isPortalHome(state, contract) {
 }
 
 function humanState(state) {
-  return { handled: true, source: "humanState", nextState: state, replies: [], actions: [{ type: "notify_operator" }] };
+  return {
+    handled: true,
+    source: "humanState",
+    nextState: state,
+    replies: [],
+    actions: [{
+      type: "notify_operator",
+      emailAlert: true,
+      subject: "Nova mensagem aguardando atendimento humano"
+    }]
+  };
 }
 
 function waitingMesaState(state) {

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import crypto from "node:crypto";
 import { AuditService } from "../src/auditService.js";
+import { CallCenterService } from "../src/callCenterService.js";
 import { CrmService } from "../src/crmService.js";
 import { EventScheduleService } from "../src/eventScheduleService.js";
 import { MenuSyncService } from "../src/menuSyncService.js";
@@ -849,11 +850,24 @@ test("POST /webhook/whatsapp V2 operacional salva failed quando provider Meta re
   process.env.META_ACCESS_TOKEN = "token-teste";
   process.env.META_PHONE_NUMBER_ID = "1234567890";
   process.env.WHATSAPP_PHONE_NUMBER_ID = "1234567890";
-  const { server, base, messagesFile, conversationsFile, cleanup } = await createTestServer({
+  const createdAlerts = [];
+  const sentAlerts = [];
+  const { server, base, messagesFile, conversationsFile, callCenterAlertsFile, cleanup } = await createTestServer({
     provider: {
       name: "meta",
       status: () => ({ provider: "meta", configured: true }),
       sendMessage: async () => ({ ok: false, sent: false, status: "meta_error", httpStatus: 400, response: { error: { message: "rejected" } }, metaMessageType: "interactive_list" })
+    },
+    eventEmailAlertService: {
+      createAlert: async (input) => {
+        const alert = { ...input, alertId: `email-${createdAlerts.length + 1}`, status: "PENDING" };
+        createdAlerts.push(alert);
+        return { ok: true, alert };
+      },
+      sendAlert: async (alertId) => {
+        sentAlerts.push(alertId);
+        return { ok: true, alert: { alertId, status: "SENT" } };
+      }
     }
   });
   try {
@@ -876,6 +890,14 @@ test("POST /webhook/whatsapp V2 operacional salva failed quando provider Meta re
     assert.equal(messages.find((message) => message.direction === "out").status, "meta_error");
     const conversations = JSON.parse(await readFile(conversationsFile, "utf8"));
     assert.equal(conversations.conversas[0].mensagens.find((message) => message.direction === "out").status, "meta_error");
+    assert.equal(conversations.conversas[0].status, "humano");
+    assert.equal(body.operatorEmailAlert.status, "SENT");
+    assert.equal(createdAlerts.length, 1);
+    assert.equal(sentAlerts.length, 1);
+    assert.match(createdAlerts[0].subject, /Falha ao responder cliente/);
+    const callCenterAlerts = JSON.parse(await readFile(callCenterAlertsFile, "utf8"));
+    assert.equal(callCenterAlerts.alerts.length, 1);
+    assert.equal(callCenterAlerts.alerts[0].conversationId, conversations.conversas[0].id);
   } finally {
     await close(server);
     await cleanup();
@@ -1251,7 +1273,7 @@ test("WhatsApp envia email quando disponibilidade da Granja exige confirmacao hu
   const previousSend = process.env.WHATSAPP_SEND_ENABLED;
   process.env.WHATSAPP_V2_ENABLED = "true";
   process.env.WHATSAPP_AUTO_REPLY_ENABLED = "true";
-  process.env.WHATSAPP_SEND_ENABLED = "false";
+  process.env.WHATSAPP_SEND_ENABLED = "true";
   const createdAlerts = [];
   const sentAlerts = [];
   const eventEmailAlertService = {
@@ -1276,10 +1298,10 @@ test("WhatsApp envia email quando disponibilidade da Granja exige confirmacao hu
       });
       assert.equal(response.status, 200);
     }
-    assert.equal(createdAlerts.length, 1);
-    assert.equal(sentAlerts.length, 1);
-    assert.match(createdAlerts[0].subject, /Confirmar disponibilidade da Granja/);
-    assert.match(createdAlerts[0].body, /ABRIR CONVERSA NO SAMBAH/);
+    assert.equal(createdAlerts.length, 2);
+    assert.equal(sentAlerts.length, 2);
+    assert.equal(createdAlerts.some((alert) => /Confirmar disponibilidade da Granja/.test(alert.subject)), true);
+    assert.equal(createdAlerts.every((alert) => /ABRIR CONVERSA NO SAMBAH/.test(alert.body)), true);
   } finally {
     await close(server);
     await cleanup();
@@ -1307,6 +1329,12 @@ async function createTestServer({ provider = new MockWhatsAppProvider({ logger: 
     sessionsFile: join(dir, "sessions.json"),
     messagesFile: join(dir, "messages.json")
   });
+  const callCenterAlertsFile = join(dir, "call-center-alerts.json");
+  const callCenterService = new CallCenterService({
+    operatorsFile: join(dir, "call-center-operators.json"),
+    alertsFile: callCenterAlertsFile,
+    subscriptionsFile: join(dir, "call-center-push-subscriptions.json")
+  });
   const crmService = new CrmService({
     files: {
       clientes: join(dir, "clientes.json"),
@@ -1327,6 +1355,7 @@ async function createTestServer({ provider = new MockWhatsAppProvider({ logger: 
     conversationService: new SambahConversationService({ scriptsFile: join(dir, "scripts.json") }),
     whatsappConversationService,
     whatsappMessageService,
+    callCenterService,
     eventEmailAlertService,
     whatsappProvider: provider,
     runtimeConfig: getRuntimeConfig(),
@@ -1343,6 +1372,7 @@ async function createTestServer({ provider = new MockWhatsAppProvider({ logger: 
     precomandasFile: join(dir, "precomandas.json"),
     mesaQueueFile: join(dir, "queue.json"),
     conversationsFile,
+    callCenterAlertsFile,
     cleanup: async () => {
       restoreEnv("DATA_DIR", previousDataDir);
       await rm(dir, { recursive: true, force: true });

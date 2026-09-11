@@ -3280,6 +3280,7 @@ function auditTypeForConversationAction(action = "") {
 
 async function maybeCreateHumanAlert(result = {}, { whatsappConversationService, callCenterService, auditService } = {}) {
   if (!callCenterService || result.duplicate === true) return null;
+  if (result.message?.actionable === false) return null;
   const conversation = result.conversa;
   if (!conversation || !["humano", "em_atendimento"].includes(conversation.status)) return null;
   const alert = await callCenterService.createAlert({ conversation, operator: {
