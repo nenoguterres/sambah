@@ -106,28 +106,31 @@ test("WhatsApp V2 lab observeOnly observa resposta sem criar outbox ou chamar se
   assert.equal(engine.outboxRepository.list().length, 0);
 });
 
-test("Portal Insano menu principal roteia cada botao sem chamar IA", async () => {
+test("Portal Insano preserva o menu comercial validado sem chamar IA", async () => {
   const engine = createLabEngine({ observeOnly: true });
-  const cases = [
-    ["PORTAL_INSANO_FOODTRUCK", "foodtruck_main_menu", "insano_food_truck"],
-    ["portal.xeriffe", "xeriffe_main_menu", "xeriffe_obirici"],
-    ["portal.more", "portal_more_menu", null]
-  ];
-
-  for (const [index, [text, menu, area]] of cases.entries()) {
-    const from = `55510000001${index}`;
-    await engine.processor.handleIncoming({ messageId: `wamid-main-${text}-welcome`, from, text: "oi" });
-    const result = await engine.processor.handleIncoming({ messageId: `wamid-main-${text}-select`, from, text });
-    assert.equal(result.state.activeMenu, menu);
-    assert.equal(result.state.areaId, area);
-    assert.equal(result.state.activeFlow, null);
-  }
+  const from = "5551000000100";
+  const portal = await engine.processor.handleIncoming({ messageId: "wamid-main-welcome", from, text: "oi" });
+  assert.deepEqual(portal.replies[0].menu.options.map((item) => item.title), [
+    "Ver cardapio",
+    "Fazer pedido",
+    "Levar food truck para evento",
+    "Fazer festa no Xeriffe",
+    "Pedir orcamento",
+    "Falar com Neno ou Kazuko"
+  ]);
+  assert.deepEqual(portal.replies[0].menu.options.map((item) => item.id), [
+    "portal.cardapio",
+    "portal.pedido",
+    "portal.foodtruck.evento",
+    "portal.xeriffe.festa",
+    "portal.orcamento",
+    "portal.humano"
+  ]);
   assert.equal(engine.operationLog.includes("ai"), false);
 
   const humanEngine = createLabEngine({ observeOnly: true });
   const humanFrom = "5551000000198";
   await humanEngine.processor.handleIncoming({ messageId: "wamid-human-welcome", from: humanFrom, text: "oi" });
-  await humanEngine.processor.handleIncoming({ messageId: "wamid-human-more", from: humanFrom, text: "portal.more" });
   await humanEngine.processor.handleIncoming({ messageId: "wamid-human-menu", from: humanFrom, text: "portal.humano" });
   const chef = await humanEngine.processor.handleIncoming({ messageId: "wamid-human-chef", from: humanFrom, text: "human.chef_neno" });
   assert.equal(chef.state.serviceState, "HUMANO");
@@ -137,9 +140,9 @@ test("Portal Insano menu principal roteia cada botao sem chamar IA", async () =>
   const numericEngine = createLabEngine({ observeOnly: true });
   await numericEngine.processor.handleIncoming({ messageId: "wamid-main-numeric-welcome", from: "5551000000199", text: "oi" });
   const numeric = await numericEngine.processor.handleIncoming({ messageId: "wamid-main-numeric", from: "5551000000199", text: "1" });
-  assert.equal(numeric.state.activeMenu, "gastronomy_main_menu");
-  assert.equal(numeric.replies[0].type, "menu");
-  assertNoNumberedMenu(numeric.replies[0].text);
+  assert.equal(numeric.state.activeMenu, "xeriffe_main_menu");
+  assert.equal(numeric.replies[0].type, "url_button");
+  assert.equal(numeric.replies[0].buttonText, "ABRIR CARDAPIO");
 });
 
 test("Motor 1 abre o cardapio publico do Xeriffe sem criar pedido no WhatsApp", async () => {
@@ -156,9 +159,12 @@ test("Motor 1 abre o cardapio publico do Xeriffe sem criar pedido no WhatsApp", 
   assert.equal(portal.replies[0].type, "menu");
   assert.equal(portal.replies[0].menu.id, "portal_main_menu");
   assert.deepEqual(portal.replies[0].menu.options.map((item) => item.title), [
-    "Gastronomia",
-    "Agro / Granja",
-    "Tecnologias e Fabricacao"
+    "Ver cardapio",
+    "Fazer pedido",
+    "Levar food truck para evento",
+    "Fazer festa no Xeriffe",
+    "Pedir orcamento",
+    "Falar com Neno ou Kazuko"
   ]);
 
   const xeriffe = await engine.processor.handleIncoming({ messageId: "wamid-motor-1-xeriffe", from, text: "portal.xeriffe" });
@@ -178,11 +184,11 @@ test("Motor 1 abre o cardapio publico do Xeriffe sem criar pedido no WhatsApp", 
   assert.equal(engine.outboxRepository.list().length, 0);
 });
 
-test("Portal Insano abre as tres areas iniciais por clique, numero ou texto", async () => {
+test("Portal Insano mantem acesso direto as areas internas sem exibi-las na abertura", async () => {
   const cases = [
     ["portal.gastronomia", "gastronomy_main_menu", "gastronomia"],
-    ["2", "granja_main_menu", "granja_aguas_da_lagoa"],
-    ["Tecnologias e Fabricacao", "business_main_menu", null]
+    ["portal.granja", "granja_main_menu", "granja_aguas_da_lagoa"],
+    ["portal.negocios", "business_main_menu", null]
   ];
 
   for (const [index, [selection, menuId, areaId]] of cases.entries()) {
@@ -247,7 +253,7 @@ test("Tecnologias e Fabricacao apresenta Tecnologia, Serralheria e Comunicacao V
     const engine = createLabEngine({ observeOnly: true });
     const from = `555100000039${index}`;
     await engine.processor.handleIncoming({ messageId: `wamid-fabrication-${index}-welcome`, from, text: "oi" });
-    await engine.processor.handleIncoming({ messageId: `wamid-fabrication-${index}-root`, from, text: "3" });
+    await engine.processor.handleIncoming({ messageId: `wamid-fabrication-${index}-root`, from, text: "portal.negocios" });
     const result = await engine.processor.handleIncoming({ messageId: `wamid-fabrication-${index}-select`, from, text: selection });
     assert.equal(result.state.activeMenu, menuId);
     assert.equal(result.state.areaId, areaId);
@@ -260,7 +266,7 @@ test("Tecnologia oferece um botao para cada aplicativo e apresenta suas funcoes"
   const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000399";
   await engine.processor.handleIncoming({ messageId: "wamid-apps-welcome", from, text: "oi" });
-  await engine.processor.handleIncoming({ messageId: "wamid-apps-root", from, text: "3" });
+  await engine.processor.handleIncoming({ messageId: "wamid-apps-root", from, text: "portal.negocios" });
   const technology = await engine.processor.handleIncoming({ messageId: "wamid-apps-tech", from, text: "1" });
   assert.equal(technology.state.activeMenu, "technology_main_menu");
   assert.equal(technology.replies[0].menu.buttonText, "VER APLICATIVOS");
@@ -278,7 +284,7 @@ test("Granja usa botao curto sem cortar o nome Aguas da Lagoa", async () => {
   const engine = createLabEngine({ observeOnly: true });
   const from = "5551000000490";
   await engine.processor.handleIncoming({ messageId: "wamid-granja-label-welcome", from, text: "oi" });
-  const result = await engine.processor.handleIncoming({ messageId: "wamid-granja-label-select", from, text: "2" });
+  const result = await engine.processor.handleIncoming({ messageId: "wamid-granja-label-select", from, text: "portal.granja" });
   assert.equal(result.replies[0].menu.title, "Granja Aguas da Lagoa");
   assert.equal(result.replies[0].menu.buttonText, "VER OPCOES");
   const animals = await engine.processor.handleIncoming({ messageId: "wamid-granja-animals", from, text: "granja.animals" });

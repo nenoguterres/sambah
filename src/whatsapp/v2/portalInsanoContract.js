@@ -1,6 +1,6 @@
 export const portalInsanoContract = {
   schema: "sambah.whatsapp.portal-insano",
-  version: "3.5.0",
+  version: "3.5.1",
   assistant: {
     name: "SamBah",
     role: "Assistente oficial de atendimento do Portal Insano"
@@ -15,18 +15,21 @@ export const portalInsanoContract = {
   },
   welcome: {
     id: "portal_welcome",
-    message: "Buenas! Aqui e o SamBah, atendimento do Portal Insano. Escolha abaixo a area que deseja acessar. Voce pode clicar ou escrever a opcao.",
+    message: "Buenas! Eu sou o SamBah, atendimento rapido do Insano e do Xeriffe. Aqui e direto: tu quer ver cardapio, fazer pedido, levar o food truck para um evento ou reservar o Xeriffe para tua festa?",
     menuId: "portal_main_menu"
   },
   menus: {
     portal_main_menu: {
       id: "portal_main_menu",
       title: "Portal Insano",
-      body: "Escolha uma area para continuar:",
+      body: "Como posso te atender?",
       options: [
-        option("portal.gastronomia", 1, "Gastronomia", { type: "open_menu", target: "gastronomy_main_menu", areaId: "gastronomia" }),
-        option("portal.granja", 2, "Agro / Granja", { type: "open_menu", target: "granja_main_menu", areaId: "granja_aguas_da_lagoa" }),
-        option("portal.negocios", 3, "Tecnologias e Fabricacao", { type: "open_menu", target: "business_main_menu", areaId: null })
+        option("portal.cardapio", 1, "Ver cardapio", { type: "open_url_button", target: "integration.mesa_do_xeriffe.customer_url" }),
+        option("portal.pedido", 2, "Fazer pedido", { type: "open_url_button", target: "integration.mesa_do_xeriffe.customer_url" }),
+        option("portal.foodtruck.evento", 3, "Levar food truck para evento", { type: "open_url_button", target: "integration.insano_food_truck.event_form_url" }),
+        option("portal.xeriffe.festa", 4, "Fazer festa no Xeriffe", { type: "start_flow", target: "xeriffe_event_information" }),
+        option("portal.orcamento", 5, "Pedir orcamento", { type: "open_url_button", target: "integration.insano_food_truck.quote_form_url" }),
+        option("portal.humano", 6, "Falar com Neno ou Kazuko", { type: "open_menu", target: "human_contact_menu", areaId: "atendimento_humano" })
       ]
     },
     gastronomy_main_menu: {

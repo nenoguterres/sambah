@@ -43,7 +43,7 @@ test("saudacao reinicia pre-atendimento geral orfao mesmo sem mensagem original"
   assert.equal(result.source, "recoverOrphanGeneralIntake");
   assert.equal(result.nextState.activeMenu, "portal_main_menu");
   assert.equal(result.nextState.activeFlow, null);
-  assert.equal(result.replies[0].menu.options[2].title, "Tecnologias e Fabricacao");
+  assert.equal(result.replies[0].menu.options[2].title, "Levar food truck para evento");
 });
 
 test("saudacao em submenu retorna ao Portal", () => {
@@ -78,7 +78,7 @@ test("texto cortado Voltar ao Portal Ins retorna sempre ao Portal Insano", () =>
   const result = routePortalInsanoMessage({ state, message: { text: "Voltar ao Portal Ins" } });
   assert.equal(result.nextState.activeMenu, "portal_main_menu");
   assert.equal(result.nextState.areaId, null);
-  assert.equal(result.replies[0].menu.options[0].title, "Gastronomia");
+  assert.equal(result.replies[0].menu.options[0].title, "Ver cardapio");
 });
 
 test("frase natural Quero voltar ao Portal Insano zera o contexto", () => {
@@ -113,7 +113,14 @@ test("frase nova fora de pergunta ativa zera contexto anterior e abre o Portal p
   assert.equal(result.nextState.mesaOrderId, null);
   assert.deepEqual(result.nextState.xeriffeCommand.items, []);
   assert.equal(result.nextState.flowData.old, undefined);
-  assert.deepEqual(result.replies[0].menu.options.map((item) => item.title), ["Gastronomia", "Agro / Granja", "Tecnologias e Fabricacao"]);
+  assert.deepEqual(result.replies[0].menu.options.map((item) => item.title), [
+    "Ver cardapio",
+    "Fazer pedido",
+    "Levar food truck para evento",
+    "Fazer festa no Xeriffe",
+    "Pedir orcamento",
+    "Falar com Neno ou Kazuko"
+  ]);
 });
 
 test("resposta a pergunta ativa continua o fluxo sem zerar contexto", () => {

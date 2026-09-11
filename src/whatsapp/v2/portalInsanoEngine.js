@@ -113,7 +113,11 @@ function resolveLegacyPortalEntry(state, text) {
   if (state.activeMenu !== "portal_main_menu") return null;
   const legacyEntries = {
     portal_insano_foodtruck: { id: "PORTAL_INSANO_FOODTRUCK", action: { type: "open_url_button", target: "integration.insano_food_truck.event_form_url" } },
+    "portal.gastronomia": { id: "portal.gastronomia", action: { type: "open_menu", target: "gastronomy_main_menu", areaId: "gastronomia" } },
     "portal.xeriffe": { id: "portal.xeriffe", action: { type: "open_menu", target: "xeriffe_main_menu", areaId: "xeriffe_obirici" } },
+    "portal.granja": { id: "portal.granja", action: { type: "open_menu", target: "granja_main_menu", areaId: "granja_aguas_da_lagoa" } },
+    "portal.negocios": { id: "portal.negocios", action: { type: "open_menu", target: "business_main_menu", areaId: null } },
+    "portal.tecnologia": { id: "portal.tecnologia", action: { type: "open_menu", target: "technology_main_menu", areaId: "desenvolvimento_tecnologias" } },
     "portal.more": { id: "portal.more", action: { type: "open_menu", target: "portal_more_menu", areaId: null } }
   };
   return legacyEntries[normalizeText(text)] || null;

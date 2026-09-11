@@ -714,9 +714,9 @@ test("POST /webhook/whatsapp V2 operacional com sender habilitado chama provider
     assert.equal(providerCalls[0].to, "5551555555555");
     assert.equal(providerCalls[0].message.type, "menu");
     assert.equal(providerCalls[0].phoneNumberId, "phone-id-from-webhook");
-    assert.match(providerCalls[0].message.text, /^Portal Insano\nEscolha uma area para continuar:/);
+    assert.equal(providerCalls[0].message.text, "Portal Insano\nComo posso te atender?");
     assert.doesNotMatch(providerCalls[0].message.text, /1\. Insano Food Truck/);
-    assert.equal(providerCalls[0].message.menu.options[0].id, "portal.gastronomia");
+    assert.equal(providerCalls[0].message.menu.options[0].id, "portal.cardapio");
     const messages = JSON.parse(await readFile(messagesFile, "utf8"));
     assert.equal(messages.find((message) => message.direction === "out").providerMessageId, "wamid-provider-v2");
     const conversations = JSON.parse(await readFile(conversationsFile, "utf8"));
@@ -1002,9 +1002,9 @@ test("WhatsApp V2 operacional final: idempotencia, HUMANO, manual, status e auto
     assert.equal(providerCalls[0].method, "sendMessage");
     assert.equal(providerCalls[0].input.to, "555180413745");
     assert.equal(providerCalls[0].input.message.type, "menu");
-    assert.equal(providerCalls[0].input.message.text, "Portal Insano\nEscolha uma area para continuar:");
+    assert.equal(providerCalls[0].input.message.text, "Portal Insano\nComo posso te atender?");
     assert.doesNotMatch(providerCalls[0].input.message.text, /1\. Insano Food Truck/);
-    assert.equal(providerCalls[0].input.message.menu.options[0].id, "portal.gastronomia");
+    assert.equal(providerCalls[0].input.message.menu.options[0].id, "portal.cardapio");
     assert.equal(sentBody.outboundCommand.recipient, "555180413745");
     assert.equal(sentBody.outboundCommand.interactive.type, "menu");
     assert.equal(sentBody.outboundCommand.correlationId, "wa-v2-reply:wamid-final-dup");
