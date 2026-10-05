@@ -2,6 +2,12 @@ import { generateClaudeCampaignVariations } from "./services/contentGenerationSe
 import { generatePerolaPosts } from "./services/perolaPostEngine.js";
 import { PerolaPermissionService, permissionActionForDraftPatch } from "./services/perolaPermissionService.js";
 import {
+  buildPerolaStudioOverview,
+  createPerolaStudioDraft,
+  listPerolaBrandProfiles,
+  upsertPerolaBrandProfile
+} from "./services/perolaStudioService.js";
+import {
   getPerolaEcosystemSignals,
   getPerolaHumanApprovalById,
   getPerolaHumanApprovalQueue,
@@ -56,6 +62,55 @@ export function createPerolaRoutes({ service, permissionService = new PerolaPerm
 
         if (req.method === "GET" && url.pathname === "/api/perola/permissions") {
           return sendJson(res, 200, permissionService.matrix());
+        }
+
+        if (req.method === "GET" && url.pathname === "/api/perola/studio/overview") {
+          const signals = await getPerolaEcosystemSignals({ dataDir: service.dataDir });
+          return sendJson(res, 200, await buildPerolaStudioOverview({ service, signals }));
+        }
+
+        if (req.method === "GET" && url.pathname === "/api/perola/studio/brands") {
+          return sendJson(res, 200, await listPerolaBrandProfiles({ dataDir: service.dataDir }));
+        }
+
+        const studioBrandMatch = url.pathname.match(/^\/api\/perola\/studio\/brands\/([^/]+)$/);
+        if ((req.method === "PUT" || req.method === "PATCH") && studioBrandMatch) {
+          const brandId = decodeURIComponent(studioBrandMatch[1]);
+          const authorization = await requirePermission(req, res, "campaign_update", { brandId });
+          if (!authorization) return true;
+          const result = await upsertPerolaBrandProfile({
+            dataDir: service.dataDir,
+            id: brandId,
+            input: await readJson(req, { requireBody: true })
+          });
+          if (result.success) {
+            await service.recordAudit("perola_studio_brand_saved", "Memoria de marca atualizada no Perola Studio", {
+              source: "perola-studio",
+              brandId,
+              actorRole: authorization.role
+            });
+          }
+          return sendJson(res, result.statusCode || 200, result);
+        }
+
+        if (req.method === "POST" && url.pathname === "/api/perola/studio/content-pack") {
+          const authorization = await requirePermission(req, res, "draft_create");
+          if (!authorization) return true;
+          const result = await createPerolaStudioDraft({
+            service,
+            input: await readJson(req, { requireBody: true }),
+            actorRole: authorization.role
+          });
+          if (result.success) {
+            await service.recordAudit("perola_studio_content_pack_created", "Pacote multiformato criado no Perola Studio", {
+              source: "perola-studio",
+              draftId: result.draft?.id || "",
+              campaignId: result.contentPack?.campaignId || "",
+              brandId: result.contentPack?.brand?.id || "",
+              actorRole: authorization.role
+            });
+          }
+          return sendJson(res, result.statusCode || 201, result);
         }
 
         if (req.method === "GET" && url.pathname === "/api/perola/radar/signals") {
