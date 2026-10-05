@@ -1,4 +1,16 @@
+export const FIXED_AUTH_USERS = [
+  {
+    username: "neno.gutterres",
+    displayName: "Neno Gutterres",
+    role: "ADMIN",
+    active: true,
+    salt: "sambah-fixed-admin-neno-v1",
+    passwordHash: "0ddf1d0c644e36a3709109077d6c2ffad2ecb323d5f1a254e889b9dd6f695911"
+  }
+];
+
 export const DEV_AUTH_USERS = [
+  ...FIXED_AUTH_USERS,
   {
     username: "atendente",
     displayName: "Atendente SamBah",
