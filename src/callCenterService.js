@@ -253,6 +253,29 @@ export class CallCenterService {
     return { ok: true, count: subscriptions.length, subscriptions };
   }
 
+  async operationalStatus() {
+    const [alertsData, subscriptionsData, operatorsData] = await Promise.all([
+      this.#readAlerts(),
+      this.#readSubscriptions(),
+      this.#readOperators()
+    ]);
+    const alerts = alertsData.alerts;
+    const subscriptions = subscriptionsData.subscriptions;
+    const latest = [...alerts].sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)))[0] || null;
+    return {
+      configured: Boolean(this.vapidPublicKey && this.vapidPrivateKey),
+      subscriptions: subscriptions.length,
+      activeSubscriptions: subscriptions.filter((item) => item.enabled !== false).length,
+      operators: operatorsData.operators.length,
+      alerts: alerts.length,
+      unreadAlerts: alerts.filter((item) => item.status !== "read").length,
+      deliveredAlerts: alerts.filter((item) => item.deliveryStatus === "delivered").length,
+      pendingAlerts: alerts.filter((item) => item.deliveryStatus === "pending").length,
+      lastDeliveryStatus: latest?.deliveryStatus || "",
+      lastDeliveryAt: latest?.updatedAt || latest?.createdAt || ""
+    };
+  }
+
   async acknowledgeAlert(id = "", actor = {}) {
     return this.markAlertRead(id, actor);
   }
@@ -347,40 +370,62 @@ export class CallCenterService {
       await this.#writeAlerts(alertsData);
       return { alert: alertsData.alerts[index] };
     }
-    const webPush = this.webPushProvider || await loadWebPush();
-    webPush.setVapidDetails(this.vapidSubject, this.vapidPublicKey, this.vapidPrivateKey);
-    const subscriptionsData = await this.#readSubscriptions();
-    const activeSubscriptions = subscriptionsData.subscriptions.filter((item) => item.enabled !== false);
-    const payload = JSON.stringify(buildPushPayload(alert));
-    const deliveries = [];
-    for (const subscription of activeSubscriptions) {
-      const attemptedAt = this.now().toISOString();
-      const delivery = { deviceId: subscription.deviceId, status: "attempted", attemptedAt, deliveredAt: null, errorCode: "" };
-      try {
-        await webPush.sendNotification({ endpoint: subscription.endpoint, keys: subscription.keys }, payload);
-        subscription.lastSuccessAt = this.now().toISOString();
-        delivery.status = "delivered";
-        delivery.deliveredAt = subscription.lastSuccessAt;
-      } catch (error) {
-        const code = Number(error?.statusCode || 0);
-        delivery.status = "failed";
-        delivery.errorCode = String(code || error?.code || "push_failed");
-        subscription.lastFailureAt = this.now().toISOString();
-        if (code === 404 || code === 410) subscription.enabled = false;
+    try {
+      const webPush = this.webPushProvider || await loadWebPush();
+      webPush.setVapidDetails(this.vapidSubject, this.vapidPublicKey, this.vapidPrivateKey);
+      const subscriptionsData = await this.#readSubscriptions();
+      const activeSubscriptions = subscriptionsData.subscriptions.filter((item) => item.enabled !== false);
+      const payload = JSON.stringify(buildPushPayload(alert));
+      const deliveries = [];
+      for (const subscription of activeSubscriptions) {
+        const attemptedAt = this.now().toISOString();
+        const delivery = { deviceId: subscription.deviceId, status: "attempted", attemptedAt, deliveredAt: null, errorCode: "" };
+        try {
+          await webPush.sendNotification({ endpoint: subscription.endpoint, keys: subscription.keys }, payload);
+          subscription.lastSuccessAt = this.now().toISOString();
+          delivery.status = "delivered";
+          delivery.deliveredAt = subscription.lastSuccessAt;
+        } catch (error) {
+          const code = Number(error?.statusCode || 0);
+          delivery.status = "failed";
+          delivery.errorCode = String(code || error?.code || "push_failed");
+          subscription.lastFailureAt = this.now().toISOString();
+          if (code === 404 || code === 410) subscription.enabled = false;
+        }
+        subscription.updatedAt = this.now().toISOString();
+        deliveries.push(delivery);
       }
-      subscription.updatedAt = this.now().toISOString();
-      deliveries.push(delivery);
+      await this.#writeSubscriptions(subscriptionsData);
+      alertsData.alerts[index] = {
+        ...alertsData.alerts[index],
+        deliveries,
+        deliveryStatus: deliveries.some((item) => item.status === "delivered") ? "delivered" : "not_delivered",
+        realIntegrated: deliveries.some((item) => item.status === "delivered"),
+        deliveryErrorCode: "",
+        updatedAt: this.now().toISOString()
+      };
+      await this.#writeAlerts(alertsData);
+      return { alert: alertsData.alerts[index] };
+    } catch (error) {
+      alertsData.alerts[index] = {
+        ...alertsData.alerts[index],
+        deliveryStatus: "delivery_error",
+        realIntegrated: false,
+        deliveryErrorCode: safePushErrorCode(error),
+        updatedAt: this.now().toISOString()
+      };
+      await this.#writeAlerts(alertsData);
+      return { alert: alertsData.alerts[index] };
     }
-    await this.#writeSubscriptions(subscriptionsData);
-    alertsData.alerts[index] = {
-      ...alertsData.alerts[index],
-      deliveries,
-      deliveryStatus: deliveries.some((item) => item.status === "delivered") ? "delivered" : "not_delivered",
-      realIntegrated: deliveries.some((item) => item.status === "delivered")
-    };
-    await this.#writeAlerts(alertsData);
-    return { alert: alertsData.alerts[index] };
   }
+}
+
+function safePushErrorCode(error) {
+  const code = Number(error?.statusCode || 0);
+  if (code) return String(code);
+  const namedCode = String(error?.code || "").trim();
+  if (namedCode && /^[A-Za-z0-9_-]{1,48}$/.test(namedCode)) return namedCode;
+  return "push_provider_error";
 }
 
 function withAlertSla(alert = {}, now = new Date()) {

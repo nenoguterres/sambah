@@ -96,3 +96,28 @@ test("assinatura 410 e VAPID ausente nao derrubam alerta", async (t) => {
   const missingAlert = await missing.createAlert({ conversation: { id: "wa_3", telefone: "5552", status: "humano", lastInboundMessageId: "wamid-push-3", ultimaMensagem: "humano" }, operator: { phone: "5551980413745" } });
   assert.equal(missingAlert.alert.deliveryStatus, "configuration_missing");
 });
+
+test("falha ao preparar provedor push fica registrada e nao interrompe o atendimento", async (t) => {
+  const provider = {
+    setVapidDetails() {
+      throw new Error("invalid VAPID private key with sensitive details");
+    },
+    async sendNotification() {
+      throw new Error("nao deveria enviar");
+    }
+  };
+  const service = await fixture(t, provider);
+  const result = await service.createAlert({
+    conversation: { id: "wa_provider_error", telefone: "5551", status: "humano", lastInboundMessageId: "wamid-provider-error", ultimaMensagem: "preciso de ajuda" },
+    operator: { phone: "5551980413745" }
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.alert.deliveryStatus, "delivery_error");
+  assert.equal(result.alert.deliveryErrorCode, "push_provider_error");
+  assert.equal(result.alert.realIntegrated, false);
+
+  const status = await service.operationalStatus();
+  assert.equal(status.configured, true);
+  assert.equal(status.alerts, 1);
+  assert.equal(status.lastDeliveryStatus, "delivery_error");
+});

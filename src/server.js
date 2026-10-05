@@ -794,7 +794,13 @@ export function createApp({
       }
 
       if (req.method === "GET" && url.pathname === "/admin/whatsapp/status") {
-        return sendJson(res, 200, await buildWhatsAppOperationalStatus(whatsappMessageService, whatsappConversationService, appRuntimeConfig || getRuntimeConfig()));
+        return sendJson(res, 200, await buildWhatsAppOperationalStatus(
+          whatsappMessageService,
+          whatsappConversationService,
+          appRuntimeConfig || getRuntimeConfig(),
+          callCenterService,
+          eventEmailAlertService
+        ));
       }
 
       if (req.method === "GET" && url.pathname === "/api/call-center/operators") {
@@ -1708,7 +1714,7 @@ function verifyWhatsAppWebhook(req, res, url) {
   return sendJson(res, 403, { ok: false, error: "Token de verificacao invalido" });
 }
 
-async function buildWhatsAppOperationalStatus(messageService, conversationService, config = getRuntimeConfig()) {
+async function buildWhatsAppOperationalStatus(messageService, conversationService, config = getRuntimeConfig(), callCenterService = null, eventEmailAlertService = null) {
   const providerStatus = messageService.status();
   let messages = [];
   let conversations = null;
@@ -1721,6 +1727,18 @@ async function buildWhatsAppOperationalStatus(messageService, conversationServic
     conversations = await conversationService.list();
   } catch {
     conversations = null;
+  }
+  let pushNotifications = null;
+  let emailNotifications = null;
+  try {
+    pushNotifications = await callCenterService?.operationalStatus?.() || null;
+  } catch {
+    pushNotifications = { configured: false, status: "status_unavailable" };
+  }
+  try {
+    emailNotifications = await eventEmailAlertService?.operationalStatus?.() || null;
+  } catch {
+    emailNotifications = { configured: false, status: "status_unavailable" };
   }
   const lastReceived = messages.find((message) => message.direction === "in") || null;
   const lastSent = messages.find((message) => message.direction === "out" && (message.sent === true || message.status === "sent" || message.providerMessageId)) || null;
@@ -1735,6 +1753,10 @@ async function buildWhatsAppOperationalStatus(messageService, conversationServic
     receivingActive: Boolean(lastReceived),
     storageOk: conversations?.ok === true,
     conversations: conversations?.count ?? null,
+    notifications: {
+      push: pushNotifications,
+      email: emailNotifications
+    },
     lastReceivedAt: lastReceived?.createdAt || "",
     lastSendConfirmedAt: lastSent?.statusUpdatedAt || lastSent?.createdAt || "",
     lastError: lastError ? {

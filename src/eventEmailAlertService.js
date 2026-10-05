@@ -104,6 +104,21 @@ export class EventEmailAlertService {
     await mkdir(dirname(this.filePath), { recursive: true });
     await writeFile(this.filePath, `${JSON.stringify(alerts, null, 2)}\n`, "utf8");
   }
+
+  async operationalStatus() {
+    const alerts = await this.readAlerts();
+    const latest = alerts[0] || null;
+    return {
+      configured: smtpConfig(this.env, this.env.EVENT_EMAIL_TO || DEFAULT_EVENT_EMAIL_TO).ok,
+      alerts: alerts.length,
+      sentAlerts: alerts.filter((item) => item.status === "SENT").length,
+      failedAlerts: alerts.filter((item) => item.status === "FAILED").length,
+      pendingAlerts: alerts.filter((item) => ["PENDING", "SENDING"].includes(item.status)).length,
+      lastStatus: latest?.status || "",
+      lastAttemptAt: latest?.lastAttemptAt || latest?.createdAt || "",
+      lastSentAt: latest?.sentAt || ""
+    };
+  }
 }
 
 function smtpConfig(env = {}, to = "") {
