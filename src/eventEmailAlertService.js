@@ -115,10 +115,23 @@ export class EventEmailAlertService {
       failedAlerts: alerts.filter((item) => item.status === "FAILED").length,
       pendingAlerts: alerts.filter((item) => ["PENDING", "SENDING"].includes(item.status)).length,
       lastStatus: latest?.status || "",
+      lastErrorCode: safeEmailErrorCode(latest?.error || ""),
       lastAttemptAt: latest?.lastAttemptAt || latest?.createdAt || "",
       lastSentAt: latest?.sentAt || ""
     };
   }
+}
+
+function safeEmailErrorCode(value = "") {
+  const text = String(value || "").trim();
+  const smtp = text.match(/smtp_(\d{3})/i);
+  if (smtp) return `smtp_${smtp[1]}`;
+  if (!text) return "";
+  if (/timeout|timed out/i.test(text)) return "smtp_timeout";
+  if (/ECONNREFUSED/i.test(text)) return "smtp_connection_refused";
+  if (/ENOTFOUND|EAI_AGAIN/i.test(text)) return "smtp_host_unavailable";
+  if (/certificate|TLS|SSL/i.test(text)) return "smtp_tls_error";
+  return "smtp_send_error";
 }
 
 function smtpConfig(env = {}, to = "") {

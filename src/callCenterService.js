@@ -272,6 +272,7 @@ export class CallCenterService {
       deliveredAlerts: alerts.filter((item) => item.deliveryStatus === "delivered").length,
       pendingAlerts: alerts.filter((item) => item.deliveryStatus === "pending").length,
       lastDeliveryStatus: latest?.deliveryStatus || "",
+      lastDeliveryErrorCode: latest?.deliveryErrorCode || "",
       lastDeliveryAt: latest?.updatedAt || latest?.createdAt || ""
     };
   }
