@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CallCenterService } from "../src/callCenterService.js";
@@ -46,6 +46,31 @@ test("chave publica informa identificador para renovar assinaturas antigas", asy
   assert.equal(key.configured, true);
 });
 
+test("gera e reutiliza chave VAPID valida no disco quando ambiente esta quebrado", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "sambah-vapid-auto-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const options = {
+    operatorsFile: join(dir, "operators.json"),
+    alertsFile: join(dir, "alerts.json"),
+    subscriptionsFile: join(dir, "push-subscriptions.json"),
+    vapidKeysFile: join(dir, "vapid-keys.json"),
+    vapidPublicKey: "invalida",
+    vapidPrivateKey: "invalida"
+  };
+  const first = new CallCenterService(options);
+  const firstKey = await first.publicPushKey();
+  assert.equal(firstKey.configured, true);
+  assert.notEqual(firstKey.publicKey, "invalida");
+  const saved = JSON.parse(await readFile(options.vapidKeysFile, "utf8"));
+  assert.equal(saved.publicKey, firstKey.publicKey);
+  assert.ok(saved.privateKey);
+
+  const second = new CallCenterService(options);
+  const secondKey = await second.publicPushKey();
+  assert.equal(secondKey.publicKey, firstKey.publicKey);
+  assert.equal(secondKey.keyId, firstKey.keyId);
+});
+
 test("nova mensagem recebida cria novo evento e acknowledge encerra a pendencia", async (t) => {
   const provider = {
     setVapidDetails() {},
@@ -85,7 +110,7 @@ test("alerta humano informa prazo e atraso de primeira resposta", async (t) => {
   assert.equal(listed.alerts[0].firstResponseOverdueMinutes, 3);
 });
 
-test("assinatura 410 e VAPID ausente nao derrubam alerta", async (t) => {
+test("assinatura 410 e VAPID ausente sao recuperadas sem derrubar alerta", async (t) => {
   const provider = {
     setVapidDetails() {},
     async sendNotification() {
@@ -103,7 +128,8 @@ test("assinatura 410 e VAPID ausente nao derrubam alerta", async (t) => {
 
   const missing = new CallCenterService({ operatorsFile: service.operatorsFile, alertsFile: service.alertsFile, subscriptionsFile: service.subscriptionsFile, vapidPublicKey: "", vapidPrivateKey: "" });
   const missingAlert = await missing.createAlert({ conversation: { id: "wa_3", telefone: "5552", status: "humano", lastInboundMessageId: "wamid-push-3", ultimaMensagem: "humano" }, operator: { phone: "5551980413745" } });
-  assert.equal(missingAlert.alert.deliveryStatus, "configuration_missing");
+  assert.equal(missingAlert.alert.deliveryStatus, "not_delivered");
+  assert.equal((await missing.publicPushKey()).configured, true);
 });
 
 test("falha ao preparar provedor push fica registrada e nao interrompe o atendimento", async (t) => {

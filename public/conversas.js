@@ -17,7 +17,7 @@ const state = {
 };
 
 const SAMBAH_CONVERSAS_VERSION = "2.0.0";
-const SAMBAH_CONVERSAS_ASSET_VERSION = "20261024-alertas-humanos";
+const SAMBAH_CONVERSAS_ASSET_VERSION = "20261024-alertas-push-auto";
 const SAMBAH_CONVERSAS_TITLE = "SamBah Central";
 const listEl = document.querySelector("#conversationList");
 const chatEl = document.querySelector("#chatPane");
@@ -194,12 +194,28 @@ function updateAttentionAlert() {
     humanAlertPanelEl.classList.remove("pulse");
     void humanAlertPanelEl.offsetWidth;
     humanAlertPanelEl.classList.add("pulse");
+    showLocalHumanNotification(first);
   }
   state.lastAttentionTotal = total;
   humanAlertPanelEl.querySelector("[data-alert-focus]")?.addEventListener("click", (event) => {
     const id = event.currentTarget.dataset.alertFocus;
     if (id) openConversation(id);
   });
+}
+
+async function showLocalHumanNotification(conversation = {}) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  const options = {
+    body: `${conversation.nome || "Cliente WhatsApp"}: ${conversation.ultimaMensagem || "Nova conversa aguardando"}`,
+    tag: `sambah-human-${conversation.id || "pending"}`,
+    renotify: true,
+    data: { url: `/conversas?conversationId=${encodeURIComponent(conversation.id || "")}` }
+  };
+  try {
+    const registration = await navigator.serviceWorker?.ready;
+    if (registration?.showNotification) await registration.showNotification("SamBah: atendimento humano", options);
+    else new Notification("SamBah: atendimento humano", options);
+  } catch {}
 }
 
 function minutesSince(value) {

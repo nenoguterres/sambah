@@ -19,6 +19,7 @@ export class CallCenterService {
     vapidPublicKey = process.env.WEB_PUSH_VAPID_PUBLIC_KEY || "",
     vapidPrivateKey = process.env.WEB_PUSH_VAPID_PRIVATE_KEY || "",
     vapidSubject = process.env.WEB_PUSH_SUBJECT || "https://api.insanofoodtruck.com.br",
+    vapidKeysFile = "",
     webPushProvider = null,
     firstResponseSlaMinutes = Number(process.env.CALL_CENTER_FIRST_RESPONSE_SLA_MINUTES || DEFAULT_FIRST_RESPONSE_SLA_MINUTES)
   } = {}) {
@@ -34,6 +35,8 @@ export class CallCenterService {
     this.vapidPublicKey = vapidPublicKey;
     this.vapidPrivateKey = vapidPrivateKey;
     this.vapidSubject = vapidSubject;
+    this.vapidKeysFile = vapidKeysFile || this.subscriptionsFile.replace(/push-subscriptions\.json$/, "vapid-keys.json");
+    this.vapidInitPromise = null;
     this.webPushProvider = webPushProvider;
     this.firstResponseSlaMinutes = Math.max(1, Number(firstResponseSlaMinutes) || DEFAULT_FIRST_RESPONSE_SLA_MINUTES);
   }
@@ -194,6 +197,7 @@ export class CallCenterService {
   }
 
   async publicPushKey() {
+    await this.#ensureVapidKeys();
     const publicKey = this.vapidPublicKey || "";
     return {
       ok: true,
@@ -260,6 +264,7 @@ export class CallCenterService {
   }
 
   async operationalStatus() {
+    await this.#ensureVapidKeys();
     const [alertsData, subscriptionsData, operatorsData] = await Promise.all([
       this.#readAlerts(),
       this.#readSubscriptions(),
@@ -372,6 +377,7 @@ export class CallCenterService {
     const alertsData = await this.#readAlerts();
     const index = alertsData.alerts.findIndex((item) => item.id === alert.id);
     if (index === -1) return { alert };
+    await this.#ensureVapidKeys();
     if (!this.vapidPublicKey || !this.vapidPrivateKey) {
       alertsData.alerts[index] = { ...alertsData.alerts[index], deliveryStatus: "configuration_missing", realIntegrated: false };
       await this.#writeAlerts(alertsData);
@@ -424,6 +430,50 @@ export class CallCenterService {
       await this.#writeAlerts(alertsData);
       return { alert: alertsData.alerts[index] };
     }
+  }
+
+  async #ensureVapidKeys() {
+    if (this.webPushProvider) return Boolean(this.vapidPublicKey && this.vapidPrivateKey);
+    if (!this.vapidInitPromise) this.vapidInitPromise = this.#initializeVapidKeys();
+    try {
+      return await this.vapidInitPromise;
+    } catch (error) {
+      this.vapidInitPromise = null;
+      throw error;
+    }
+  }
+
+  async #initializeVapidKeys() {
+    const webPush = await loadWebPush();
+    if (validVapidPair(webPush, this.vapidSubject, this.vapidPublicKey, this.vapidPrivateKey)) return true;
+    try {
+      const raw = await readFile(this.vapidKeysFile, "utf8");
+      const saved = JSON.parse(stripBom(raw) || "{}");
+      if (validVapidPair(webPush, this.vapidSubject, saved.publicKey, saved.privateKey)) {
+        this.vapidPublicKey = saved.publicKey;
+        this.vapidPrivateKey = saved.privateKey;
+        return true;
+      }
+    } catch (error) {
+      if (error.code !== "ENOENT" && !(error instanceof SyntaxError)) throw error;
+    }
+    const generated = webPush.generateVAPIDKeys();
+    if (!validVapidPair(webPush, this.vapidSubject, generated.publicKey, generated.privateKey)) return false;
+    await mkdir(dirname(this.vapidKeysFile), { recursive: true });
+    await writeFile(this.vapidKeysFile, `${JSON.stringify(generated, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    this.vapidPublicKey = generated.publicKey;
+    this.vapidPrivateKey = generated.privateKey;
+    return true;
+  }
+}
+
+function validVapidPair(webPush, subject = "", publicKey = "", privateKey = "") {
+  if (!publicKey || !privateKey) return false;
+  try {
+    webPush.setVapidDetails(subject, publicKey, privateKey);
+    return true;
+  } catch {
+    return false;
   }
 }
 

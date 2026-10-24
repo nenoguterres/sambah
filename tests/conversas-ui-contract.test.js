@@ -133,6 +133,8 @@ test("controlador renova assinatura push quando a chave VAPID muda", async () =>
   assert.match(source, /pushSubscriptionUsesKey\(subscription, expectedKey\)/);
   assert.match(source, /subscription\.unsubscribe\(\)/);
   assert.match(source, /recoverPushSubscription\(\)/);
+  assert.match(source, /showLocalHumanNotification\(first\)/);
+  assert.match(source, /showNotification\("SamBah: atendimento humano"/);
 });
 
 test("alerta visual mostra atendimentos pendentes e atualiza badge do app", async (t) => {
