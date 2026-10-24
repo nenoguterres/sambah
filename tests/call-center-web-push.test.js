@@ -37,6 +37,15 @@ test("duas assinaturas recebem uma tentativa por evento e webhook repetido nao d
   assert.equal(second.duplicate, true);
 });
 
+test("chave publica informa identificador para renovar assinaturas antigas", async (t) => {
+  const service = await fixture(t, { setVapidDetails() {}, async sendNotification() {} });
+  const key = await service.publicPushKey();
+  assert.equal(key.ok, true);
+  assert.equal(key.publicKey, "public");
+  assert.match(key.keyId, /^[a-f0-9]{16}$/);
+  assert.equal(key.configured, true);
+});
+
 test("nova mensagem recebida cria novo evento e acknowledge encerra a pendencia", async (t) => {
   const provider = {
     setVapidDetails() {},

@@ -70,6 +70,14 @@ export function getRuntimeConfig(env = globalThis.process?.env || {}) {
       neno: env.SAMBAH_WHATSAPP_NENO || "5551980413745",
       kazuko: env.SAMBAH_WHATSAPP_KAZUKO || "5551997920292"
     },
+    humanAlertWhatsapp: {
+      enabled: env.HUMAN_ALERT_WHATSAPP_ENABLED === "true"
+        || (env.NODE_ENV === "production" && env.HUMAN_ALERT_WHATSAPP_ENABLED !== "false"),
+      recipients: parseList(env.HUMAN_ALERT_WHATSAPP_TO, [
+        env.SAMBAH_WHATSAPP_NENO || "5551980413745",
+        env.SAMBAH_WHATSAPP_KAZUKO || "5551997920292"
+      ])
+    },
     ai: {
       provider: env.AI_PROVIDER || "openai",
       openaiApiKey: env.OPENAI_API_KEY || "",

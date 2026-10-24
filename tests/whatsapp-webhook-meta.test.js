@@ -1311,6 +1311,60 @@ test("WhatsApp envia email quando disponibilidade da Granja exige confirmacao hu
   }
 });
 
+test("atendimento humano dispara aviso WhatsApp para os celulares configurados", async () => {
+  const previousV2 = process.env.WHATSAPP_V2_ENABLED;
+  const previousAutoReply = process.env.WHATSAPP_AUTO_REPLY_ENABLED;
+  const previousSend = process.env.WHATSAPP_SEND_ENABLED;
+  const previousAccessToken = process.env.META_ACCESS_TOKEN;
+  const previousPhoneNumberId = process.env.META_PHONE_NUMBER_ID;
+  const previousHumanAlert = process.env.HUMAN_ALERT_WHATSAPP_ENABLED;
+  const previousHumanRecipients = process.env.HUMAN_ALERT_WHATSAPP_TO;
+  process.env.WHATSAPP_V2_ENABLED = "true";
+  process.env.WHATSAPP_AUTO_REPLY_ENABLED = "true";
+  process.env.WHATSAPP_SEND_ENABLED = "true";
+  process.env.META_ACCESS_TOKEN = "token-teste";
+  process.env.META_PHONE_NUMBER_ID = "1234567890";
+  process.env.HUMAN_ALERT_WHATSAPP_ENABLED = "true";
+  process.env.HUMAN_ALERT_WHATSAPP_TO = "5551980413745,5551997920292";
+  const providerCalls = [];
+  const provider = {
+    name: "meta",
+    status: () => ({ provider: "meta", configured: true }),
+    sendMessage: async (input) => {
+      providerCalls.push(input);
+      return { ok: true, sent: true, status: "sent", providerMessageId: `wamid-${providerCalls.length}` };
+    }
+  };
+  const eventEmailAlertService = {
+    createAlert: async (input) => ({ ok: true, alert: { ...input, alertId: "email-human", status: "PENDING" } }),
+    sendAlert: async (alertId) => ({ ok: true, alert: { alertId, status: "SENT" } })
+  };
+  const { server, base, callCenterAlertsFile, cleanup } = await createTestServer({ provider, eventEmailAlertService });
+  try {
+    const response = await fetch(`${base}/webhook/whatsapp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(metaPayload({ from: "5551333333344", id: "wamid-human-phone-alert", type: "text", text: { body: "humano" } }))
+    });
+    assert.equal(response.status, 200);
+    const internalAlerts = providerCalls.filter((call) => /atendimento humano pendente/i.test(call.message?.text || ""));
+    assert.deepEqual(internalAlerts.map((call) => call.to).sort(), ["5551980413745", "5551997920292"]);
+    assert.equal(internalAlerts.every((call) => /Mensagem: humano/i.test(call.message.text)), true);
+    const alerts = JSON.parse(await readFile(callCenterAlertsFile, "utf8"));
+    assert.equal(alerts.alerts.length, 1);
+  } finally {
+    await close(server);
+    await cleanup();
+    restoreEnv("WHATSAPP_V2_ENABLED", previousV2);
+    restoreEnv("WHATSAPP_AUTO_REPLY_ENABLED", previousAutoReply);
+    restoreEnv("WHATSAPP_SEND_ENABLED", previousSend);
+    restoreEnv("META_ACCESS_TOKEN", previousAccessToken);
+    restoreEnv("META_PHONE_NUMBER_ID", previousPhoneNumberId);
+    restoreEnv("HUMAN_ALERT_WHATSAPP_ENABLED", previousHumanAlert);
+    restoreEnv("HUMAN_ALERT_WHATSAPP_TO", previousHumanRecipients);
+  }
+});
+
 async function createTestServer({ provider = new MockWhatsAppProvider({ logger: { info: () => {} } }), whatsappSendFetch = globalThis.fetch, eventEmailAlertService = null } = {}) {
   const dir = await mkdtemp(join(tmpdir(), "sambha-wa-maintenance-"));
   const previousDataDir = process.env.DATA_DIR;

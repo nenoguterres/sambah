@@ -1067,7 +1067,14 @@ export function createApp({
       const conversaHumanoMatch = url.pathname.match(/^\/api\/conversas\/([^/]+)\/humano$/);
       if (req.method === "POST" && conversaHumanoMatch) {
         const result = await whatsappConversationService.markHuman(decodeURIComponent(conversaHumanoMatch[1]));
-        if (result.ok) await maybeCreateHumanAlert(result, { whatsappConversationService, callCenterService, auditService });
+        if (result.ok) await maybeCreateHumanAlert(result, {
+          whatsappConversationService,
+          callCenterService,
+          auditService,
+          eventEmailAlertService,
+          whatsappProvider: appWhatsappProvider,
+          runtimeConfig: appRuntimeConfig || getRuntimeConfig()
+        });
         return sendJson(res, result.ok ? 200 : 404, result);
       }
 
@@ -1952,7 +1959,14 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
               eventEmailAlertService,
               runtimeConfig: appRuntimeConfig || getRuntimeConfig()
             });
-            await maybeCreateHumanAlert(itemResult, { whatsappConversationService, callCenterService, auditService });
+            await maybeCreateHumanAlert(itemResult, {
+              whatsappConversationService,
+              callCenterService,
+              auditService,
+              eventEmailAlertService,
+              whatsappProvider: appWhatsappProvider,
+              runtimeConfig: appRuntimeConfig || getRuntimeConfig()
+            });
             results.push(itemResult);
           } catch (error) {
             results.push({ ok: false, handled: false, error: "message_processing_failed" });
@@ -1985,7 +1999,14 @@ async function handleWhatsAppWebhook(req, res, auditService, mesaService, menuSe
         eventEmailAlertService,
         runtimeConfig: appRuntimeConfig || getRuntimeConfig()
       });
-      await maybeCreateHumanAlert(maintenanceResult, { whatsappConversationService, callCenterService, auditService });
+      await maybeCreateHumanAlert(maintenanceResult, {
+        whatsappConversationService,
+        callCenterService,
+        auditService,
+        eventEmailAlertService,
+        whatsappProvider: appWhatsappProvider,
+        runtimeConfig: appRuntimeConfig || getRuntimeConfig()
+      });
       return sendJson(res, 200, maintenanceResult);
     }
 
@@ -3300,9 +3321,15 @@ function auditTypeForConversationAction(action = "") {
   }[action] || "conversation_action";
 }
 
-async function maybeCreateHumanAlert(result = {}, { whatsappConversationService, callCenterService, auditService } = {}) {
+async function maybeCreateHumanAlert(result = {}, {
+  whatsappConversationService,
+  callCenterService,
+  auditService,
+  eventEmailAlertService,
+  whatsappProvider,
+  runtimeConfig = getRuntimeConfig()
+} = {}) {
   if (!callCenterService || result.duplicate === true) return null;
-  if (result.message?.actionable === false) return null;
   const conversation = result.conversa;
   if (!conversation || !["humano", "em_atendimento"].includes(conversation.status)) return null;
   const alert = await callCenterService.createAlert({ conversation, operator: {
@@ -3316,6 +3343,11 @@ async function maybeCreateHumanAlert(result = {}, { whatsappConversationService,
       callCenterStatus: alert.alert.deliveryStatus || ""
     });
   }
+  const email = result.operatorEmailAlert
+    || await sendHumanAttentionEmail({ conversation, eventEmailAlertService, runtimeConfig });
+  const whatsapp = alert?.duplicate || alert?.suppressed
+    ? { ok: true, skipped: true, sent: 0, failed: 0 }
+    : await sendHumanAttentionWhatsapp({ conversation, whatsappProvider, runtimeConfig });
   await safeAuditRecord(auditService, {
     type: "conversation_human_alert",
     status: alert?.alert?.realIntegrated ? "info" : "warning",
@@ -3324,11 +3356,77 @@ async function maybeCreateHumanAlert(result = {}, { whatsappConversationService,
     context: {
       conversationId: conversation.id || "",
       deliveryStatus: alert?.alert?.deliveryStatus || "",
-      realIntegrated: Boolean(alert?.alert?.realIntegrated)
+      realIntegrated: Boolean(alert?.alert?.realIntegrated),
+      emailStatus: email?.status || "",
+      whatsappSent: Number(whatsapp?.sent || 0),
+      whatsappFailed: Number(whatsapp?.failed || 0)
     },
     dedupeKey: alert?.alert?.eventKey || undefined
   });
-  return alert;
+  return { ...alert, channels: { push: alert?.alert?.deliveryStatus || "", email, whatsapp } };
+}
+
+async function sendHumanAttentionEmail({ conversation = {}, eventEmailAlertService = null, runtimeConfig = getRuntimeConfig() } = {}) {
+  if (!eventEmailAlertService) return { ok: false, status: "UNAVAILABLE", error: "email_service_unavailable" };
+  const conversationId = conversation.id || "";
+  const eventRequestId = `whatsapp_${conversation.lastInboundMessageId || conversationId}`;
+  const conversationUrl = buildConversationUrl(conversationId, runtimeConfig);
+  const subject = "[WHATSAPP] Atendimento humano solicitado";
+  const body = [
+    "O SamBah recebeu uma mensagem que precisa de atendimento humano.",
+    "",
+    `Cliente: ${conversation.nome || "Cliente WhatsApp"}`,
+    `Telefone: ${conversation.telefone || "Nao informado"}`,
+    `Mensagem: ${conversation.ultimaMensagem || "Nao informada"}`,
+    "",
+    `ABRIR CONVERSA NO SAMBAH: ${conversationUrl}`
+  ].join("\n");
+  try {
+    const created = await eventEmailAlertService.createAlert({
+      eventRequestId,
+      conversationId,
+      subject,
+      body,
+      conversationUrl
+    });
+    const sent = await eventEmailAlertService.sendAlert(created.alert.alertId);
+    return {
+      ok: sent.ok === true,
+      status: sent.alert?.status || created.alert.status || "",
+      alertId: created.alert.alertId || "",
+      error: sent.error || ""
+    };
+  } catch (error) {
+    return { ok: false, status: "FAILED", error: String(error?.message || error) };
+  }
+}
+
+async function sendHumanAttentionWhatsapp({ conversation = {}, whatsappProvider = null, runtimeConfig = getRuntimeConfig() } = {}) {
+  if (runtimeConfig.humanAlertWhatsapp?.enabled !== true) return { ok: true, skipped: true, sent: 0, failed: 0 };
+  if (typeof whatsappProvider?.sendMessage !== "function") return { ok: false, sent: 0, failed: 1, error: "whatsapp_provider_unavailable" };
+  const recipients = [...new Set((runtimeConfig.humanAlertWhatsapp.recipients || [])
+    .map((phone) => String(phone || "").replace(/\D/g, ""))
+    .filter(Boolean))];
+  if (!recipients.length) return { ok: false, sent: 0, failed: 1, error: "whatsapp_alert_recipient_missing" };
+  const conversationUrl = buildConversationUrl(conversation.id || "", runtimeConfig);
+  const text = [
+    "*SamBah: atendimento humano pendente*",
+    `Cliente: ${conversation.nome || "Cliente WhatsApp"}`,
+    `Telefone: ${conversation.telefone || "Nao informado"}`,
+    `Mensagem: ${conversation.ultimaMensagem || "Nao informada"}`,
+    `Abrir: ${conversationUrl}`
+  ].join("\n");
+  const deliveries = [];
+  for (const to of recipients) {
+    try {
+      const result = await whatsappProvider.sendMessage({ to, message: { type: "text", text } });
+      deliveries.push({ to: maskPhone(to), sent: result?.sent === true, status: result?.status || "" });
+    } catch (error) {
+      deliveries.push({ to: maskPhone(to), sent: false, status: String(error?.code || "send_failed") });
+    }
+  }
+  const sent = deliveries.filter((item) => item.sent).length;
+  return { ok: sent > 0, sent, failed: deliveries.length - sent, deliveries };
 }
 
 function normalizeEventRequestId(value = "", conversationId = "", payload = {}) {

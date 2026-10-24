@@ -17,7 +17,7 @@ const state = {
 };
 
 const SAMBAH_CONVERSAS_VERSION = "2.0.0";
-const SAMBAH_CONVERSAS_ASSET_VERSION = "20260804-fila-atual";
+const SAMBAH_CONVERSAS_ASSET_VERSION = "20261024-alertas-humanos";
 const SAMBAH_CONVERSAS_TITLE = "SamBah Central";
 const listEl = document.querySelector("#conversationList");
 const chatEl = document.querySelector("#chatPane");
@@ -71,6 +71,7 @@ async function init() {
   const authenticated = await loadActiveUser();
   if (!authenticated) return;
   await registerServiceWorker();
+  await recoverPushSubscription();
   await checkForRelease();
   await refreshInbox({ initial: true });
 }
@@ -482,13 +483,34 @@ async function enablePush() {
   if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) return;
   const permission = await Notification.requestPermission();
   if (permission !== "granted") return;
+  const result = await ensurePushSubscription();
+  window.alert(result.ok ? "Alertas ativados neste celular." : result.message || "Não foi possível ativar alertas.");
+}
+
+async function recoverPushSubscription() {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+  try {
+    await ensurePushSubscription();
+  } catch {}
+}
+
+async function ensurePushSubscription() {
   const keyResult = await (await authFetch("/api/call-center/push/public-key")).json();
-  if (!keyResult.publicKey) return window.alert("Chave Web Push não configurada.");
+  if (!keyResult.publicKey) return { ok: false, message: "Chave Web Push não configurada." };
   const registration = await navigator.serviceWorker.ready;
-  const subscription = await registration.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: urlBase64ToUint8Array(keyResult.publicKey)
-  });
+  const expectedKey = urlBase64ToUint8Array(keyResult.publicKey);
+  let subscription = await registration.pushManager.getSubscription();
+  if (subscription && !pushSubscriptionUsesKey(subscription, expectedKey)) {
+    await subscription.unsubscribe();
+    subscription = null;
+  }
+  if (!subscription) {
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: expectedKey
+    });
+  }
   const payload = subscription.toJSON();
   payload.deviceId = deviceId();
   const response = await authFetch("/api/call-center/push/subscriptions", {
@@ -497,7 +519,16 @@ async function enablePush() {
     body: JSON.stringify(payload)
   });
   const data = await response.json();
-  window.alert(data.ok ? "Alertas ativados neste celular." : "Não foi possível ativar alertas.");
+  if (data.ok && keyResult.keyId) localStorage.setItem("sambah:push:keyId", keyResult.keyId);
+  return { ok: data.ok === true, message: data.ok ? "" : "Não foi possível ativar alertas." };
+}
+
+function pushSubscriptionUsesKey(subscription, expectedKey) {
+  const current = subscription?.options?.applicationServerKey;
+  if (!current) return false;
+  const currentBytes = new Uint8Array(current);
+  if (currentBytes.length !== expectedKey.length) return false;
+  return currentBytes.every((value, index) => value === expectedKey[index]);
 }
 
 async function acknowledgeOpenAlert(conversationId) {

@@ -127,6 +127,14 @@ test("DOM carrega um controlador, contadores do servidor e registra service work
   assert.equal(fixture.window.document.querySelector('link[rel="manifest"]').getAttribute("href"), "/sambah-conversas.webmanifest");
 });
 
+test("controlador renova assinatura push quando a chave VAPID muda", async () => {
+  const source = await readFile("public/conversas.js", "utf8");
+  assert.match(source, /pushManager\.getSubscription\(\)/);
+  assert.match(source, /pushSubscriptionUsesKey\(subscription, expectedKey\)/);
+  assert.match(source, /subscription\.unsubscribe\(\)/);
+  assert.match(source, /recoverPushSubscription\(\)/);
+});
+
 test("alerta visual mostra atendimentos pendentes e atualiza badge do app", async (t) => {
   const fixture = await browserFixture({ unread: true });
   t.after(() => fixture.dom.window.close());

@@ -194,7 +194,13 @@ export class CallCenterService {
   }
 
   async publicPushKey() {
-    return { ok: true, publicKey: this.vapidPublicKey || "", configured: Boolean(this.vapidPublicKey && this.vapidPrivateKey) };
+    const publicKey = this.vapidPublicKey || "";
+    return {
+      ok: true,
+      publicKey,
+      keyId: publicKey ? crypto.createHash("sha256").update(publicKey).digest("hex").slice(0, 16) : "",
+      configured: Boolean(publicKey && this.vapidPrivateKey)
+    };
   }
 
   async savePushSubscription(subscription = {}, actor = {}, userAgent = "") {
