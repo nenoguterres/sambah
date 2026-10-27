@@ -13,3 +13,11 @@ test("instalador Windows inicia no logon, mantem o PC acordado e reabre o SamBah
   assert.match(source, /-Watch/);
   assert.doesNotMatch(source, /password|senha/i);
 });
+
+test("atalho de dois cliques baixa e executa o instalador oficial", async () => {
+  const source = await readFile("scripts/instalar-sambah-no-pc.cmd", "utf8");
+  assert.match(source, /raw\.githubusercontent\.com\/nenoguterres\/sambah\/main\/scripts\/install-sambah-workstation\.ps1/);
+  assert.match(source, /Invoke-WebRequest/);
+  assert.match(source, /ExecutionPolicy Bypass -File/);
+  assert.doesNotMatch(source, /password|senha/i);
+});
