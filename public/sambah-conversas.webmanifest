@@ -1,6 +1,8 @@
 {
   "name": "SamBah Central",
   "short_name": "SamBah",
+  "id": "/conversas",
+  "description": "Central permanente de atendimento WhatsApp do SamBah.",
   "start_url": "/conversas",
   "scope": "/",
   "display": "standalone",

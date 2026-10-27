@@ -13,11 +13,14 @@ const state = {
   pushSubscription: null,
   pendingManualSendId: "",
   deletingMessageIds: new Set(),
-  lastAttentionTotal: 0
+  lastAttentionTotal: 0,
+  connectionError: false,
+  wakeLock: null,
+  reloadingForUpdate: false
 };
 
 const SAMBAH_CONVERSAS_VERSION = "2.0.0";
-const SAMBAH_CONVERSAS_ASSET_VERSION = "20261024-alertas-push-auto";
+const SAMBAH_CONVERSAS_ASSET_VERSION = "20261027-estacao-permanente";
 const SAMBAH_CONVERSAS_TITLE = "SamBah Central";
 const listEl = document.querySelector("#conversationList");
 const chatEl = document.querySelector("#chatPane");
@@ -54,7 +57,20 @@ document.querySelectorAll("[data-filter]").forEach((button) => {
 });
 
 init();
-setInterval(refreshInbox, 30000);
+setInterval(refreshInbox, 15000);
+setInterval(checkForRelease, 5 * 60 * 1000);
+window.addEventListener("online", () => refreshInbox({ initial: false }));
+window.addEventListener("offline", () => {
+  state.connectionError = true;
+  renderConnectionStatus();
+});
+window.addEventListener("pageshow", () => refreshInbox({ initial: false }));
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  requestScreenWakeLock();
+  refreshInbox({ initial: false });
+  navigator.serviceWorker?.getRegistration?.().then((registration) => registration?.update?.()).catch(() => {});
+});
 
 async function authFetch(url, options = {}) {
   const response = await fetch(url, options);
@@ -72,6 +88,7 @@ async function init() {
   if (!authenticated) return;
   await registerServiceWorker();
   await recoverPushSubscription();
+  await requestScreenWakeLock();
   await checkForRelease();
   await refreshInbox({ initial: true });
 }
@@ -126,6 +143,7 @@ async function refreshInbox({ initial = false } = {}) {
     if (!data.ok) throw new Error(data.error || "Erro ao carregar conversas");
     state.items = data.items || [];
     state.summary = data.summary || {};
+    state.connectionError = false;
     updateCounters();
     const requestedId = new URLSearchParams(location.search).get("conversationId") || "";
     if (!state.selectedId && requestedId) state.selectedId = requestedId;
@@ -135,6 +153,8 @@ async function refreshInbox({ initial = false } = {}) {
     renderPushPanel();
   } catch (error) {
     if (error.sessionRedirect) return;
+    state.connectionError = true;
+    renderConnectionStatus();
     if (!state.items.length) listEl.innerHTML = `<div class="loading">${escapeHtml(error.message || "Nao foi possivel carregar.")}</div>`;
   } finally {
     state.refreshing = false;
@@ -154,6 +174,11 @@ async function loadWhatsappStatus() {
 
 function renderConnectionStatus() {
   if (!connectionStatusEl) return;
+  if (state.connectionError || navigator.onLine === false) {
+    connectionStatusEl.className = "connection-status warn";
+    connectionStatusEl.innerHTML = "<strong>Reconectando</strong><span>O SamBah tentará novamente automaticamente.</span>";
+    return;
+  }
   const status = state.whatsappStatus || {};
   const ready = status.configured === true && status.sendEnabled === true;
   connectionStatusEl.className = `connection-status ${ready ? "ok" : "warn"}`;
@@ -472,8 +497,26 @@ function conversationDeleteErrorMessage(error = "", reason = "") {
 async function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
   try {
-    await navigator.serviceWorker.register(`/sambah-conversas-sw.js?v=${SAMBAH_CONVERSAS_ASSET_VERSION}`);
+    const registration = await navigator.serviceWorker.register(`/sambah-conversas-sw.js?v=${SAMBAH_CONVERSAS_ASSET_VERSION}`);
+    await registration.update();
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (state.reloadingForUpdate) return;
+      state.reloadingForUpdate = true;
+      location.reload();
+    });
   } catch {}
+}
+
+async function requestScreenWakeLock() {
+  if (!("wakeLock" in navigator) || document.visibilityState !== "visible" || state.wakeLock) return;
+  try {
+    state.wakeLock = await navigator.wakeLock.request("screen");
+    state.wakeLock.addEventListener("release", () => {
+      state.wakeLock = null;
+    }, { once: true });
+  } catch {
+    state.wakeLock = null;
+  }
 }
 
 function renderPushPanel() {

@@ -83,7 +83,10 @@ const payPerolaBridge = new PayPerolaBridgeService({
 });
 const payPerolaBridgeController = new PayPerolaBridgeController({ payPerolaBridgeService: payPerolaBridge });
 const sambahPerolaBridge = new SambahPerolaBridgeService({ dataDir: runtimeConfig.dataDir, workhubService: insanoWorkhub });
-const auth = new SambahAuthService({ usersFile: dataFile("auth-users.json") });
+const auth = new SambahAuthService({
+  usersFile: dataFile("auth-users.json"),
+  sessionsFile: dataFile("auth-sessions.json")
+});
 const whatsappProvider = createWhatsAppProvider({ config: runtimeConfig.whatsappBusiness });
 const whatsappMessages = new WhatsAppMessageService({
   provider: whatsappProvider,
@@ -153,7 +156,9 @@ export function createApp({
       const url = new URL(req.url, "http://localhost");
       const activeAuthMode = authMode === "mock" ? "mock" : "session";
       req.sambahAuthMode = activeAuthMode;
-      req.sambahUser = activeAuthMode === "session" ? authService.currentUser(req) : null;
+      const activeSession = activeAuthMode === "session" ? await authService.authenticate(req) : null;
+      req.sambahUser = activeSession?.user || null;
+      if (activeSession?.cookie) res.setHeader("Set-Cookie", activeSession.cookie);
 
       const requestCorsHeaders = corsHeaders(req.headers.origin);
       for (const [header, value] of Object.entries(requestCorsHeaders)) {
@@ -195,7 +200,7 @@ export function createApp({
 
       if (req.method === "POST" && url.pathname === "/api/auth/logout") {
         const user = req.sambahUser;
-        const result = authService.logout(req);
+        const result = await authService.logout(req);
         if (user) {
           await safeAuditRecord(auditService, {
             type: "sambah_logout",

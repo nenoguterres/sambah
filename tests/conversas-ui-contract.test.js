@@ -137,6 +137,22 @@ test("controlador renova assinatura push quando a chave VAPID muda", async () =>
   assert.match(source, /showNotification\("SamBah: atendimento humano"/);
 });
 
+test("estacao permanente atualiza, reconecta e solicita bloqueio de suspensao", async () => {
+  const [source, worker, manifest] = await Promise.all([
+    readFile("public/conversas.js", "utf8"),
+    readFile("public/sambah-conversas-sw.js", "utf8"),
+    readFile("public/sambah-conversas.webmanifest", "utf8")
+  ]);
+  assert.match(source, /setInterval\(refreshInbox, 15000\)/);
+  assert.match(source, /addEventListener\("online"/);
+  assert.match(source, /navigator\.wakeLock\.request\("screen"\)/);
+  assert.match(source, /registration\.update\(\)/);
+  assert.match(source, /controllerchange/);
+  assert.match(worker, /self\.skipWaiting\(\)/);
+  assert.match(worker, /self\.clients\.claim\(\)/);
+  assert.equal(JSON.parse(manifest).display, "standalone");
+});
+
 test("alerta visual mostra atendimentos pendentes e atualiza badge do app", async (t) => {
   const fixture = await browserFixture({ unread: true });
   t.after(() => fixture.dom.window.close());

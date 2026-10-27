@@ -4,42 +4,70 @@ import { dirname } from "node:path";
 import { DEV_AUTH_USERS } from "./users.dev.js";
 
 const COOKIE_NAME = "sambah_session";
-const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const DEFAULT_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const DEFAULT_SESSION_RENEW_MS = 60 * 60 * 1000;
 const AUTH_ROLES = ["ADMIN", "GERENTE", "CAIXA", "OPERADOR", "ATENDENTE", "AUDITOR"];
 
 export class SambahAuthService {
   constructor({
     users = DEV_AUTH_USERS,
     usersFile = null,
+    sessionsFile = null,
     secret = globalThis.process?.env?.SAMBAH_SESSION_SECRET || "sambah-local-dev-session-secret",
+    sessionTtlMs = Number(globalThis.process?.env?.SAMBAH_SESSION_TTL_MS || DEFAULT_SESSION_TTL_MS),
+    sessionRenewMs = DEFAULT_SESSION_RENEW_MS,
     now = () => new Date()
   } = {}) {
     this.users = users;
     this.usersFile = usersFile;
+    this.sessionsFile = sessionsFile;
     this.secret = secret;
+    this.sessionTtlMs = Math.max(60 * 60 * 1000, Number(sessionTtlMs) || DEFAULT_SESSION_TTL_MS);
+    this.sessionRenewMs = Math.max(60 * 1000, Number(sessionRenewMs) || DEFAULT_SESSION_RENEW_MS);
     this.now = now;
     this.sessions = new Map();
     this.loaded = false;
+    this.sessionsLoaded = false;
   }
 
   async login({ username = "", password = "" } = {}) {
     await this.ensureLoaded();
+    await this.ensureSessionsLoaded();
     const candidates = loginUsernameCandidates(username);
     const user = this.users.find((item) => candidates.has(item.username));
     if (!user || user.active === false || !this.verifyPassword(user, password)) {
       return { ok: false, statusCode: 401, error: "invalid_credentials", message: "Usuario ou senha invalidos" };
     }
     const sessionId = crypto.randomUUID();
-    const expiresAt = new Date(this.now().getTime() + SESSION_TTL_MS).toISOString();
+    const expiresAt = new Date(this.now().getTime() + this.sessionTtlMs).toISOString();
     const publicUser = this.publicUser(user);
-    this.sessions.set(sessionId, { id: sessionId, user: publicUser, createdAt: this.now().toISOString(), expiresAt });
+    const timestamp = this.now().toISOString();
+    this.sessions.set(sessionId, { id: sessionId, user: publicUser, createdAt: timestamp, lastSeenAt: timestamp, expiresAt });
+    await this.persistSessions();
     return { ok: true, user: publicUser, cookie: this.sessionCookie(sessionId, { expiresAt }), expiresAt };
   }
 
-  logout(req) {
+  async logout(req) {
+    await this.ensureSessionsLoaded();
     const session = this.sessionFromRequest(req);
     if (session?.id) this.sessions.delete(session.id);
+    await this.persistSessions();
     return { ok: true, cookie: this.clearCookie() };
+  }
+
+  async authenticate(req) {
+    await this.ensureSessionsLoaded();
+    const session = this.sessionFromRequest(req);
+    if (!session) return null;
+    const now = this.now();
+    const lastSeenAt = Date.parse(session.lastSeenAt || session.createdAt || "");
+    if (!Number.isFinite(lastSeenAt) || now.getTime() - lastSeenAt >= this.sessionRenewMs) {
+      session.lastSeenAt = now.toISOString();
+      session.expiresAt = new Date(now.getTime() + this.sessionTtlMs).toISOString();
+      await this.persistSessions();
+      return { user: session.user, cookie: this.sessionCookie(session.id, { expiresAt: session.expiresAt }) };
+    }
+    return { user: session.user, cookie: "" };
   }
 
   currentUser(req) {
@@ -81,6 +109,7 @@ export class SambahAuthService {
     user.updatedAt = this.now().toISOString();
     this.refreshUserSessions(user);
     await this.persist();
+    await this.persistSessions();
     return { ok: true, user: this.publicUser(user) };
   }
 
@@ -92,6 +121,7 @@ export class SambahAuthService {
     user.updatedAt = this.now().toISOString();
     if (!user.active) this.dropUserSessions(user.username);
     await this.persist();
+    await this.persistSessions();
     return { ok: true, user: this.publicUser(user) };
   }
 
@@ -103,6 +133,7 @@ export class SambahAuthService {
     Object.assign(user, this.hashPassword(password), { updatedAt: this.now().toISOString() });
     this.dropUserSessions(user.username);
     await this.persist();
+    await this.persistSessions();
     return { ok: true, user: this.publicUser(user) };
   }
 
@@ -128,6 +159,36 @@ export class SambahAuthService {
       users: this.users
     };
     await writeFile(this.usersFile, JSON.stringify(payload, null, 2));
+  }
+
+  async ensureSessionsLoaded() {
+    if (this.sessionsLoaded || !this.sessionsFile) {
+      this.sessionsLoaded = true;
+      return;
+    }
+    try {
+      const raw = await readFile(this.sessionsFile, "utf8");
+      const parsed = JSON.parse(raw);
+      const now = this.now().getTime();
+      const sessions = Array.isArray(parsed.sessions) ? parsed.sessions : [];
+      this.sessions = new Map(sessions
+        .filter((session) => session?.id && Date.parse(session.expiresAt) > now)
+        .map((session) => [session.id, session]));
+    } catch (error) {
+      if (error.code !== "ENOENT" && !(error instanceof SyntaxError)) throw error;
+      this.sessions = new Map();
+    }
+    this.sessionsLoaded = true;
+  }
+
+  async persistSessions() {
+    if (!this.sessionsFile || !this.sessionsLoaded) return;
+    await mkdir(dirname(this.sessionsFile), { recursive: true });
+    const payload = {
+      updatedAt: this.now().toISOString(),
+      sessions: [...this.sessions.values()]
+    };
+    await writeFile(this.sessionsFile, JSON.stringify(payload, null, 2));
   }
 
   findUser(username) {
