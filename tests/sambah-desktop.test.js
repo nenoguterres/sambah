@@ -42,3 +42,13 @@ test("SamBah Desktop permanece ativo, inicia com o sistema e recupera conexao", 
   assert.match(main, /backgroundThrottling: false/);
   assert.match(main, /prevent-app-suspension/);
 });
+
+test("SamBah Desktop desativa somente o antigo lancador por navegador no Windows", async () => {
+  const main = await read("desktop/main.cjs");
+
+  assert.match(main, /disableLegacyBrowserLauncher/);
+  assert.match(main, /SamBahWorkstation\.ps1/);
+  assert.match(main, /Programs\\\\Startup\\\\SamBah Central\.lnk/);
+  assert.match(main, /Stop-Process/);
+  assert.doesNotMatch(main, /Remove-Item[^\n]+SamBahCentral[^\n]+-Recurse/);
+});

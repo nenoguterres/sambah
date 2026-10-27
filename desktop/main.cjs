@@ -1,6 +1,7 @@
 const { app, BrowserWindow, Menu, Tray, nativeImage, shell, session, ipcMain, powerSaveBlocker, Notification } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
+const { execFile } = require("node:child_process");
 
 const SAMBAH_URL = process.env.SAMBAH_DESKTOP_URL || "https://api.insanofoodtruck.com.br/conversas";
 const SAMBAH_ORIGIN = new URL(SAMBAH_URL).origin;
@@ -102,6 +103,19 @@ function createTray() {
     }
   ]));
   tray.on("double-click", showMainWindow);
+}
+
+function disableLegacyBrowserLauncher() {
+  if (process.platform !== "win32") return;
+  const script = [
+    "$legacyScript = Join-Path $env:LOCALAPPDATA 'SamBahCentral\\SamBahWorkstation.ps1'",
+    "$shortcut = Join-Path $env:APPDATA 'Microsoft\\Windows\\Start Menu\\Programs\\Startup\\SamBah Central.lnk'",
+    "Get-CimInstance Win32_Process -Filter \"Name = 'powershell.exe' OR Name = 'pwsh.exe'\" -ErrorAction SilentlyContinue |",
+    "  Where-Object { $_.CommandLine -like \"*$legacyScript*\" -and $_.CommandLine -like '*-Watch*' } |",
+    "  ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
+    "if (Test-Path -LiteralPath $shortcut) { Remove-Item -LiteralPath $shortcut -Force }"
+  ].join("\n");
+  execFile("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], { windowsHide: true }, () => {});
 }
 
 function enableAutoStart() {
@@ -206,6 +220,7 @@ ipcMain.on("sambah:quit", () => {
 });
 
 app.whenReady().then(() => {
+  disableLegacyBrowserLauncher();
   configureSession();
   createApplicationMenu();
   createTray();
