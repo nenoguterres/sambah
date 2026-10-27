@@ -1,0 +1,73 @@
+{
+  "name": "sambah-central-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Aplicativo desktop multiplataforma da central operacional SamBah.",
+  "homepage": "https://api.insanofoodtruck.com.br",
+  "main": "main.cjs",
+  "author": {
+    "name": "KDOI E GUTTERRES",
+    "email": "chefnenogutterres@gmail.com"
+  },
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "check": "node --check main.cjs && node --check preload.cjs && node --check renderer/offline.js",
+    "dist:win": "electron-builder --win nsis --x64",
+    "dist:linux": "electron-builder --linux AppImage deb --x64"
+  },
+  "devDependencies": {
+    "electron": "45.0.0",
+    "electron-builder": "26.0.12"
+  },
+  "build": {
+    "appId": "br.com.insanofoodtruck.sambah",
+    "productName": "SamBah Central",
+    "artifactName": "SamBah-Central-${version}-${os}-${arch}.${ext}",
+    "asar": true,
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "renderer/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "SamBah Central",
+      "deleteAppDataOnUninstall": false
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": ["x64"]
+        },
+        {
+          "target": "deb",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.png",
+      "category": "Office",
+      "executableName": "sambah-central",
+      "synopsis": "Central operacional de atendimento SamBah",
+      "maintainer": "KDOI E GUTTERRES <chefnenogutterres@gmail.com>"
+    }
+  }
+}

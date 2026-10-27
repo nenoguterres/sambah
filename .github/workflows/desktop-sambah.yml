@@ -1,0 +1,66 @@
+name: SamBah Desktop
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    tags:
+      - 'desktop-v*'
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/desktop-sambah.yml'
+      - 'tests/sambah-desktop.test.js'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            os: windows-latest
+            command: npm run dist:win
+            artifact: sambah-desktop-windows
+          - name: Linux x64
+            os: ubuntu-latest
+            command: npm run dist:linux
+            artifact: sambah-desktop-linux
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - name: Baixar codigo
+        uses: actions/checkout@v4
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Verificar sintaxe
+        run: npm run check
+
+      - name: Gerar instalador
+        run: ${{ matrix.command }}
+
+      - name: Publicar instalador
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            desktop/dist/*.exe
+            desktop/dist/*.AppImage
+            desktop/dist/*.deb
+          if-no-files-found: error
+          retention-days: 30
